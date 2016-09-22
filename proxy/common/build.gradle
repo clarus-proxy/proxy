@@ -1,0 +1,9 @@
+description = 'Common API for the CLARUS plugins and modules'
+
+dependencies {
+    // CLARUS
+    compile group: 'eu.clarussecure', name: 'dataoperations-api', version: '1.0-SNAPSHOT'
+
+    // Transport
+    compile group: 'io.netty', name: 'netty-buffer', version: '4.1.4.Final'
+}

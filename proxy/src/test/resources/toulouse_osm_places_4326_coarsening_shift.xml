@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<schema>
+	<file
+		header="yes"
+		attribute_separator=";"
+		record_separator="%">
+ 		<attribute
+			name="postgres/public.toulouse_osm_places_4326/osm_id"
+			attribute_type="non_confidential"
+			data_type="categoric">
+		</attribute>
+		<attribute
+			name="postgres/public.toulouse_osm_places_4326/lastchange"
+			attribute_type="non_confidential"
+			data_type="categoric">
+		</attribute>
+		<attribute
+			name="postgres/public.toulouse_osm_places_4326/code"
+			attribute_type="non_confidential"
+			data_type="numeric_discrete">
+		</attribute>
+		<attribute
+			name="postgres/public.toulouse_osm_places_4326/fclass"
+			attribute_type="non_confidential"
+			data_type="categoric">
+		</attribute>
+		<attribute
+			name="postgres/public.toulouse_osm_places_4326/geomtype"
+			attribute_type="non_confidential"
+			data_type="categoric">
+		</attribute>
+		<attribute
+			name="postgres/public.toulouse_osm_places_4326/name"
+			attribute_type="non_confidential"
+			data_type="categoric">
+		</attribute>
+		<attribute
+			name="postgres/public.toulouse_osm_places_4326/population"
+			attribute_type="non_confidential"
+			data_type="numeric_discrete">
+		</attribute>
+		<attribute
+			name="postgres/public.toulouse_osm_places_4326/geom"
+			attribute_type="identifier"
+			data_type="geometric_object">
+		</attribute>
+	</file>
+	<protection module="anonymization">
+		<attribute_types>
+			<attribute_type
+				type="identifier"
+				protection="coarsening"
+				coarsening_type="shift"
+				radius="1000">
+			</attribute_type>
+			<attribute_type
+				type="non_confidential"
+				protection="null">
+			</attribute_type>
+		</attribute_types>
+	</protection>
+    <protocol plugin="PostgreSQL" />
+</schema>	
+

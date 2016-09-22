@@ -1,0 +1,7 @@
+description = 'Main module of the CLARUS proxy'
+ext.mainClassName = 'eu.clarussecure.proxy.Proxy'
+
+dependencies {
+    // CLARUS
+    compile project(':proxy-common')
+}

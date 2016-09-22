@@ -1,0 +1,10 @@
+/.externalToolBuilders/
+/.gradle/
+.settings/
+bin/
+build/
+target/
+/install/
+.classpath
+.project
+sb.page

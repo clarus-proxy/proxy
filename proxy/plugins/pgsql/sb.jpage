@@ -1,0 +1,1 @@
+"BEGIN;\r".matches("^\\s*BEGIN[\\s\r\n]*.*")

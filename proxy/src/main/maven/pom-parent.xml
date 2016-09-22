@@ -1,0 +1,50 @@
+<project>
+    <properties>
+        <!-- Maven and Java build options -->
+        <jdk.version>1.8</jdk.version>
+        <project.build.sourceEncoding>UTF-8
+        </project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8
+        </project.reporting.outputEncoding>
+        <team.name>CLARUS Team</team.name>
+        <!-- <maven.test.skip>true</maven.test.skip> <doc.generation.skip>true</doc.generation.skip> -->
+        <!-- Plugins versions -->
+        <plugin.compiler.version>3.5.1</plugin.compiler.version>
+        <plugin.failsafe.version>2.19.1</plugin.failsafe.version>
+    </properties>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${plugin.compiler.version}</version>
+                    <configuration>
+                        <source>${jdk.version}</source>
+                        <target>${jdk.version}</target>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>${plugin.failsafe.version}</version>
+                    <executions>
+                        <execution>
+                            <id>integration-test</id>
+                            <goals>
+                                <goal>integration-test</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>verify</id>
+                            <goals>
+                                <goal>verify</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>
