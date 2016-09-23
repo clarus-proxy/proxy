@@ -67,6 +67,10 @@ public class SqlSession {
     }
 
     public void setDatabaseName(CString databaseName) {
+        if (this.databaseName != null) {
+            // Release internal buffer of database name
+            this.databaseName.release();
+        }
         this.databaseName = databaseName;
     }
 
@@ -94,7 +98,6 @@ public class SqlSession {
         this.transferMode = transferMode;
     }
 
-//    public StringBuilder getBufferedStatements() {
     public List<BufferedStatement> getBufferedStatements() {
         if (bufferedStatements == null) {
             bufferedStatements = new ArrayList<>();
@@ -102,18 +105,19 @@ public class SqlSession {
         return bufferedStatements;
     }
 
-//    public void setBufferedStatements(StringBuilder bufferedStatements) {
     public void setBufferedStatements(List<BufferedStatement> bufferedStatements) {
         this.bufferedStatements = bufferedStatements;
     }
 
     public boolean addBufferedStatements(CString statement, boolean toProcess) {
+        // Retain internal buffer of statement
+        if (statement.isBuffered()) {
+            statement.retain();
+        }
         return getBufferedStatements().add(new BufferedStatement(statement, toProcess));
     }
 
-//    public void resetBufferedStatements() {
     public void resetBufferedStatements() {
-//        this.bufferedStatements = null;
         bufferedStatements.clear();
     }
 
@@ -147,6 +151,22 @@ public class SqlSession {
 
     public void decrementeReadyForQueryToIgnore() {
         readyForQueryToIgnore --;
+    }
+
+    public void release() {
+        if (databaseName != null) {
+            databaseName.release();
+        }
+        if (bufferedStatements != null) {
+            for (BufferedStatement bufferedStatement : bufferedStatements) {
+                if (bufferedStatement.getOriginal() != null) {
+                    bufferedStatement.getOriginal().release();
+                }
+                if (bufferedStatement.getModified() != null) {
+                    bufferedStatement.getModified().release();
+                }
+            }
+        }
     }
 
 }

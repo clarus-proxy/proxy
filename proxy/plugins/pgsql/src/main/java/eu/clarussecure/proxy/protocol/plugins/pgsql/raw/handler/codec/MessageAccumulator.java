@@ -17,7 +17,7 @@ package eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.codec;
 
 import java.util.List;
 
-import eu.clarussecure.proxy.protocol.plugins.pgsql.buffer.SynchronizedCompositeByteBuf;
+import eu.clarussecure.proxy.spi.buffer.SynchronizedCompositeByteBuf;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufHolder;
 import io.netty.buffer.Unpooled;
@@ -55,7 +55,7 @@ import io.netty.util.ReferenceCountUtil;
 public abstract class MessageAccumulator<I, S, C extends ByteBufHolder, O extends ByteBufHolder>
         extends MessageToMessageDecoder<I> {
 
-    private static final int DEFAULT_MAX_COMPOSITEBUFFER_COMPONENTS = 1024;
+    private static final int DEFAULT_MAX_COMPOSITEBUFFER_COMPONENTS = Integer.MAX_VALUE;
 
     private final int maxContentLength;
     private O currentMessage;

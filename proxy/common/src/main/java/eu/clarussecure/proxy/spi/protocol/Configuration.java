@@ -16,26 +16,34 @@ import eu.clarussecure.proxy.spi.protocol.ProtocolService;
 
 public abstract class Configuration implements Configurable {
 
-    public static final int DEFAULT_NB_OF_ACCEPTOR_THREADS = 1;
+    public static final int DEFAULT_NB_OF_LISTEN_THREADS = 1;
     
-    public static final int DEFAULT_MESSAGE_PART_MAX_LENGTH = Integer.MAX_VALUE;
+    public static final int DEFAULT_NB_OF_SESSION_THREADS = Runtime.getRuntime().availableProcessors();
 
-    private final ProtocolCapabilities capabilities;
+    public static final int DEFAULT_NB_OF_PARSER_THREADS = 0;
 
-    private int listenPort;
+    public static final int DEFAULT_FRAME_PART_MAX_LENGTH = Integer.MAX_VALUE;
 
-    private Set<InetSocketAddress> serverEndpoints;
+    protected final ProtocolCapabilities capabilities;
 
-    private int nbAcceptorThreads = DEFAULT_NB_OF_ACCEPTOR_THREADS;
+    protected int listenPort;
 
-    private int messagePartMaxLength = DEFAULT_MESSAGE_PART_MAX_LENGTH;
+    protected Set<InetSocketAddress> serverEndpoints;
 
-    private Map<Operation, Mode> datasetProcessingModes = new HashMap<Operation, Mode>();
-    private Map<Operation, Mode> recordProcessingModes = new HashMap<Operation, Mode>();
+    protected int nbListenThreads = DEFAULT_NB_OF_LISTEN_THREADS;
 
-    private Set<String> commands = null;
+    protected int nbSessionThreads = DEFAULT_NB_OF_SESSION_THREADS;
 
-    private ProtocolService protocolService = null;
+    protected int nbParserThreads = DEFAULT_NB_OF_PARSER_THREADS;
+
+    protected int framePartMaxLength = DEFAULT_FRAME_PART_MAX_LENGTH;
+
+    protected Map<Operation, Mode> datasetProcessingModes = new HashMap<Operation, Mode>();
+    protected Map<Operation, Mode> recordProcessingModes = new HashMap<Operation, Mode>();
+
+    protected Set<String> commands = null;
+
+    protected ProtocolService protocolService = null;
 
     public Configuration(ProtocolCapabilities capabilities) {
         this.capabilities = capabilities;
@@ -88,23 +96,52 @@ public abstract class Configuration implements Configurable {
     }
 
     @Override
-    public int getNbAcceptorThreads() {
-        return nbAcceptorThreads;
+    public int getNbListenThreads() {
+        return nbListenThreads;
     }
 
     @Override
-    public void setNbAcceptorThreads(int nThreads) {
-        this.nbAcceptorThreads = nThreads;
+    public void setNbListenThreads(int nThreads) {
+        if (nThreads <= 0) {
+            throw new IllegalArgumentException("nThreads must be positive");
+        }
+        this.nbListenThreads = nThreads;
     }
 
     @Override
-    public int getMessagePartMaxLength() {
-        return messagePartMaxLength;
+    public int getNbSessionThreads() {
+        return nbSessionThreads;
     }
 
     @Override
-    public void setMessagePartMaxLength(int maxlen) {
-        this.messagePartMaxLength = maxlen;
+    public void setNbSessionThreads(int nThreads) {
+        if (nThreads <= 0) {
+            throw new IllegalArgumentException("nThreads must be positive");
+        }
+        this.nbSessionThreads = nThreads;
+    }
+
+    @Override
+    public int getNbParserThreads() {
+        return nbParserThreads;
+    }
+
+    @Override
+    public void setNbParserThreads(int nThreads) {
+        if (nThreads < 0) {
+            throw new IllegalArgumentException("nThreads must be positive or 0");
+        }
+        this.nbParserThreads = nThreads;
+    }
+
+    @Override
+    public int getFramePartMaxLength() {
+        return framePartMaxLength;
+    }
+
+    @Override
+    public void setFramePartMaxLength(int maxlen) {
+        this.framePartMaxLength = maxlen;
     }
 
     @Override

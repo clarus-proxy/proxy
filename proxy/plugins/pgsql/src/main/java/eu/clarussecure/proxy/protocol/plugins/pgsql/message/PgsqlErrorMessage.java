@@ -1,65 +1,41 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql.message;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
 import eu.clarussecure.proxy.spi.CString;
 import io.netty.util.internal.StringUtil;
 
-public class PgsqlErrorMessage implements PgsqlCommandResultMessage {
+public class PgsqlErrorMessage implements PgsqlCommandResultMessage<Map<Byte, CString>> {
 
     public static final byte TYPE = (byte) 'E';
     public static final int HEADER_SIZE = Byte.BYTES + Integer.BYTES;
-    public static final String ERROR_TAG = "ERROR:\n";
 
     private Map<Byte, CString> fields;
+
+    private final Details<Map<Byte, CString>> details = new Details<Map<Byte, CString>>() {
+
+        @Override
+        public Map<Byte, CString> get() {
+            return getFields();
+        }
+    };
 
     public PgsqlErrorMessage(Map<Byte, CString> fields) {
         this.fields = Objects.requireNonNull(fields, "fields must not be null");
     }
 
-    public PgsqlErrorMessage(CString fieldsAsString) {
-        this(parseFields(fieldsAsString));
+    public PgsqlErrorMessage(Details<Map<Byte, CString>> details) {
+        Objects.requireNonNull(details, "details must not be null");
+        this.fields = Objects.requireNonNull(details.get(), "details content must not be null");
     }
 
     public Map<Byte, CString> getFields() {
         return fields;
     }
 
-    public CString getFieldsAsString() {
-        StringBuilder builder = new StringBuilder(ERROR_TAG);
-        int i = 0;
-        for (Map.Entry<Byte, CString> entry : fields.entrySet()) {
-            builder.append("'").append((char) entry.getKey().byteValue()).append("':").append(entry.getValue());
-            if (++i < fields.size()) {
-                builder.append("\n");
-            }
-        }
-        return CString.valueOf(builder.toString());
-    }
-
-    public static boolean isErrorFields(CString str) {
-        return (str.length() >= ERROR_TAG.length()) && str.subSequence(0, ERROR_TAG.length()).equals(ERROR_TAG);
-    }
-
-    private static Map<Byte, CString> parseFields(CString str) {
-        if (!isErrorFields(str)) {
-            throw new IllegalArgumentException("str must start with " + ERROR_TAG);
-        }
-        String[] tokens = str.toString().split("\n");
-        Map<Byte, CString> fields = new LinkedHashMap<>();
-        for (int i = 1; i < tokens.length; i ++) {
-            String token = tokens[i];
-            byte code = (byte) token.charAt(0);
-            CString value = CString.valueOf(token.substring(2, token.length()));
-            fields.put(code, value);
-        }
-        return fields;
-    }
-
     public void setFields(Map<Byte, CString> fields) {
-        this.fields = fields;
+        this.fields = Objects.requireNonNull(fields, "fields must not be null");
     }
 
     @Override
@@ -76,7 +52,14 @@ public class PgsqlErrorMessage implements PgsqlCommandResultMessage {
     public String toString() {
         StringBuilder builder = new StringBuilder(StringUtil.simpleClassName(this));
         builder.append(" [");
-        builder.append("fields=").append(getFieldsAsString());
+        builder.append("fields=");
+        int i = 0;
+        for (Map.Entry<Byte, CString> entry : fields.entrySet()) {
+            builder.append("'").append((char) entry.getKey().byteValue()).append("':").append(entry.getValue());
+            if (++i < fields.size()) {
+                builder.append("\n");
+            }
+        }
         builder.append("]");
         return builder.toString();
     }
@@ -88,12 +71,12 @@ public class PgsqlErrorMessage implements PgsqlCommandResultMessage {
     }
 
     @Override
-    public CString getDetails() {
-        return getFieldsAsString();
+    public Details<Map<Byte, CString>> getDetails() {
+        return details;
     }
 
     @Override
-    public void setDetails(CString details) {
-        setFields(parseFields(details));
+    public void setDetails(Details<Map<Byte, CString>> details) {
+        setFields(details.get());
     }
 }

@@ -48,8 +48,8 @@ public class AnonymizationCapabilities implements ProtectionModuleCapabilities {
             Node protectionNode = securityPolicy.findSubNode(SecurityPolicy.PROTECTION_ELT, rootNode);
             Node attributeTypesNode = securityPolicy.findSubNode("attribute_types", protectionNode);
             if (attributeTypesNode.hasChildNodes()) {
-                //preferredMode = Mode.STREAMING;
-                preferredMode = Mode.BUFFERING;
+                preferredMode = Mode.STREAMING;
+                //preferredMode = Mode.BUFFERING;
                 NodeList subnodes = attributeTypesNode.getChildNodes();
                 for (int i=0; i < subnodes.getLength(); i++) {
                     Node subnode = subnodes.item(i);

@@ -5,13 +5,14 @@ import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlConfiguration;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlConstants;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlSession;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlCommandResultMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlErrorMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SqlSession.BufferedStatement;
 import eu.clarussecure.proxy.spi.CString;
@@ -19,6 +20,7 @@ import eu.clarussecure.proxy.spi.DataOperation;
 import eu.clarussecure.proxy.spi.Mode;
 import eu.clarussecure.proxy.spi.Operation;
 import eu.clarussecure.proxy.spi.StringUtilities;
+import eu.clarussecure.proxy.spi.protocol.Configuration;
 import eu.clarussecure.proxy.spi.protocol.ProtocolService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
@@ -40,11 +42,20 @@ import net.sf.jsqlparser.statement.select.Select;
 import net.sf.jsqlparser.statement.select.SelectExpressionItem;
 import net.sf.jsqlparser.statement.select.SelectItem;
 
-public class CommandProcessor {
+public class PgsqlEventProcessor implements EventProcessor {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(CommandProcessor.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(EventProcessor.class);
 
-    public StatementTransferMode processStatement(ChannelHandlerContext ctx, CString statement, boolean lastStatement, boolean streaming) throws IOException {
+    public static final String USER_KEY = "user";
+    public static final String DATABASE_KEY = "database";
+
+    public void processAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
+        CString databaseName = parameters.get(CString.valueOf(DATABASE_KEY));
+        SqlSession sqlSession = getSession(ctx);
+        sqlSession.setDatabaseName((CString) databaseName.clone());
+    }
+
+    public StatementTransferMode processStatement(ChannelHandlerContext ctx, CString statement, boolean lastStatement) throws IOException {
         LOGGER.debug("SQL statement: {}", statement);
         TransferMode transferMode;
         CString newStatements = statement;
@@ -102,7 +113,7 @@ public class CommandProcessor {
             }
             getSession(ctx).setTransferMode(transferMode);
             if (transferMode == TransferMode.FORWARD) {
-                newStatements = buildNewStatements(ctx, statement, toProcess, lastStatement, streaming);
+                newStatements = buildNewStatements(ctx, statement, toProcess, lastStatement);
             } else if (transferMode == TransferMode.FORGET) {
                 if (statement != null) {
                     bufferStatement(ctx, statement, toProcess, lastStatement);
@@ -118,22 +129,29 @@ public class CommandProcessor {
         return mode;
     }
 
-    private CString buildNewStatements(ChannelHandlerContext ctx, CString statement, boolean toProcess, boolean lastStatement, boolean streaming) {
+    private CString buildNewStatements(ChannelHandlerContext ctx, CString statement, boolean toProcess, boolean lastStatement) throws IOException {
         processBufferedStatements(ctx);
-        statement = processStatement(ctx, statement, toProcess);
-        if (streaming && !lastStatement) {
-            getSession(ctx).incrementeReadyForQueryToIgnore();
-        }
+        CString newStatement = toProcess ? processStatement(ctx, statement) : statement;
         CString newStatements;
         if (getSession(ctx).getBufferedStatements().isEmpty()) {
-            newStatements = statement;
+            newStatements = newStatement;
         } else {
-            newStatements = CString.valueOf("");
+            // Compute new statement size
+            int newSize = 0;
             for (BufferedStatement bufferedStatement : getSession(ctx).getBufferedStatements()) {
-                newStatements.append(bufferedStatement.getResult(), ctx.alloc());
+                newSize += bufferedStatement.getResult().length();
+            }
+            newSize += newStatement.length();
+            newStatements = CString.valueOf(new StringBuilder(newSize));
+            for (BufferedStatement bufferedStatement : getSession(ctx).getBufferedStatements()) {
+                newStatements.append(bufferedStatement.getResult());
+                // Release internal buffer of statement
+                if (bufferedStatement.getOriginal().isBuffered()) {
+                    bufferedStatement.getOriginal().release();
+                }
             }
             getSession(ctx).resetBufferedStatements();
-            newStatements.append(statement, ctx.alloc());
+            newStatements.append(newStatement);
         }
         return newStatements;
     }
@@ -180,10 +198,7 @@ public class CommandProcessor {
         }
     }
 
-    private CString processStatement(ChannelHandlerContext ctx, CString statement, boolean toProcess) {
-        if (!toProcess) {
-            return statement;
-        }
+    private CString processStatement(ChannelHandlerContext ctx, CString statement) {
         // Parse statement
         Statement stmt = parseStatement(ctx, statement);
         if (stmt == null) {
@@ -218,7 +233,7 @@ public class CommandProcessor {
         Statement stmt = null;
         try {
             if (statement.isBuffered()) {
-                ByteBuf byteBuf = statement.getByteBuf(ctx.alloc()).readSlice(statement.length());
+                ByteBuf byteBuf = statement.getByteBuf().readSlice(statement.length());
                 stmt = CCJSqlParserUtil.parse(new ByteBufInputStream(byteBuf), StandardCharsets.ISO_8859_1.name());
             } else {
                 stmt = CCJSqlParserUtil.parse(statement.toString());
@@ -369,14 +384,14 @@ public class CommandProcessor {
         getSession(ctx).resetReadyForQueryToIgnore();
     }
 
-    public CommandResultTransferMode processCommandResult(ChannelHandlerContext ctx, CString details) throws IOException {
+    public CommandResultTransferMode processCommandResult(ChannelHandlerContext ctx, PgsqlCommandResultMessage.Details<?> details) throws IOException {
         LOGGER.debug("Command result: {}", details);
         TransferMode transferMode;
-        CString newDetails = details;
+        PgsqlCommandResultMessage.Details<?> newDetails = details;
         if (getSession(ctx).getCommandResultsToIgnore() == 0) {
             transferMode = TransferMode.FORWARD;
         } else {
-            if (PgsqlErrorMessage.isErrorFields(details)) {
+            if (details.isDedicatedTo(PgsqlErrorMessage.class)) {
                 transferMode = TransferMode.FORWARD;
                 getSession(ctx).resetCommandResultsToIgnore();
             } else {
@@ -390,7 +405,7 @@ public class CommandProcessor {
         return mode;
     }
 
-    public ReadyForQueryResponseTransferMode processReadyForQueryResponse(ChannelHandlerContext ctx, Byte transactionStatus) {
+    public ReadyForQueryResponseTransferMode processReadyForQueryResponse(ChannelHandlerContext ctx, Byte transactionStatus) throws IOException {
         LOGGER.debug("Ready for query: {}", (char) transactionStatus.byteValue());
         TransferMode transferMode;
         Byte newTransactionStatus = transactionStatus;
@@ -407,17 +422,17 @@ public class CommandProcessor {
     }
 
     private SqlSession getSession(ChannelHandlerContext ctx) {
-        PgsqlSession pgsqlSession = ctx.channel().attr(PgsqlConstants.SESSION_KEY).get();
+        PgsqlSession pgsqlSession = (PgsqlSession) ctx.channel().attr(PgsqlConstants.SESSION_KEY).get();
         return pgsqlSession.getSession();
     }
 
     private Mode getProcessingMode(ChannelHandlerContext ctx, boolean wholeDataset, Operation operation) {
-        PgsqlConfiguration configuration = ctx.channel().attr(PgsqlConstants.CONFIGURATION_KEY).get();
+        Configuration configuration = ctx.channel().attr(PgsqlConstants.CONFIGURATION_KEY).get();
         return configuration.getProcessingMode(wholeDataset, operation);
     }
 
     private ProtocolService getProtocolService(ChannelHandlerContext ctx) {
-        PgsqlConfiguration configuration = ctx.channel().attr(PgsqlConstants.CONFIGURATION_KEY).get();
+        Configuration configuration = ctx.channel().attr(PgsqlConstants.CONFIGURATION_KEY).get();
         return configuration.getProtocolService();
     }
 

@@ -1,56 +1,28 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql;
 
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-
-import eu.clarussecure.proxy.spi.protocol.Configuration;
-import eu.clarussecure.proxy.spi.protocol.Protocol;
+import eu.clarussecure.proxy.protocol.plugins.tcp.TCPServer;
 import eu.clarussecure.proxy.spi.protocol.ProtocolCapabilities;
+import eu.clarussecure.proxy.spi.protocol.ProtocolExecutor;
 
-public class PgsqlProtocol implements Protocol {
+public class PgsqlProtocol extends ProtocolExecutor {
 
-    private static class CapabilitiesHelper {
-        private static final PgsqlCapabilities INSTANCE = new PgsqlCapabilities();
+    private static class Helper {
+        private static final PgsqlCapabilities CAPABILITIES = new PgsqlCapabilities();
+        private static final PgsqlConfiguration CONFIGURATION = new PgsqlConfiguration(CAPABILITIES);
     }
 
     @Override
     public ProtocolCapabilities getCapabilities() {
-        return CapabilitiesHelper.INSTANCE;
-    }
-
-    private final PgsqlConfiguration configuration = new PgsqlConfiguration(CapabilitiesHelper.INSTANCE);
-
-    private Future<Void> future;
-
-    @Override
-    public Configuration getConfiguration() {
-        return configuration;
+        return Helper.CAPABILITIES;
     }
 
     @Override
-    public void start() {
-        PgsqlServer pgsqlServer = new PgsqlServer((PgsqlConfiguration) getConfiguration());
-        try {
-            future = Executors.newSingleThreadExecutor().submit(pgsqlServer);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+    public PgsqlConfiguration getConfiguration() {
+        return Helper.CONFIGURATION;
     }
 
     @Override
-    public void sync() {
-        try {
-            future.get();
-        } catch (ExecutionException | InterruptedException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        }
+    protected TCPServer<FrontendSidePipelineInitializer> buildServer() {
+        return new TCPServer<>(getConfiguration(), FrontendSidePipelineInitializer.class);
     }
-
-    @Override
-    public void stop() {
-        future.cancel(true);
-    }
-
 }

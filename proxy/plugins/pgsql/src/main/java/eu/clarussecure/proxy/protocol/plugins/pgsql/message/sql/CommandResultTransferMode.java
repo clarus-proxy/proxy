@@ -1,21 +1,21 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql;
 
-import eu.clarussecure.proxy.spi.CString;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlCommandResultMessage;
 
 public class CommandResultTransferMode {
-    private CString newDetails;
+    private PgsqlCommandResultMessage.Details<?> newDetails;
     private TransferMode transferMode;
 
-    public CommandResultTransferMode(CString newDetails, TransferMode transferMode) {
+    public CommandResultTransferMode(PgsqlCommandResultMessage.Details<?> newDetails, TransferMode transferMode) {
         this.newDetails = newDetails;
         this.transferMode = transferMode;
     }
 
-    public CString getNewDetails() {
+    public PgsqlCommandResultMessage.Details<?> getNewDetails() {
         return newDetails;
     }
 
-    public void setNewDetails(CString newDetails) {
+    public void setNewDetails(PgsqlCommandResultMessage.Details<?> newDetails) {
         this.newDetails = newDetails;
     }
 

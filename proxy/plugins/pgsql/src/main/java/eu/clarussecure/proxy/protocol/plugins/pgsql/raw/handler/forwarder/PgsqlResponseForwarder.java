@@ -1,28 +1,17 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.forwarder;
 
-import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlConfiguration;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlConstants;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlSession;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.PgsqlRawPart;
+import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
+import eu.clarussecure.proxy.protocol.plugins.tcp.handler.forwarder.ServerMessageForwarder;
 import io.netty.channel.ChannelHandlerContext;
 
-public class PgsqlResponseForwarder extends PgsqlRawPartForwarder {
-
-    public PgsqlResponseForwarder() {
-        super(false);
-    }
+public class PgsqlResponseForwarder extends ServerMessageForwarder<PgsqlRawPart> {
 
     @Override
-    public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        if (LOGGER.isDebugEnabled()) {
-            PgsqlConfiguration configuration = ctx.channel().attr(PgsqlConstants.CONFIGURATION_KEY).get();
-            LOGGER.debug("{} connection to {} completed", direction, configuration.getServerEndpoint());
-        }
-        PgsqlSession session = ctx.channel().attr(PgsqlConstants.SESSION_KEY).get();
-        sinkChannel = session.getClientSideChannel();
-        ctx.channel().config().setAutoRead(true);
-        sinkChannel.config().setAutoRead(true);
-        super.channelActive(ctx);
-        LOGGER.info("Intercepting traffic between {} and {}", session.getClientSideChannel().remoteAddress(), ctx.channel().remoteAddress());
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        PgsqlSession session = (PgsqlSession) ctx.channel().attr(TCPConstants.SESSION_KEY).get();
+        session.getSession().release();
+        super.channelInactive(ctx);
     }
-
 }

@@ -1,9 +1,8 @@
-package eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.forwarder;
+package eu.clarussecure.proxy.protocol.plugins.tcp.handler.forwarder;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.PgsqlRawPart;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFutureListener;
@@ -11,22 +10,22 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.util.ReferenceCountUtil;
 
-public class PgsqlRawPartForwarder extends SimpleChannelInboundHandler<PgsqlRawPart> {
+public class MessageForwarder<I> extends SimpleChannelInboundHandler<I> {
 
-    protected static final Logger LOGGER = LoggerFactory.getLogger(PgsqlRawPartForwarder.class);
+    protected static final Logger LOGGER = LoggerFactory.getLogger(MessageForwarder.class);
 
     protected Channel sinkChannel;
 
     protected String direction;
 
-    public PgsqlRawPartForwarder(boolean frontend) {
-        this.direction = frontend ? "(F->B)" : "(F<-B)";
+    public MessageForwarder(boolean client) {
+        this.direction = client ? "(C->S)" : "(C<-S)";
     }
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, PgsqlRawPart msg) throws Exception {
+    protected void channelRead0(ChannelHandlerContext ctx, I msg) throws Exception {
         if (sinkChannel != null && sinkChannel.isActive()) {
-            LOGGER.trace("{} Forward raw message part: {} ", direction, msg);
+            LOGGER.trace("{} Forward message: {} ", direction, msg);
             ReferenceCountUtil.retain(msg);
             sinkChannel.writeAndFlush(msg);
         }

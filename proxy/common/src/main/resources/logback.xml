@@ -21,7 +21,9 @@
     <logger name="eu.clarussecure.proxy" level="INFO" />
 <!-- <logger name="eu.clarussecure.proxy.protocol.plugins.pgsql" level="DEBUG" /> -->
 <!-- <logger name="eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.forwarder" level="TRACE" /> -->
-    <logger name="eu.clarussecure.dataoperations.anonymization" level="DEBUG" />
+<!-- <logger name="eu.clarussecure.proxy.protocol.plugins.pgsql.message" level="DEBUG" /> -->
+<!-- <logger name="eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql" level="TRACE" /> -->
+<!-- <logger name="eu.clarussecure.dataoperations.anonymization" level="DEBUG" /> -->
     <root level="INFO">
         <appender-ref ref="STDOUT" />
     </root>

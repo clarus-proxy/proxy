@@ -1,4 +1,4 @@
-package eu.clarussecure.proxy.protocol.plugins.pgsql.buffer;
+package eu.clarussecure.proxy.spi.buffer;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
@@ -50,7 +50,7 @@ public class SynchronizedCompositeByteBuf extends CompositeByteBuf implements Co
 
     @Override
     public synchronized CompositeByteBuf addComponent(boolean increaseWriterIndex, ByteBuf buffer) {
-        CompositeByteBuf bytebuf = super.addComponent(increaseWriterIndex, buffer);
+        CompositeByteBuf bytebuf = super.addComponent(increaseWriterIndex, SynchonizedByteBuf.wrap(buffer));
         notifyAll();
         return bytebuf;
     }

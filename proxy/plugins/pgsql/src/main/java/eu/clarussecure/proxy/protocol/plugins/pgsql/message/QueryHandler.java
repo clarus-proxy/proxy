@@ -1,25 +1,20 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql.message;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlConstants;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlSession;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlUtilities;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.buffer.MutableByteBufInputStream;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.CommandProcessor;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.StatementTransferMode;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.TransferMode;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.writer.PgsqlMessageWriter;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.DefaultLastPgsqlRawContent;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.PgsqlMessageHandler;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.PgsqlRawContent;
 import eu.clarussecure.proxy.spi.CString;
+import eu.clarussecure.proxy.spi.buffer.MutableByteBufInputStream;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.ChannelHandlerContext;
 
@@ -28,14 +23,14 @@ public class QueryHandler extends PgsqlMessageHandler<PgsqlQueryMessage> {
     private static final Logger LOGGER = LoggerFactory.getLogger(QueryHandler.class);
 
     public QueryHandler() {
-        super(PgsqlSimpleQueryMessage.TYPE);
+        super(PgsqlSimpleQueryMessage.class);
     }
 
-//    @Override
-//    protected boolean isStreamingSupported() {
-//        // don't forget to configure PgsqlPartAccumulator in the pipeline
-//        return true;
-//    }
+    @Override
+    protected boolean isStreamingSupported() {
+        // don't forget to configure PgsqlRawPartAccumulator in the pipeline
+        return true;
+    }
 
     @Override
     protected void decodeStream(ChannelHandlerContext ctx, byte type, MutableByteBufInputStream in) throws IOException {
@@ -53,65 +48,50 @@ public class QueryHandler extends PgsqlMessageHandler<PgsqlQueryMessage> {
     }
 
     private void simpleQueryDecodeStream(ChannelHandlerContext ctx, MutableByteBufInputStream in) throws IOException {
-//        ByteBufAllocator allocator = new RecyclerByteBufAllocator(in.buffer(), ctx);
-        ByteBufAllocator allocator = ctx.alloc();
         while (in.readableBytes() > 0) {
-            // Read statement
-            ByteBuf buffer = in.readUntil((byte) ';', (byte) 0);
-            int extra = 0;
-            in.mark(0);
-            while (in.readableBytes() > 0) {
-                byte b = in.readByte();
-                if (b != '\r' && b != '\n' && b != 0) {
-                    break;
-                } else {
-                    extra ++;
+            CString newQuery = null;
+            // Determinate the length of the next statement. Wait that enough bytes are available to have a complete statement. However, the separator char is not required
+            int len = nextStatementLength(in, false, () -> in.readableBytes() > 0);
+            do {
+                // Read next statement
+                ByteBuf buffer = in.readFully(len);
+                boolean lastStatement = in.readableBytes() == 0;
+                int strlen = lastStatement ? buffer.capacity() - 1 : buffer.capacity();
+                CString statement = CString.valueOf(buffer, strlen);
+                // Process statement
+                newQuery = process(ctx, newQuery, statement, lastStatement);
+                // Determinate the length of the next statement. Break the loop if there is not enough bytes for the next statement. The separator char is used to determinate end of the statement
+                len = nextStatementLength(in, true, () -> in.available() > 0);
+                if (len == -1 && in.available() > 0 && in.available() == in.readableBytes()) {
+                    len = in.available();
                 }
-            }
-            in.reset();
-            if (extra > 0) {
-                buffer = allocator.compositeBuffer(2).addComponent(true, buffer).addComponent(true, in.readFully(extra));
-            }
-            CString statement = CString.valueOf(buffer);
-            boolean lastStatement = in.readableBytes() == 0;
-            // Process query
-            StatementTransferMode transferMode = process(ctx, statement, lastStatement, true);
-            switch (transferMode.getTransferMode()) {
-            case FORWARD:
-                PgsqlSimpleQueryMessage newMsg = new PgsqlSimpleQueryMessage(transferMode.getNewStatements());
-                PgsqlRawContent rawMsg = new DefaultLastPgsqlRawContent(encode(ctx, newMsg, allocator));
+            } while (len > 0);
+            if (newQuery != null && !newQuery.isEmpty()) {
+                if (in.readableBytes() > 0) {
+                    // Ignore ready for query from backend
+                    getSession(ctx).incrementeReadyForQueryToIgnore();
+                }
+                // Send query to backend
+                PgsqlSimpleQueryMessage newMsg = new PgsqlSimpleQueryMessage(newQuery);
+                PgsqlRawContent rawMsg = new DefaultLastPgsqlRawContent(encode(ctx, newMsg, allocate(ctx, newMsg, newQuery.getByteBuf())));
                 ctx.fireChannelRead(rawMsg);
-                break;
-            case FORGET:
-                if (lastStatement && transferMode.getResponse() != null) {
-                    sendCommandCompleteResponse(ctx, transferMode.getResponse());
-                }
-                break;
-            case DENY:
-                sendErrorResponse(ctx, transferMode.getResponse());
-                sendReadyForQueryResponse(ctx);
-                return;
-            default:
-                // Should not occur
-                throw new IllegalArgumentException("Invalid value for enum " + transferMode.getTransferMode().getClass().getSimpleName() + ": " + transferMode.getTransferMode());
             }
         }
     }
 
-    private StatementTransferMode process(ChannelHandlerContext ctx, CString query, boolean lastStatement, boolean streaming) throws IOException {
-        return getCommandProcessor(ctx).processStatement(ctx, query, lastStatement, streaming);
-    }
+    private CString process(ChannelHandlerContext ctx, CString newQuery, CString statement, boolean lastStatement) throws IOException {
+        CString newStatements = process(ctx, statement, lastStatement);
 
-    @Override
-    protected PgsqlQueryMessage decode(ChannelHandlerContext ctx, byte type, ByteBuf content) throws IOException {
-        switch (type) {
-        case PgsqlSimpleQueryMessage.TYPE:
-            // Read query
-            CString query = PgsqlUtilities.getCString(content);
-            return new PgsqlSimpleQueryMessage(query);
-        default:
-            throw new IllegalArgumentException("type");
+        if (newStatements != null && !newStatements.isEmpty()) {
+            if (newQuery == null) {
+                newQuery = CString.valueOf(ctx.alloc().compositeBuffer(Integer.MAX_VALUE));
+            }
+            if (newStatements == statement) {
+                newStatements.retain();
+            }
+            newQuery.append(newStatements);
         }
+        return newQuery;
     }
 
     @Override
@@ -123,45 +103,22 @@ public class QueryHandler extends PgsqlMessageHandler<PgsqlQueryMessage> {
             LOGGER.debug("Simple query: {}", query);
             CString newQuery = query;
             int from = 0;
-            boolean inQuote = false;
-            boolean inSingleQuote = false;
-            for (int i = 0; newQuery != null && i < query.length(); i ++) {
-                if (query.charAt(i) == '"' && !inSingleQuote) {
-                    if (inQuote) {
-                        if ((i > 0 && query.charAt(i - 1) != '\\' && query.charAt(i - 1) != '"') && (i + 1 < query.length() && query.charAt(i + 1) != '"')) {
-                            inQuote = false;
-                        }
-                    } else {
-                        inQuote = true;
-                    }
-                } else if (query.charAt(i) == '\'' && !inQuote) {
-                    if (inSingleQuote) {
-                        if ((i > 0 && query.charAt(i - 1) != '\\' && query.charAt(i - 1) != '\'') && (i + 1 < query.length() && query.charAt(i + 1) != '\'')) {
-                            inSingleQuote = false;
-                        }
-                    } else {
-                        inSingleQuote = true;
-                    }
-                } else if (query.charAt(i) == ';' && !inQuote && !inSingleQuote) {
-                    while (i + 1 < query.length() && (query.charAt(i + 1) == '\r' || query.charAt(i + 1) == '\n')) {
-                        i ++;
-                    }
-                    if (i + 1 == query.length()) {
-                        i ++;
-                    }
-                    CString statement = query.subSequence(from, i + 1);
+            try (MutableByteBufInputStream in = new MutableByteBufInputStream(query.getByteBuf())) {
+                while (newQuery != null && in.readableBytes() > 0) {
+                    // Determinate the length of the next statement. The separator char is not required
+                    int len = nextStatementLength(in, false, () -> in.readableBytes() > 0);
+                    // Read next statement
+                    ByteBuf buffer = in.readFully(len);
+                    boolean lastStatement = in.readableBytes() == 0;
+                    int strlen = lastStatement ? buffer.capacity() - 1 : buffer.capacity();
+                    CString statement = CString.valueOf(buffer, strlen);
                     // Process statement
-                    newQuery = process(ctx, query, newQuery, from, statement, i == query.length());
-                    from = i + 1;
+                    newQuery = process(ctx, query, newQuery, from, statement, lastStatement);
+                    from += len;
                 }
             }
-            if (newQuery != null && from < query.length()) {
-                CString statement = query.subSequence(from, query.clen());
-                newQuery = process(ctx, query, newQuery, from, statement, true);
-            }
             if (newQuery != query) {
-                if (newQuery == null || newQuery.isEmpty()) {
-                    sendReadyForQueryResponse(ctx);
+                if (newQuery == null) {
                     newMsg = null;
                     if (LOGGER.isTraceEnabled()) {
                         LOGGER.trace("Query dropped");
@@ -169,10 +126,14 @@ public class QueryHandler extends PgsqlMessageHandler<PgsqlQueryMessage> {
                 } else {
                     newMsg = new PgsqlSimpleQueryMessage(newQuery);
                     if (LOGGER.isTraceEnabled()) {
-                        ByteBuf bytes = query.getByteBuf(ctx.alloc());
-                        LOGGER.trace("Query modified: original was memory={} content={}", bytes.hasMemoryAddress() ? bytes.memoryAddress() : -1, ByteBufUtil.hexDump(bytes, 0, bytes.capacity()));
-                        bytes = newQuery.getByteBuf(ctx.alloc());
-                        LOGGER.trace("Query modified: new is memory={} content={}", bytes.hasMemoryAddress() ? bytes.memoryAddress() : -1, ByteBufUtil.hexDump(bytes, 0, bytes.capacity()));
+                        ByteBuf bytes = query.getByteBuf();
+                        LOGGER.trace("Query modified: original was memory={} content={}",
+                                bytes.hasMemoryAddress() ? bytes.memoryAddress() : -1,
+                                ByteBufUtil.hexDump(bytes, 0, bytes.capacity()));
+                        bytes = newQuery.getByteBuf();
+                        LOGGER.trace("Query modified: new is memory={} content={}",
+                                bytes.hasMemoryAddress() ? bytes.memoryAddress() : -1,
+                                ByteBufUtil.hexDump(bytes, 0, bytes.capacity()));
                     }
                 }
             }
@@ -183,10 +144,126 @@ public class QueryHandler extends PgsqlMessageHandler<PgsqlQueryMessage> {
         return newMsg;
     }
 
-    private CString process(ChannelHandlerContext ctx, CString query, CString newQuery, int from, CString statement, boolean lastStatement)
-            throws IOException {
+    private CString process(ChannelHandlerContext ctx, CString query, CString newQuery, int from, CString statement,
+            boolean lastStatement) throws IOException {
+        CString newStatements = process(ctx, statement, lastStatement);
+
+        if (newStatements != statement || newQuery != query) {
+            if (newQuery == query) {
+                if (newStatements == null) {
+                    newQuery = null;
+                } else {
+                    newQuery = CString.valueOf(ctx.alloc().compositeBuffer(Integer.MAX_VALUE));
+                    if (from > 0) {
+                        CString cs = query.subSequence(0, from);
+                        cs.retain();
+                        newQuery.append(cs);
+                    }
+                }
+            }
+            if (newStatements != null && !newStatements.isEmpty()) {
+                if (newStatements == statement) {
+                    newStatements.retain();
+                }
+                newQuery.append(newStatements);
+            }
+        }
+        return newQuery;
+    }
+
+    private interface StreamEvaluator {
+        boolean available() throws IOException;
+    }
+
+    private int nextStatementLength(InputStream in, boolean separatorCharRequired, StreamEvaluator stream) throws IOException {
+        boolean inQuote = false;
+        boolean inSingleQuote = false;
+        int len = -1;
+        int index = 0;
+        char cp = 0;
+        Character ci = null;
+        in.mark(0);
+        if (stream.available()) {
+            ci = Character.valueOf((char) in.read());
+            index ++;
+        }
+        while (ci != null) {
+            if (ci == '"' && !inSingleQuote) {
+                if (inQuote) {
+                    if ((index > 0) && stream.available()) {
+                        char cn = (char) in.read();
+                        index ++;
+                        if ((cp != '\\' && cp != '"') && cn != '"') {
+                            inQuote = false;
+                        }
+                        cp = ci;
+                        ci = Character.valueOf(cn);
+                    }
+                } else {
+                    inQuote = true;
+                    cp = ci;
+                    if (stream.available()) {
+                        ci = Character.valueOf((char) in.read());
+                        index ++;
+                    } else {
+                        ci = null;
+                    }
+                }
+            } else if (ci == '\'' && !inQuote) {
+                if (inSingleQuote) {
+                    if ((index > 0) && stream.available()) {
+                        char cn = (char) in.read();
+                        index ++;
+                        if ((cp != '\\' && cp != '\'') && cn != '\'') {
+                            inSingleQuote = false;
+                        }
+                        cp = ci;
+                        ci = Character.valueOf(cn);
+                    }
+                } else {
+                    inSingleQuote = true;
+                    cp = ci;
+                    if (stream.available()) {
+                        ci = Character.valueOf((char) in.read());
+                        index ++;
+                    } else {
+                        ci = null;
+                    }
+                }
+            } else if (ci == ';' && !inQuote && !inSingleQuote) {
+                int rewind = 0;
+                while (stream.available()) {
+                    ci = Character.valueOf((char) in.read());
+                    index ++;
+                    if (ci != '\r' && ci != '\n') {
+                        if (ci != 0) {
+                            rewind = 1;
+                        }
+                        break;
+                    }
+                }
+                len = index - rewind;
+                break;
+            } else {
+                cp = ci;
+                if (stream.available()) {
+                    ci = Character.valueOf((char) in.read());
+                    index ++;
+                } else {
+                    ci = null;
+                }
+            }
+        }
+        if (len == -1 && !separatorCharRequired) {
+            len = index;
+        }
+        in.reset();
+        return len;
+    }
+
+    private CString process(ChannelHandlerContext ctx, CString statement, boolean lastStatement) throws IOException {
         CString newStatements;
-        StatementTransferMode transferMode = process(ctx, statement, lastStatement, false);
+        StatementTransferMode transferMode = getEventProcessor(ctx).processStatement(ctx, statement, lastStatement);
         switch (transferMode.getTransferMode()) {
         case FORWARD:
             newStatements = transferMode.getNewStatements();
@@ -194,8 +271,10 @@ public class QueryHandler extends PgsqlMessageHandler<PgsqlQueryMessage> {
         case FORGET:
             if (lastStatement && transferMode.getResponse() != null) {
                 sendCommandCompleteResponse(ctx, transferMode.getResponse());
+                newStatements = null;
+            } else {
+                newStatements = CString.valueOf("");
             }
-            newStatements = null;
             break;
         case DENY:
             sendErrorResponse(ctx, transferMode.getResponse());
@@ -203,49 +282,20 @@ public class QueryHandler extends PgsqlMessageHandler<PgsqlQueryMessage> {
             break;
         default:
             // Should not occur
-            throw new IllegalArgumentException("Invalid value for enum " + transferMode.getTransferMode().getClass().getSimpleName() + ": " + transferMode.getTransferMode());
+            throw new IllegalArgumentException(
+                    "Invalid value for enum " + transferMode.getTransferMode().getClass().getSimpleName() + ": "
+                            + transferMode.getTransferMode());
         }
-
-        if (newStatements != statement || newQuery != query) {
-            if (newQuery == query) {
-                if (transferMode.getTransferMode() == TransferMode.DENY) {
-                    newQuery = null;
-                } else {
-                    if (from > 0) {
-                        newQuery = CString.valueOf(ctx.alloc().buffer(query.clen()));
-                        newQuery.append(query, from, ctx.alloc());
-                    } else {
-                        newQuery = CString.valueOf("");
-                    }
-                }
-            }
-            if (newStatements != null) {
-                if (newQuery.isEmpty()) {
-                    newQuery = CString.valueOf(ctx.alloc().buffer(query.clen() - from));
-                }
-                newQuery.append(newStatements, ctx.alloc());
-            }
+        if (newStatements == null) {
+            sendReadyForQueryResponse(ctx);
         }
-        return newQuery;
+        return newStatements;
     }
 
     private void sendCommandCompleteResponse(ChannelHandlerContext ctx, CString response) throws IOException {
         PgsqlCommandCompleteMessage msg = new PgsqlCommandCompleteMessage(response);
-        // Compute total length
-        int total = msg.getHeaderSize() + msg.getTag().clen();
-        // Allocate buffer
-        ByteBuf buffer = ctx.alloc().buffer(total);
-        // Write header (type + length)
-        buffer.writeByte(msg.getType());
-        // Compute length
-        int len = total - Byte.BYTES;
-        buffer.writeInt(len);
-        // Write tag
-        ByteBuf value = msg.getTag().getByteBuf(ctx.alloc());
-        buffer.writeBytes(value);
-        value.release();
-        PgsqlRawContent content = new DefaultLastPgsqlRawContent(buffer);
-        ctx.channel().writeAndFlush(content);
+        // Send response
+        sendResponse(ctx, msg);
     }
 
     private void sendErrorResponse(ChannelHandlerContext ctx, CString errorMsg) throws IOException {
@@ -253,79 +303,29 @@ public class QueryHandler extends PgsqlMessageHandler<PgsqlQueryMessage> {
         fields.put((byte) 'S', CString.valueOf("FATAL"));
         fields.put((byte) 'M', errorMsg);
         PgsqlErrorMessage msg = new PgsqlErrorMessage(fields);
-        // Compute total length
-        int total = msg.getHeaderSize();
-        for (Map.Entry<Byte, CString> field : msg.getFields().entrySet()) {
-            total += Byte.BYTES;
-            total += field.getValue().clen();
-        }
-        total += Byte.BYTES;
-        // Allocate buffer
-        ByteBuf buffer = ctx.alloc().buffer(total);
-        // Write header (type + length)
-        buffer.writeByte(msg.getType());
-        // Compute length
-        int len = total - Byte.BYTES;
-        buffer.writeInt(len);
-        // Write fields
-        for (Map.Entry<Byte, CString> field : msg.getFields().entrySet()) {
-            byte key = field.getKey().byteValue();
-            ByteBuf value = field.getValue().getByteBuf(ctx.alloc());
-            buffer.writeByte(key);
-            buffer.writeBytes(value);
-            value.release();
-        }
-        buffer.writeByte(0);
-        PgsqlRawContent content = new DefaultLastPgsqlRawContent(buffer);
-        ctx.channel().writeAndFlush(content);
+        // Send response
+        sendResponse(ctx, msg);
     }
 
     private void sendReadyForQueryResponse(ChannelHandlerContext ctx) throws IOException {
         PgsqlReadyForQueryMessage msg = new PgsqlReadyForQueryMessage((byte) 'T');
+        // Send response
+        sendResponse(ctx, msg);
+    }
+
+    private <M extends PgsqlQueryResponseMessage> void sendResponse(ChannelHandlerContext ctx, M msg) throws IOException {
+        // Resolve writer
+        PgsqlMessageWriter<M> writer = getWriter(ctx, msg.getClass());
         // Compute total length
-        int total = msg.getHeaderSize() + Byte.BYTES;
+        int total = writer.length(msg);
         // Allocate buffer
         ByteBuf buffer = ctx.alloc().buffer(total);
-        // Write header (type + length)
-        buffer.writeByte(msg.getType());
-        // Compute length
-        int len = total - Byte.BYTES;
-        buffer.writeInt(len);
-        // Write tag
-        buffer.writeByte(msg.getTransactionStatus());
+        // Encode
+        buffer = writer.write(msg, buffer);
+        // Build message
         PgsqlRawContent content = new DefaultLastPgsqlRawContent(buffer);
+        // Send message
         ctx.channel().writeAndFlush(content);
-    }
-
-    @Override
-    protected ByteBuf encode(ChannelHandlerContext ctx, PgsqlQueryMessage msg, ByteBufAllocator allocator) throws IOException {
-        if (msg instanceof PgsqlSimpleQueryMessage) {
-            // Compute total length
-            int total = msg.getHeaderSize() + msg.getQuery().clen();
-            // Allocate buffer
-            ByteBuf buffer = allocator.buffer(total);
-            // Write header (type + length)
-            buffer.writeByte(msg.getType());
-            // Compute length
-            int len = total - Byte.BYTES;
-            buffer.writeInt(len);
-            // Write query
-            ByteBuf value = msg.getQuery().getByteBuf(ctx.alloc());
-            buffer.writeBytes(value);
-            value.release();
-            // Fix zero byte if necessary
-            if (buffer.writableBytes() == 1) {
-                buffer.writeByte(0);
-            }
-            return buffer;
-        } else {
-            throw new IllegalArgumentException("msg");
-        }
-    }
-
-    private CommandProcessor getCommandProcessor(ChannelHandlerContext ctx) {
-        PgsqlSession session = ctx.channel().attr(PgsqlConstants.SESSION_KEY).get();
-        return session.getCommandProcessor();
     }
 
 }

@@ -9,6 +9,7 @@ dependencies {
 
     // CLARUS
     compile project(':proxy-common')
+    compile project(':proxy-plugin-tcp')
 
     // Transport
     compile group: 'io.netty', name: 'netty-all', version: '4.1.4.Final'

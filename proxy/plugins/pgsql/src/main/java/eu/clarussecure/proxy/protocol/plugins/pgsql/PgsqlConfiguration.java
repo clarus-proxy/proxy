@@ -9,8 +9,11 @@ public class PgsqlConfiguration extends Configuration {
 
     public static final int DEFAULT_LISTEN_PORT = 5432;
 
+    public static final int DEFAULT_NB_OF_PARSER_THREADS = Runtime.getRuntime().availableProcessors();
+
     public PgsqlConfiguration(ProtocolCapabilities capabilities) {
         super(capabilities);
+        nbParserThreads = DEFAULT_NB_OF_PARSER_THREADS;
     }
 
     @Override

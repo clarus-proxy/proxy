@@ -29,13 +29,21 @@ public interface Configurable {
 
     void setServerEndpoints(Set<InetSocketAddress> serverEndpoints);
 
-    int getNbAcceptorThreads();
+    int getNbListenThreads();
 
-    void setNbAcceptorThreads(int nThreads);
+    void setNbListenThreads(int nThreads);
 
-    int getMessagePartMaxLength();
+    int getNbSessionThreads();
 
-    void setMessagePartMaxLength(int maxlen);
+    void setNbSessionThreads(int nThreads);
+    
+    int getNbParserThreads();
+
+    void setNbParserThreads(int nThreads);
+
+    int getFramePartMaxLength();
+
+    void setFramePartMaxLength(int maxlen);
 
     void registerDataTypes();
 

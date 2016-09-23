@@ -1,6 +1,5 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql;
 
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 
 import eu.clarussecure.proxy.spi.CString;
@@ -15,27 +14,8 @@ public class PgsqlUtilities {
         if (buffer != null) {
             int len = buffer.bytesBefore((byte)0);
             if (len > -1) {
-                str = CString.valueOf(buffer.readSlice(len + 1));
+                str = CString.valueOf(buffer.readSlice(len + 1), len);
             }
-        }
-        return str;
-    }
-
-    public static CharSequence getCharSequence(ByteBuf byteBuf) throws CharacterCodingException {
-        CharSequence str = null;
-        
-        if (byteBuf != null) {
-            int len = byteBuf.bytesBefore((byte)0);
-            if (len > 0) {
-//                str = byteBuf.readCharSequence(len, Charset.forName("ISO-8859-1"));
-                str = byteBuf.nioBuffer(byteBuf.readerIndex(), len).asCharBuffer();
-//                Charset charset = Charset.forName("ISO-8859-1");
-//                CharsetDecoder decoder = charset.newDecoder();
-//                str = decoder.decode(byteBuf.nioBuffer(byteBuf.readerIndex(), len));
-                byteBuf.skipBytes(len);
-            }
-            byteBuf.readByte();
-            byteBuf.release();
         }
         return str;
     }

@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations
  * under the License.
  */
-package eu.clarussecure.proxy.protocol.plugins.pgsql.buffer;
+package eu.clarussecure.proxy.spi.buffer;
 
 import java.io.DataInput;
 import java.io.DataInputStream;
@@ -68,9 +68,6 @@ public class MutableByteBufInputStream extends InputStream implements DataInput 
         if (buffer == null) {
             throw new NullPointerException("buffer");
         }
-//        if (!(buffer instanceof ConcurrentByteBuf)) {
-//            throw new IllegalArgumentException("buffer must implement " + ConcurrentByteBuf.class.getSimpleName());
-//        }
         if (length < 0) {
             throw new IllegalArgumentException("length: " + length);
         }
@@ -98,7 +95,7 @@ public class MutableByteBufInputStream extends InputStream implements DataInput 
 
     @Override
     public int available() throws IOException {
-        return Math.min(buffer.readableBytes(), endIndex - buffer.readerIndex());
+        return Math.min(buffer.readableBytes(), readableBytes());
     }
 
     @Override
@@ -201,10 +198,11 @@ public class MutableByteBufInputStream extends InputStream implements DataInput 
         do {
             checkAvailable(++n);
             ensureBufferIsReadable(n);
+            byte b = buffer.getByte(buffer.readerIndex() + n - 1);
             for (byte value : values) {
-                int l = buffer.bytesBefore(value);
-                if (l != -1 && (len == -1 || l < len)) {
-                    len = l;
+                len = b == value ? n - 1 : -1;
+                if (len != -1) {
+                    break;
                 }
             }
         } while (len == -1);
@@ -296,10 +294,12 @@ public class MutableByteBufInputStream extends InputStream implements DataInput 
     private void ensureBufferIsReadable(int n) throws IOException {
         while (buffer.readableBytes() < n) {
             synchronized(buffer) {
-                try {
-                    buffer.wait();
-                } catch (InterruptedException e) {
-                    throw new IOException(e);
+                if (buffer.readableBytes() < n) {
+                    try {
+                        buffer.wait();
+                    } catch (InterruptedException e) {
+                        throw new IOException(e);
+                    }
                 }
             }
         }

@@ -1,4 +1,4 @@
-package eu.clarussecure.proxy.protocol.plugins.pgsql.buffer;
+package eu.clarussecure.proxy.spi.buffer;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;

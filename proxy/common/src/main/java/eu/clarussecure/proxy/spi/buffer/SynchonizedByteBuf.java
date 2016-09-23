@@ -1,4 +1,4 @@
-package eu.clarussecure.proxy.protocol.plugins.pgsql.buffer;
+package eu.clarussecure.proxy.spi.buffer;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -70,7 +70,7 @@ public class SynchonizedByteBuf extends ByteBuf implements ConcurrentByteBuf {
     @SuppressWarnings("deprecation")
     @Override
     public synchronized ByteBuf order(ByteOrder endianness) {
-        return buf.order(endianness);
+        return wrap(buf.order(endianness));
     }
 
     @Override
@@ -80,7 +80,7 @@ public class SynchonizedByteBuf extends ByteBuf implements ConcurrentByteBuf {
 
     @Override
     public synchronized ByteBuf asReadOnly() {
-        return buf.asReadOnly();
+        return wrap(buf.asReadOnly());
     }
 
     @Override
@@ -598,17 +598,17 @@ public class SynchonizedByteBuf extends ByteBuf implements ConcurrentByteBuf {
 
     @Override
     public synchronized ByteBuf readBytes(int length) {
-        return buf.readBytes(length);
+        return wrap(buf.readBytes(length));
     }
 
     @Override
     public synchronized ByteBuf readSlice(int length) {
-        return buf.readSlice(length);
+        return wrap(buf.readSlice(length));
     }
 
     @Override
     public synchronized ByteBuf readRetainedSlice(int length) {
-        return buf.readRetainedSlice(length);
+        return wrap(buf.readRetainedSlice(length));
     }
 
     @Override
@@ -856,42 +856,42 @@ public class SynchonizedByteBuf extends ByteBuf implements ConcurrentByteBuf {
 
     @Override
     public synchronized ByteBuf copy() {
-        return buf.copy();
+        return wrap(buf.copy());
     }
 
     @Override
     public synchronized ByteBuf copy(int index, int length) {
-        return buf.copy(index, length);
+        return wrap(buf.copy(index, length));
     }
 
     @Override
     public synchronized ByteBuf slice() {
-        return buf.slice();
+        return wrap(buf.slice());
     }
 
     @Override
     public synchronized ByteBuf retainedSlice() {
-        return buf.retainedSlice();
+        return wrap(buf.retainedSlice());
     }
 
     @Override
     public synchronized ByteBuf slice(int index, int length) {
-        return buf.slice(index, length);
+        return wrap(buf.slice(index, length));
     }
 
     @Override
     public synchronized ByteBuf retainedSlice(int index, int length) {
-        return buf.retainedSlice(index, length);
+        return wrap(buf.retainedSlice(index, length));
     }
 
     @Override
     public synchronized ByteBuf duplicate() {
-        return buf.duplicate();
+        return wrap(buf.duplicate());
     }
 
     @Override
     public synchronized ByteBuf retainedDuplicate() {
-        return buf.retainedDuplicate();
+        return wrap(buf.retainedDuplicate());
     }
 
     @Override
