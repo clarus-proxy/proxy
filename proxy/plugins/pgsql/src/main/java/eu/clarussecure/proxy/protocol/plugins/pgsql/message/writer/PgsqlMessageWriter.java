@@ -78,8 +78,10 @@ public interface PgsqlMessageWriter<T extends PgsqlMessage> {
     default ByteBuf writeBytes(ByteBuf dst, ByteBuf src, boolean release) {
         boolean skipCopy = false;
         if (dst instanceof CompositeByteBuf) {
-            ByteBuf buffer = ((CompositeByteBuf)dst).internalComponentAtOffset(dst.writerIndex());
-            skipCopy = ByteBufUtilities.unwrap(buffer).unwrap() == ByteBufUtilities.unwrap(src);
+            ByteBuf buffer1 = ((CompositeByteBuf)dst).internalComponentAtOffset(dst.writerIndex());
+            buffer1 = ByteBufUtilities.unwrap(buffer1).unwrap();
+            ByteBuf buffer2 = ByteBufUtilities.unwrap(src);
+            skipCopy = buffer1 == buffer2 || buffer1 == buffer2.unwrap();
         } else {
             skipCopy = ByteBufUtilities.containsAt(dst, src, dst.writerIndex());
         }

@@ -2,6 +2,10 @@ package eu.clarussecure.proxy.spi;
 
 public class StringUtilities {
 
+    public static String toString(CharSequence cs) {
+        return cs == null ? null : cs.toString();
+    }
+
     public static String unquote(String str) {
         int length = str == null ? -1 : str.length();
         if (str == null || length == 0)

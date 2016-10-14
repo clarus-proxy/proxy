@@ -15,7 +15,7 @@ dependencies {
     compile group: 'io.netty', name: 'netty-all', version: '4.1.4.Final'
 
     // JSqlParser
-    compile group: 'com.github.jsqlparser', name: 'jsqlparser', version: '0.9.7-SNAPSHOT'
+    compile group: 'com.github.jsqlparser', name: 'jsqlparser', version: '0.9.6-CLARUS-SNAPSHOT'
 
     // PostgreSQL
     testCompile group: 'postgresql', name: 'postgresql', version: '9.1-901-1.jdbc4'

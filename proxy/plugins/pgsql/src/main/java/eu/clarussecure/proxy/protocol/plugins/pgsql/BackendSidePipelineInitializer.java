@@ -1,8 +1,10 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql;
 
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlCommandCompleteMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlDataRowMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlErrorMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlReadyForQueryMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlRowDescriptionMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.QueryResponseHandler;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.codec.PgsqlRawPartAggregator;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.codec.PgsqlRawPartCodec;
@@ -27,10 +29,10 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
         pipeline.addLast("PgsqlPartCodec", new PgsqlRawPartCodec(false, configuration.getFramePartMaxLength()));
         EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
         String messageProcessing = System.getProperty("pgsql.message.processing");
-        if (!(messageProcessing != null && ("0".equalsIgnoreCase(messageProcessing) || "no".equalsIgnoreCase(messageProcessing) || "off".equalsIgnoreCase(messageProcessing)))) {
-            pipeline.addLast("PgsqlPartAggregator", new PgsqlRawPartAggregator(PgsqlCommandCompleteMessage.TYPE, PgsqlErrorMessage.TYPE, PgsqlReadyForQueryMessage.TYPE));
+        if (!(messageProcessing != null && (Boolean.FALSE.toString().equalsIgnoreCase(messageProcessing) || "0".equalsIgnoreCase(messageProcessing) || "no".equalsIgnoreCase(messageProcessing) || "off".equalsIgnoreCase(messageProcessing)))) {
+            pipeline.addLast("PgsqlPartAggregator", new PgsqlRawPartAggregator(PgsqlRowDescriptionMessage.TYPE, PgsqlDataRowMessage.TYPE, PgsqlCommandCompleteMessage.TYPE, PgsqlErrorMessage.TYPE, PgsqlReadyForQueryMessage.TYPE));
             String queryProcessing = System.getProperty("pgsql.query.processing");
-            if (!(queryProcessing != null && ("0".equalsIgnoreCase(queryProcessing) || "no".equalsIgnoreCase(queryProcessing) || "off".equalsIgnoreCase(queryProcessing)))) {
+            if (!(queryProcessing != null && (Boolean.FALSE.toString().equalsIgnoreCase(queryProcessing) || "0".equalsIgnoreCase(queryProcessing) || "no".equalsIgnoreCase(queryProcessing) || "off".equalsIgnoreCase(queryProcessing)))) {
                 pipeline.addLast(parserGroup, "QueryResultHandler", new QueryResponseHandler());
             }
         }

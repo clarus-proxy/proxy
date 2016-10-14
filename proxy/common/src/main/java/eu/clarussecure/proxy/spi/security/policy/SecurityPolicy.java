@@ -4,6 +4,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -16,6 +18,9 @@ import org.xml.sax.SAXException;
 
 public class SecurityPolicy {
 
+    public static final String DATA_ELT = "data";
+    public static final String ATTRIBUTE_ELT = "attribute";
+    public static final String NAME_ATTR = "name";
     public static final String PROTOCOL_ELT = "protocol";
     public static final String PLUGIN_ATTR = "plugin";
     public static final String PORT_ATTR = "listen";
@@ -40,6 +45,25 @@ public class SecurityPolicy {
 
     public Document getDocument() {
         return document;
+    }
+
+    public String[] getDataIds() {
+        Node root = document.getFirstChild();
+        Node data = findSubNode(DATA_ELT, root);
+        List<Node> attributes = findSubNodes(ATTRIBUTE_ELT, data);
+        if (attributes != null) {
+            List<String> names = new ArrayList<>(attributes.size());
+            for (Node attribute : attributes) {
+                if (attribute != null) {
+                    Node name = attribute.getAttributes().getNamedItem(NAME_ATTR);
+                    if (name != null) {
+                        names.add(name.getNodeValue());
+                    }
+                }
+            }
+            return names.toArray(new String[names.size()]);
+        }
+        return null;
     }
 
     public String getProtocolPluginName() {
@@ -115,6 +139,40 @@ public class SecurityPolicy {
             }
         }
         return null;
+    }
+
+    /**
+     * Find the named subnode in a node's sublist.
+     * <ul>
+     * <li>Ignores comments and processing instructions.
+     * <li>Ignores TEXT nodes (likely to exist and contain
+     *         ignorable whitespace, if not validating.
+     * <li>Ignores CDATA nodes and EntityRef nodes.
+     * <li>Examines element nodes to find one with
+     *        the specified name.
+     * </ul>
+     * @param name  the tag name for the element to find
+     * @param node  the element node to start searching from
+     * @return the Node found
+     */
+    public List<Node> findSubNodes(String name, Node node) {
+        if (node.getNodeType() != Node.ELEMENT_NODE) {
+            System.err.println("Error: Search node not of element type");
+            System.exit(22);
+        }
+    
+        if (! node.hasChildNodes()) return null;
+    
+        NodeList list = node.getChildNodes();
+        List<Node> nodes = new ArrayList<>();
+        for (int i=0; i < list.getLength(); i++) {
+            Node subnode = list.item(i);
+            if (subnode.getNodeType() == Node.ELEMENT_NODE) {
+               if (subnode.getNodeName().equals(name)) 
+                   nodes.add(subnode);
+            }
+        }
+        return nodes;
     }
 
 }

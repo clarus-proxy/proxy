@@ -18,7 +18,7 @@ public class SimpleSqlParserUtil {
             end = nextTokenEndPosition(statement, start);
             CString nextStmtToken = statement.subSequence(start, end);
             final int index = i ++;
-            StatementType[] res = Arrays.stream(types).filter(type -> nextStmtToken.equals(getToken(type, index))).toArray(StatementType[]::new);
+            StatementType[] res = Arrays.stream(types).filter(type -> nextStmtToken.equalsIgnoreCase(getToken(type, index))).toArray(StatementType[]::new);
             if (res.length == 0) {
                 res = Arrays.stream(types).filter(type -> getToken(type, index) == null).toArray(StatementType[]::new);
             }
@@ -34,7 +34,7 @@ public class SimpleSqlParserUtil {
         int i = offset;
         while (i < statement.length()) {
             char c = statement.charAt(i);
-            if (c != ' ' && c != '\t' && c != '\n' && c != 0x0B && c != '\f' && c != '\r') {
+            if (!Character.isWhitespace(c)) {
                 break;
             }
             i ++;
@@ -46,7 +46,7 @@ public class SimpleSqlParserUtil {
         int i = offset;
         while (i < statement.length()) {
             char c = statement.charAt(i);
-            if (!Character.isAlphabetic(c) && !Character.isDigit(c)) {
+            if (Character.isWhitespace(c) || c == ';' || c == '(') {
                 break;
             }
             i ++;

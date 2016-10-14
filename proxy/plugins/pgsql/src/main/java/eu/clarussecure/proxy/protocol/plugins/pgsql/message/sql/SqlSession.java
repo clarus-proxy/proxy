@@ -1,14 +1,18 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
+import eu.clarussecure.dataoperations.Promise;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlRowDescriptionMessage;
 import eu.clarussecure.proxy.spi.CString;
+import eu.clarussecure.proxy.spi.Operation;
 import net.sf.jsqlparser.statement.Statement;
 
 public class SqlSession {
     public static class BufferedStatement {
-        private final CString original;
+        private CString original;
         private final boolean toProcess;
         private Statement stmt;
         private CString modified;
@@ -25,6 +29,12 @@ public class SqlSession {
 
         public CString getOriginal() {
             return original;
+        }
+
+        public void releaseOriginal() {
+            if (original != null && original.release()) {
+                original = null;
+            }
         }
 
         public boolean isToProcess() {
@@ -45,20 +55,30 @@ public class SqlSession {
 
         public void setModified(CString modified) {
             this.modified = modified;
-            this.stmt = null;
+            // Release internal buffer of original statement
+            releaseOriginal();
+            stmt = null;
+        }
+
+        public void releaseModified() {
+            if (modified != null && modified.release()) {
+                modified = null;
+            }
         }
 
         public CString getResult() {
             return toProcess ? modified : original;
         }
-
     }
 
     private CString databaseName;
     private boolean inTransaction;
     private boolean inDatasetCreation;
+    private Operation currentOperation;
+    private Promise promise;
     private TransferMode transferMode;
     private List<BufferedStatement> bufferedStatements;
+    private List<PgsqlRowDescriptionMessage.Field> rowDescription;
     private int commandResultsToIgnore;
     private int readyForQueryToIgnore;
 
@@ -90,6 +110,22 @@ public class SqlSession {
         this.inDatasetCreation = inDatasetCreation;
     }
 
+    public Operation getCurrentOperation() {
+        return currentOperation;
+    }
+
+    public void setCurrentOperation(Operation operation) {
+        this.currentOperation = operation;
+    }
+
+    public Promise getPromise() {
+        return promise;
+    }
+
+    public void setPromise(Promise promise) {
+        this.promise = promise;
+    }
+
     public TransferMode getTransferMode() {
         return transferMode;
     }
@@ -100,7 +136,7 @@ public class SqlSession {
 
     public List<BufferedStatement> getBufferedStatements() {
         if (bufferedStatements == null) {
-            bufferedStatements = new ArrayList<>();
+            bufferedStatements = Collections.synchronizedList(new ArrayList<>());
         }
         return bufferedStatements;
     }
@@ -118,7 +154,42 @@ public class SqlSession {
     }
 
     public void resetBufferedStatements() {
-        bufferedStatements.clear();
+        if (bufferedStatements != null) {
+            for (BufferedStatement bufferedStatement : bufferedStatements) {
+                // Release internal buffer of original statement
+                bufferedStatement.releaseOriginal();
+                // Release internal buffer of modified statement
+                bufferedStatement.releaseModified();
+            }
+            bufferedStatements.clear();
+        }
+    }
+
+    public List<PgsqlRowDescriptionMessage.Field> getRowDescription() {
+        return this.rowDescription;
+    }
+
+    public void setRowDescription(List<PgsqlRowDescriptionMessage.Field> rowDescription) {
+        // Retain internal buffer of each field name
+        if (rowDescription != null) {
+            for (PgsqlRowDescriptionMessage.Field field : rowDescription) {
+                if (field.getName().isBuffered()) {
+                    field.getName().retain();
+                }
+            }
+        }
+        this.rowDescription = rowDescription;
+    }
+
+    public void resetRowDescription() {
+        if (rowDescription != null) {
+            for (PgsqlRowDescriptionMessage.Field field : rowDescription) {
+                if (field.getName().release()) {
+                    field.setName(null);
+                }
+            }
+            rowDescription = null;
+        }
     }
 
     public int getCommandResultsToIgnore() {
@@ -153,20 +224,25 @@ public class SqlSession {
         readyForQueryToIgnore --;
     }
 
-    public void release() {
-        if (databaseName != null) {
-            databaseName.release();
-        }
-        if (bufferedStatements != null) {
-            for (BufferedStatement bufferedStatement : bufferedStatements) {
-                if (bufferedStatement.getOriginal() != null) {
-                    bufferedStatement.getOriginal().release();
-                }
-                if (bufferedStatement.getModified() != null) {
-                    bufferedStatement.getModified().release();
-                }
-            }
-        }
+    public void resetCurrentOperation() {
+        setCurrentOperation(null);
+        setPromise(null);
+        resetRowDescription();
+    }
+
+    public void resetCurrentCommand() {
+        resetCurrentOperation();
+        resetBufferedStatements();
+        resetCommandResultsToIgnore();
+        resetReadyForQueryToIgnore();
+    }
+
+    public void reset() {
+        setDatabaseName(null);
+        setInTransaction(false);
+        setInDatasetCreation(false);
+        setTransferMode(null);
+        resetCurrentCommand();
     }
 
 }

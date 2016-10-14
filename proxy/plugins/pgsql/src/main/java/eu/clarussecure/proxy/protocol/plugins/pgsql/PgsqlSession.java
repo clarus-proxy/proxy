@@ -22,7 +22,7 @@ public class PgsqlSession extends TCPSession {
     public EventProcessor getEventProcessor() {
         if (eventProcessor == null) {
             String eventProcessing = System.getProperty("pgsql.event.processing");
-            if (eventProcessing != null && ("0".equalsIgnoreCase(eventProcessing) || "no".equalsIgnoreCase(eventProcessing) || "off".equalsIgnoreCase(eventProcessing))) {
+            if (eventProcessing != null && (Boolean.FALSE.toString().equalsIgnoreCase(eventProcessing) || "0".equalsIgnoreCase(eventProcessing) || "no".equalsIgnoreCase(eventProcessing) || "off".equalsIgnoreCase(eventProcessing))) {
                 eventProcessor = new NoopEventProcessor();
             } else {
                 eventProcessor = new PgsqlEventProcessor();

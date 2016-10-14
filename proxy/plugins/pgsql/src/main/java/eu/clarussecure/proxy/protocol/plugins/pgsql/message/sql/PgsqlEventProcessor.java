@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -12,14 +13,15 @@ import org.slf4j.LoggerFactory;
 
 import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlConstants;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlSession;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlCommandResultMessage;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlErrorMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlRowDescriptionMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlRowDescriptionMessage.Field;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SqlSession.BufferedStatement;
 import eu.clarussecure.proxy.spi.CString;
 import eu.clarussecure.proxy.spi.DataOperation;
 import eu.clarussecure.proxy.spi.Mode;
 import eu.clarussecure.proxy.spi.Operation;
 import eu.clarussecure.proxy.spi.StringUtilities;
+import eu.clarussecure.proxy.spi.protection.DefaultPromise;
 import eu.clarussecure.proxy.spi.protocol.Configuration;
 import eu.clarussecure.proxy.spi.protocol.ProtocolService;
 import io.netty.buffer.ByteBuf;
@@ -28,6 +30,7 @@ import io.netty.channel.ChannelHandlerContext;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.Function;
+import net.sf.jsqlparser.expression.NullValue;
 import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.parser.CCJSqlParser;
@@ -49,12 +52,14 @@ public class PgsqlEventProcessor implements EventProcessor {
     public static final String USER_KEY = "user";
     public static final String DATABASE_KEY = "database";
 
+    @Override
     public void processAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
         CString databaseName = parameters.get(CString.valueOf(DATABASE_KEY));
         SqlSession sqlSession = getSession(ctx);
         sqlSession.setDatabaseName((CString) databaseName.clone());
     }
 
+    @Override
     public StatementTransferMode processStatement(ChannelHandlerContext ctx, CString statement, boolean lastStatement) throws IOException {
         LOGGER.debug("SQL statement: {}", statement);
         TransferMode transferMode;
@@ -65,9 +70,9 @@ public class PgsqlEventProcessor implements EventProcessor {
         } else {
             transferMode = TransferMode.FORWARD;
             boolean toProcess = false;
+            Mode processingMode;
             StatementType type = SimpleSqlParserUtil.parse(statement);
             if (type != null) {
-                Mode datasetCreationProcessingMode;
                 switch (type) {
                 case START_TRANSACTION:
                     getSession(ctx).setInTransaction(true);
@@ -77,32 +82,50 @@ public class PgsqlEventProcessor implements EventProcessor {
                     getSession(ctx).setInTransaction(false);
                     getSession(ctx).setInDatasetCreation(false);
                     break;
+                case SELECT:
+                    processingMode = getProcessingMode(ctx, false, Operation.READ);
+                    toProcess = isStatementToProcess(processingMode);
+                    if (processingMode == null) {
+                        transferMode = TransferMode.DENY;
+                        response = CString.valueOf("Record read not supported by this CLARUS proxy");
+                    }
+                    if (toProcess) {
+                        getSession(ctx).setCurrentOperation(Operation.READ);
+                    }
+                    break;
+                case INSERT:
+                    if (getSession(ctx).isInDatasetCreation()) {
+                        processingMode = getProcessingMode(ctx, true, Operation.CREATE);
+                        toProcess = isStatementToProcess(processingMode);
+                        if (processingMode == null) {
+                            transferMode = TransferMode.DENY;
+                            response = CString.valueOf("Dataset creation not supported by this CLARUS proxy");
+                        } else if (processingMode == Mode.BUFFERING) {
+                            transferMode = TransferMode.FORGET;
+                            if (lastStatement) {
+                                response = CString.valueOf("INSERT 0 1");
+                            }
+                        } else if (toProcess) {
+                            getSession(ctx).setCurrentOperation(Operation.CREATE);
+                        }
+                    } else {
+                        processingMode = getProcessingMode(ctx, false, Operation.CREATE);
+                        toProcess = isStatementToProcess(processingMode);
+                        if (processingMode == null) {
+                            transferMode = TransferMode.DENY;
+                            response = CString.valueOf("Record creation not supported by this CLARUS proxy");
+                        } else if (toProcess) {
+                            getSession(ctx).setCurrentOperation(Operation.CREATE);
+                        }
+                    }
+                    break;
                 case CREATE_TABLE:
-                    datasetCreationProcessingMode = getProcessingMode(ctx, true, Operation.CREATE);
-                    if (datasetCreationProcessingMode == null) {
+                    if (getProcessingMode(ctx, true, Operation.CREATE) == null) {
                         transferMode = TransferMode.DENY;
                         response = CString.valueOf("Dataset creation not supported by this CLARUS proxy");
                     }
                     if (getSession(ctx).isInTransaction()) {
                         getSession(ctx).setInDatasetCreation(true);
-                    }
-                    break;
-                case INSERT:
-                    toProcess = true;
-                    if (getSession(ctx).isInDatasetCreation()) {
-                        datasetCreationProcessingMode = getProcessingMode(ctx, true, Operation.CREATE);
-                        if (datasetCreationProcessingMode != null && datasetCreationProcessingMode == Mode.BUFFERING) {
-                            transferMode = TransferMode.FORGET;
-                            if (lastStatement) {
-                                response = CString.valueOf("INSERT 0 1");
-                            }
-                        }
-                    } else {
-                        datasetCreationProcessingMode = getProcessingMode(ctx, false, Operation.CREATE);
-                        if (datasetCreationProcessingMode == null) {
-                            transferMode = TransferMode.DENY;
-                            response = CString.valueOf("Record creation not supported by this CLARUS proxy");
-                        }
                     }
                     break;
                 case ADD_GEOMETRY_COLUMN:
@@ -120,13 +143,21 @@ public class PgsqlEventProcessor implements EventProcessor {
                 }
                 newStatements = null;
             } else if (transferMode == TransferMode.DENY) {
-                resetQueryStatus(ctx);
+                getSession(ctx).resetCurrentCommand();
                 newStatements = null;
             }
         }
         StatementTransferMode mode = new StatementTransferMode(newStatements, transferMode, response);
         LOGGER.debug("SQL statement processed: new statements={}, transfer mode={}", mode.getNewStatements(), mode.getTransferMode());
         return mode;
+    }
+
+    private boolean isStatementToProcess(Mode processingMode) {
+        String statementForceProcessing = System.getProperty("pgsql.statement.force.processing");
+        if (statementForceProcessing != null && (Boolean.TRUE.toString().equalsIgnoreCase(statementForceProcessing) || "1".equalsIgnoreCase(statementForceProcessing) || "yes".equalsIgnoreCase(statementForceProcessing) || "on".equalsIgnoreCase(statementForceProcessing))) {
+            return true;
+        }
+        return processingMode != null && processingMode != Mode.AS_IT_IS;
     }
 
     private CString buildNewStatements(ChannelHandlerContext ctx, CString statement, boolean toProcess, boolean lastStatement) throws IOException {
@@ -143,14 +174,11 @@ public class PgsqlEventProcessor implements EventProcessor {
             }
             newSize += newStatement.length();
             newStatements = CString.valueOf(new StringBuilder(newSize));
-            for (BufferedStatement bufferedStatement : getSession(ctx).getBufferedStatements()) {
+            for (Iterator<BufferedStatement> iter = getSession(ctx).getBufferedStatements().iterator(); iter.hasNext();) {
+                BufferedStatement bufferedStatement = iter.next();
                 newStatements.append(bufferedStatement.getResult());
-                // Release internal buffer of statement
-                if (bufferedStatement.getOriginal().isBuffered()) {
-                    bufferedStatement.getOriginal().release();
-                }
+                iter.remove();
             }
-            getSession(ctx).resetBufferedStatements();
             newStatements.append(newStatement);
         }
         return newStatements;
@@ -179,21 +207,23 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (dataOperation != null) {
             List<DataOperation> newDataOperations = getProtocolService(ctx).newDataOperation(dataOperation);
             dataOperation = newDataOperations.get(0);
-            // Modify statements
-            int row = 0;
-            for (BufferedStatement bufferedStatement : getSession(ctx).getBufferedStatements()) {
-                if (!bufferedStatement.isToProcess()) {
-                    continue;
+            if (dataOperation.isModified()) {
+                // Modify statements
+                int row = 0;
+                for (BufferedStatement bufferedStatement : getSession(ctx).getBufferedStatements()) {
+                    if (!bufferedStatement.isToProcess()) {
+                        continue;
+                    }
+                    // Modify statement
+                    if (bufferedStatement.getStmt() instanceof Insert) {
+                        modifyInsertOperation(ctx, (Insert)bufferedStatement.getStmt(), dataOperation, row ++);
+                    } else if (bufferedStatement.getStmt() instanceof Select) {
+                        modifySelectOperation(ctx, (Select)bufferedStatement.getStmt(), dataOperation, row ++);
+                    }
+                    String newStatement = bufferedStatement.getStmt().toString();
+                    newStatement = StringUtilities.addIrrelevantCharacters(newStatement, bufferedStatement.getOriginal(), " \t\r\n;");
+                    bufferedStatement.setModified(CString.valueOf(newStatement));
                 }
-                // Modify statement
-                if (bufferedStatement.getStmt() instanceof Insert) {
-                    modifyInsertOperation(ctx, (Insert)bufferedStatement.getStmt(), dataOperation, row ++);
-                } else if (bufferedStatement.getStmt() instanceof Select) {
-                    modifySelectOperation(ctx, (Select)bufferedStatement.getStmt(), dataOperation, row ++);
-                }
-                String newStatement = bufferedStatement.getStmt().toString();
-                newStatement = StringUtilities.addIrrelevantCharacters(newStatement, bufferedStatement.getOriginal(), " \t\r\n;");
-                bufferedStatement.setModified(CString.valueOf(newStatement));
             }
         }
     }
@@ -215,15 +245,20 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (dataOperation != null) {
             List<DataOperation> newDataOperations = getProtocolService(ctx).newDataOperation(dataOperation);
             dataOperation = newDataOperations.get(0);
-            // Modify statement
-            if (stmt instanceof Insert) {
-                modifyInsertOperation(ctx, (Insert)stmt, dataOperation, 0);
-            } else if (stmt instanceof Select) {
-                modifySelectOperation(ctx, (Select)stmt, dataOperation, 0);
+            if (dataOperation.isModified()) {
+                // Modify statement
+                if (stmt instanceof Insert) {
+                    modifyInsertOperation(ctx, (Insert)stmt, dataOperation, 0);
+                } else if (stmt instanceof Select) {
+                    modifySelectOperation(ctx, (Select)stmt, dataOperation, 0);
+                }
+                String newStatement = stmt.toString();
+                newStatement = StringUtilities.addIrrelevantCharacters(newStatement, statement, " \t\r\n;");
+                statement = CString.valueOf(newStatement);
             }
-            String newStatement = stmt.toString();
-            newStatement = StringUtilities.addIrrelevantCharacters(newStatement, statement, " \t\r\n;");
-            statement = CString.valueOf(newStatement);
+            if (getSession(ctx).getCurrentOperation() == Operation.READ) {
+                getSession(ctx).setPromise(dataOperation.getPromise());
+            }
         }
         return statement;
     }
@@ -231,14 +266,19 @@ public class PgsqlEventProcessor implements EventProcessor {
     private Statement parseStatement(ChannelHandlerContext ctx, CString statement) {
         // Parse statement
         Statement stmt = null;
+        ByteBuf byteBuf = null;
         try {
             if (statement.isBuffered()) {
-                ByteBuf byteBuf = statement.getByteBuf().readSlice(statement.length());
-                stmt = CCJSqlParserUtil.parse(new ByteBufInputStream(byteBuf), StandardCharsets.ISO_8859_1.name());
+                byteBuf = statement.getByteBuf();
+                byteBuf.markReaderIndex();
+                stmt = CCJSqlParserUtil.parse(new ByteBufInputStream(byteBuf.readSlice(statement.length())), StandardCharsets.ISO_8859_1.name());
             } else {
                 stmt = CCJSqlParserUtil.parse(statement.toString());
             }
         } catch (JSQLParserException | TokenMgrError e) {
+            if (byteBuf != null) {
+                byteBuf.resetReaderIndex();
+            }
             LOGGER.error("Parsing error for {} : ", statement, e);
         }
         return stmt;
@@ -274,7 +314,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         // Extract data values
         List<CString> dataValues = new ArrayList<>();
         for (Expression expression : ((ExpressionList) stmt.getItemsList()).getExpressions()) {
-            dataValues.add(CString.valueOf(expression.toString()));
+            dataValues.add(expression instanceof NullValue ? null : CString.valueOf(expression.toString()));
         }
         dataOperation.addDataValues(dataValues);
         return dataOperation;
@@ -285,7 +325,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<Expression> values = ((ExpressionList) stmt.getItemsList()).getExpressions();
         for (int i = 0; i < values.size(); i ++) {
             CString dataValue = dataValues.get(i);
-            values.set(i, new StringValue(dataValue.toString()));
+            values.set(i, dataValue == null ? new NullValue() : new StringValue(dataValue.toString()));
         }
     }
 
@@ -378,34 +418,112 @@ public class PgsqlEventProcessor implements EventProcessor {
         }
     }
 
-    private void resetQueryStatus(ChannelHandlerContext ctx) {
-        getSession(ctx).resetBufferedStatements();
-        getSession(ctx).resetCommandResultsToIgnore();
-        getSession(ctx).resetReadyForQueryToIgnore();
-    }
-
-    public CommandResultTransferMode processCommandResult(ChannelHandlerContext ctx, PgsqlCommandResultMessage.Details<?> details) throws IOException {
-        LOGGER.debug("Command result: {}", details);
-        TransferMode transferMode;
-        PgsqlCommandResultMessage.Details<?> newDetails = details;
-        if (getSession(ctx).getCommandResultsToIgnore() == 0) {
-            transferMode = TransferMode.FORWARD;
-        } else {
-            if (details.isDedicatedTo(PgsqlErrorMessage.class)) {
-                transferMode = TransferMode.FORWARD;
-                getSession(ctx).resetCommandResultsToIgnore();
-            } else {
-                transferMode = TransferMode.FORGET;
-                newDetails = null;
-                getSession(ctx).decrementeCommandResultsToIgnore();
+    @Override
+    public MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> processRowDescriptionResponse(ChannelHandlerContext ctx, List<PgsqlRowDescriptionMessage.Field> fields) {
+        LOGGER.debug("Row description: {}", fields);
+        TransferMode transferMode = TransferMode.FORWARD;
+        List<PgsqlRowDescriptionMessage.Field> newFields = fields;
+        if (getSession(ctx).getCurrentOperation() == Operation.READ) {
+            getSession(ctx).setRowDescription(fields);
+            // Modify promise in case query don't explicitly specify columns (e.g. '*')
+            if (getSession(ctx).getPromise() instanceof DefaultPromise && (getSession(ctx).getPromise().getAttributeNames() == null || getSession(ctx).getPromise().getAttributeNames().length == 0)) {
+                ((DefaultPromise)getSession(ctx).getPromise()).setAttributeNames(newFields.stream().map(PgsqlRowDescriptionMessage.Field::getName).map(CString::toString).toArray(String[]::new));
             }
         }
-        CommandResultTransferMode mode = new CommandResultTransferMode(newDetails, transferMode);
-        LOGGER.debug("Command result processed: new tag={}, transfer mode={}", mode.getNewDetails(), mode.getTransferMode());
+        MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> mode = new MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>>(newFields, transferMode);
+        LOGGER.debug("Row description processed: new fields={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
         return mode;
     }
 
-    public ReadyForQueryResponseTransferMode processReadyForQueryResponse(ChannelHandlerContext ctx, Byte transactionStatus) throws IOException {
+    @Override
+    public MessageTransferMode<List<ByteBuf>> processDataRowResponse(ChannelHandlerContext ctx, List<ByteBuf> values) throws IOException {
+        LOGGER.debug("Data row: {}", values);
+        TransferMode transferMode = TransferMode.FORWARD;
+        List<ByteBuf> newValues = values;
+        if (getSession(ctx).getCurrentOperation() == Operation.READ) {
+            newValues = processDataResult(ctx, values);
+        }
+        MessageTransferMode<List<ByteBuf>> mode = new MessageTransferMode<List<ByteBuf>>(newValues, transferMode);
+        LOGGER.debug("Data row processed: new values={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
+        return mode;
+    }
+
+    private List<ByteBuf> processDataResult(ChannelHandlerContext ctx, List<ByteBuf> values) {
+        // Extract data operation
+        DataOperation dataOperation = new DataOperation();
+        dataOperation.setOperation(Operation.READ);
+        int i = 0;
+        List<CString> dataValues = new ArrayList<>();
+        for (PgsqlRowDescriptionMessage.Field field : getSession(ctx).getRowDescription()) {
+            dataOperation.addDataId(field.getName());
+            CString dataValue = convert(field, values.get(i));
+            dataValues.add(dataValue);
+            i ++;
+        }
+        dataOperation.addDataValues(dataValues);
+        dataOperation.setPromise(getSession(ctx).getPromise());
+        // Process data operation
+        List<DataOperation> newDataOperations = getProtocolService(ctx).newDataOperation(dataOperation);
+        dataOperation = newDataOperations.get(0);
+        List<ByteBuf> newValues = values;
+        if (dataOperation.isModified()) {
+            // Modify data
+            for (i = 0; i < values.size(); i ++) {
+                CString dataValue = dataValues.get(i);
+                CString newDataValue = dataOperation.getDataValues().get(0).get(i);
+                if (newDataValue != dataValue && (newDataValue == null || !newDataValue.equals(dataValue))) {
+                    if (newValues == values) {
+                        newValues = new ArrayList<>(values);
+                    }
+                    newValues.set(i, newDataValue == null ? null : newDataValue.getByteBuf());
+                }
+            }
+        }
+        return newValues;
+    }
+
+    private CString convert(Field field, ByteBuf value) {
+        CString cs;
+        if (field.getFormat() == 0) { // Text format
+            cs = value != null ? CString.valueOf(value, value.capacity()) : null;
+        } else { // Binary format
+            // TODO
+            cs = CString.valueOf("binary data");
+        }
+        return cs;
+    }
+
+    @Override
+    public MessageTransferMode<CString> processCommandCompleteResult(ChannelHandlerContext ctx, CString tag) throws IOException {
+        LOGGER.debug("Command complete: {}", tag);
+        TransferMode transferMode;
+        CString newTag = tag;
+        if (getSession(ctx).getCommandResultsToIgnore() == 0) {
+            transferMode = TransferMode.FORWARD;
+        } else {
+            transferMode = TransferMode.FORGET;
+            newTag = null;
+            getSession(ctx).decrementeCommandResultsToIgnore();
+        }
+        getSession(ctx).resetCurrentOperation();
+        MessageTransferMode<CString> mode = new MessageTransferMode<CString>(newTag, transferMode);
+        LOGGER.debug("Command complete processed: new tag={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
+        return mode;
+    }
+
+    @Override
+    public MessageTransferMode<Map<Byte, CString>> processErrorResult(ChannelHandlerContext ctx, Map<Byte, CString> fields) throws IOException {
+        LOGGER.debug("Error: {}", fields);
+        TransferMode transferMode = TransferMode.FORWARD;
+        Map<Byte, CString> newFields = fields;
+        getSession(ctx).resetCurrentOperation();
+        MessageTransferMode<Map<Byte, CString>> mode = new MessageTransferMode<Map<Byte, CString>>(newFields, transferMode);
+        LOGGER.debug("Command complete processed: new fields={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
+        return mode;
+    }
+
+    @Override
+    public MessageTransferMode<Byte> processReadyForQueryResponse(ChannelHandlerContext ctx, Byte transactionStatus) throws IOException {
         LOGGER.debug("Ready for query: {}", (char) transactionStatus.byteValue());
         TransferMode transferMode;
         Byte newTransactionStatus = transactionStatus;
@@ -416,7 +534,7 @@ public class PgsqlEventProcessor implements EventProcessor {
             newTransactionStatus = null;
             getSession(ctx).decrementeReadyForQueryToIgnore();
         }
-        ReadyForQueryResponseTransferMode mode = new ReadyForQueryResponseTransferMode(newTransactionStatus, transferMode);
+        MessageTransferMode<Byte> mode = new MessageTransferMode<Byte>(newTransactionStatus, transferMode);
         LOGGER.debug("Ready for query processed: new transaction status={}, transfer mode={}", newTransactionStatus == null ? null : (char) newTransactionStatus.byteValue(), mode.getTransferMode());
         return mode;
     }

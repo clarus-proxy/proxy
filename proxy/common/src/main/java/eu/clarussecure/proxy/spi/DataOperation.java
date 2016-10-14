@@ -3,6 +3,8 @@ package eu.clarussecure.proxy.spi;
 import java.util.ArrayList;
 import java.util.List;
 
+import eu.clarussecure.dataoperations.Promise;
+
 public class DataOperation {
     private int requestId;
     private Operation operation;
@@ -10,6 +12,8 @@ public class DataOperation {
     private List<CString> parameterIds;
     private List<List<CString>> dataValues;
     private List<CString> parameterValues;
+    private boolean modified;
+    private Promise promise;
 
     public int getRequestId() {
         return requestId;
@@ -87,4 +91,19 @@ public class DataOperation {
         getParameterValues().add(parameterValue);
     }
 
+    public boolean isModified() {
+        return modified;
+    }
+
+    public void setModified(boolean modified) {
+        this.modified = modified;
+    }
+
+    public Promise getPromise() {
+        return promise;
+    }
+
+    public void setPromise(Promise promise) {
+        this.promise = promise;
+    }
 }

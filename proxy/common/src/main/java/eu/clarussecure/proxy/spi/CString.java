@@ -78,13 +78,15 @@ public class CString implements CharSequence, Cloneable {
         return new CString(newBuffer, strLen, str, hash);
     }
 
-    public void release() {
+    public boolean release() {
         if (buffer != null) {
-            buffer.release();
-            buffer = null;
+            if (buffer.release()) {
+                buffer = null;
+            }
             strLen = 0;
             hash = 0;
         }
+        return buffer == null;
     }
 
     public void retain() {
@@ -121,6 +123,9 @@ public class CString implements CharSequence, Cloneable {
 
     @Override
     public char charAt(int index) {
+        if (index < 0 || index >= length()) {
+            throw new StringIndexOutOfBoundsException(index);
+        }
         return str != null ? str.charAt(index) : (char) (buffer.getByte(index) & 0xFF);
     }
 
@@ -269,7 +274,7 @@ public class CString implements CharSequence, Cloneable {
         if (buffer instanceof CompositeByteBuf && ((CompositeByteBuf)buffer).numComponents() < ((CompositeByteBuf)buffer).maxNumComponents() - 1) {
             // For CompositeByteBuf only: because this internal buffer is composed of multiple buffer (including other's internal buffer),
             // we simply add the other's internal buffer (no copy).  
-            ((CompositeByteBuf)buffer).addComponent(true, src.readSlice(length));
+            ((CompositeByteBuf)buffer).addComponent(true, /*src.readSlice(length)*/src.slice(0, length));
             // Add an additional buffer for the zero byte terminator
             ((CompositeByteBuf)buffer).capacity(strLen + length + 1);
             buffer.writeByte(0);
@@ -279,7 +284,7 @@ public class CString implements CharSequence, Cloneable {
             // Skip copy if source and destination are the same
             if (buffer.hasMemoryAddress() && src.hasMemoryAddress()) {
                 long dstAddr = buffer.memoryAddress() + buffer.writerIndex();
-                long srcAddr = src.memoryAddress() + src.readerIndex();
+                long srcAddr = src.memoryAddress() /*+ src.readerIndex()*/;
                 if (dstAddr == srcAddr && (dstAddr + buffer.writableBytes()) >= (srcAddr + length + 1)) {
                     copy = false;
                 }
@@ -345,6 +350,9 @@ public class CString implements CharSequence, Cloneable {
     @Override
     public String toString() {
         if (str == null) {
+            if (buffer == null) {
+                return null;
+            }
             str = buffer.toString(0, strLen, StandardCharsets.ISO_8859_1);
         }
         return str.toString();
@@ -356,7 +364,7 @@ public class CString implements CharSequence, Cloneable {
         if (h == 0) {
             if (str != null) {
                 h = str.hashCode();
-            } else {
+            } else if (buffer != null) {
                 for (int i = 0; i < strLen; i++) {
                     h = 31 * h + ((int) buffer.getByte(i) & 0xFF);
                 }
@@ -385,6 +393,128 @@ public class CString implements CharSequence, Cloneable {
             if (charAt(i) != other.charAt(i)) {
                 return false;
             }
+        }
+        return true;
+    }
+
+    /**
+     * Compares this {@code CString} to a {@code CharSequence}, ignoring case
+     * considerations.  Two are considered equal ignoring case if they
+     * are of the same length and corresponding characters in the two 
+     * are equal ignoring case.
+     *
+     * <p> Two characters {@code c1} and {@code c2} are considered the same
+     * ignoring case if at least one of the following is true:
+     * <ul>
+     *   <li> The two characters are the same (as compared by the
+     *        {@code ==} operator)
+     *   <li> Applying the method {@link
+     *        java.lang.Character#toUpperCase(char)} to each character
+     *        produces the same result
+     *   <li> Applying the method {@link
+     *        java.lang.Character#toLowerCase(char)} to each character
+     *        produces the same result
+     * </ul>
+     *
+     * @param  cs
+     *         The {@code CharSequence} to compare this {@code CString} against
+     *
+     * @return  {@code true} if the argument is not {@code null} and it
+     *          represents an equivalent {@code CharSequence} ignoring case; {@code
+     *          false} otherwise
+     *
+     * @see  #equals(Object)
+     */
+    public boolean equalsIgnoreCase(CharSequence cs) {
+        return (this == cs) ? true : (cs != null) && (cs.length() == length())
+                && regionMatches(true, 0, cs, 0, length());
+    }
+
+    /**
+     * Tests if this {@code CString} region and a {@code CharSequence} region are equal.
+     * <p>
+     * A subsequence of this {@code CString} object is compared to a subsequence
+     * of the argument {@code other}. The result is {@code true} if these
+     * subsequences represent character sequences that are the same, ignoring
+     * case if and only if {@code ignoreCase} is true. The subsequence of
+     * this {@code CString} object to be compared begins at index
+     * {@code toffset} and has length {@code len}. The subsequence of
+     * {@code other} to be compared begins at index {@code ooffset} and
+     * has length {@code len}. The result is {@code false} if and only if
+     * at least one of the following is true:
+     * <ul><li>{@code toffset} is negative.
+     * <li>{@code ooffset} is negative.
+     * <li>{@code toffset+len} is greater than the length of this
+     * {@code CString} object.
+     * <li>{@code ooffset+len} is greater than the length of the other
+     * argument.
+     * <li>{@code ignoreCase} is {@code false} and there is some nonnegative
+     * integer <i>k</i> less than {@code len} such that:
+     * <blockquote><pre>
+     * this.charAt(toffset+k) != other.charAt(ooffset+k)
+     * </pre></blockquote>
+     * <li>{@code ignoreCase} is {@code true} and there is some nonnegative
+     * integer <i>k</i> less than {@code len} such that:
+     * <blockquote><pre>
+     * Character.toLowerCase(this.charAt(toffset+k)) !=
+     Character.toLowerCase(other.charAt(ooffset+k))
+     * </pre></blockquote>
+     * and:
+     * <blockquote><pre>
+     * Character.toUpperCase(this.charAt(toffset+k)) !=
+     *         Character.toUpperCase(other.charAt(ooffset+k))
+     * </pre></blockquote>
+     * </ul>
+     *
+     * @param   ignoreCase   if {@code true}, ignore case when comparing
+     *                       characters.
+     * @param   toffset      the starting offset of the subregion in this
+     *                       {@code CString}.
+     * @param   other        the {@code CharSequence} argument.
+     * @param   ooffset      the starting offset of the subregion in the {@code CharSequence}
+     *                       argument.
+     * @param   len          the number of characters to compare.
+     * @return  {@code true} if the specified subregion of this {@code CString}
+     *          matches the specified subregion of the {@code CharSequence} argument;
+     *          {@code false} otherwise. Whether the matching is exact
+     *          or case insensitive depends on the {@code ignoreCase}
+     *          argument.
+     */
+    public boolean regionMatches(boolean ignoreCase, int toffset,
+            CharSequence other, int ooffset, int len) {
+        int to = toffset;
+        int po = ooffset;
+        // Note: toffset, ooffset, or len might be near -1>>>1.
+        if ((ooffset < 0) || (toffset < 0)
+                || (toffset > (long)length() - len)
+                || (ooffset > (long)other.length() - len)) {
+            return false;
+        }
+        while (len-- > 0) {
+            char c1 = charAt(to++);
+            char c2 = other.charAt(po++);
+            if (c1 == c2) {
+                continue;
+            }
+            if (ignoreCase) {
+                // If characters don't match but case may be ignored,
+                // try converting both characters to uppercase.
+                // If the results match, then the comparison scan should
+                // continue.
+                char u1 = Character.toUpperCase(c1);
+                char u2 = Character.toUpperCase(c2);
+                if (u1 == u2) {
+                    continue;
+                }
+                // Unfortunately, conversion to uppercase does not work properly
+                // for the Georgian alphabet, which has strange rules about case
+                // conversion.  So we need to make one last check before
+                // exiting.
+                if (Character.toLowerCase(u1) == Character.toLowerCase(u2)) {
+                    continue;
+                }
+            }
+            return false;
         }
         return true;
     }

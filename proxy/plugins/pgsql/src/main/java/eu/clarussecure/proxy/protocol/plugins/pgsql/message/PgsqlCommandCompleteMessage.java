@@ -1,32 +1,17 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql.message;
 
-import java.util.Objects;
-
 import eu.clarussecure.proxy.spi.CString;
 import io.netty.util.internal.StringUtil;
 
-public class PgsqlCommandCompleteMessage implements PgsqlCommandResultMessage<CString> {
+public class PgsqlCommandCompleteMessage implements PgsqlQueryResponseMessage<CString> {
 
     public static final byte TYPE = (byte) 'C';
     public static final int HEADER_SIZE = Byte.BYTES + Integer.BYTES;
 
-    protected CString tag;
-
-    private final Details<CString> details = new Details<CString>() {
-
-        @Override
-        public CString get() {
-            return getTag();
-        }
-    };
+    private CString tag;
 
     public PgsqlCommandCompleteMessage(CString tag) {
         this.tag = tag;
-    }
-
-    public PgsqlCommandCompleteMessage(Details<CString> details) {
-        Objects.requireNonNull(details, "details must not be null");
-        this.tag = Objects.requireNonNull(details.get(), "details content must not be null");
     }
 
     public CString getTag() {
@@ -57,18 +42,7 @@ public class PgsqlCommandCompleteMessage implements PgsqlCommandResultMessage<CS
     }
 
     @Override
-    public boolean isSuccess() {
-        return true;
+    public CString getDetails() {
+        return getTag();
     }
-
-    @Override
-    public Details<CString> getDetails() {
-        return details;
-    }
-
-    @Override
-    public void setDetails(Details<CString> details) {
-        setTag(details.get());
-    }
-
 }

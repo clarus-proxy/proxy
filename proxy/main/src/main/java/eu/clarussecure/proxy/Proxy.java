@@ -117,7 +117,7 @@ public class Proxy {
         // Initialize the protection module
         if (protectionModule != null) {
             LOGGER.trace("Initializing the protection module...");
-            protectionModule.initialize(securityPolicy.getDocument());
+            protectionModule.initialize(securityPolicy.getDocument(), securityPolicy.getDataIds());
             LOGGER.debug("Protection module initialized");
         }
         // Register the protocol service

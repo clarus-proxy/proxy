@@ -1,6 +1,7 @@
 package eu.clarussecure.proxy.protection.modules.anonymization;
 
 import java.util.Arrays;
+import java.util.regex.Pattern;
 
 import org.w3c.dom.Document;
 
@@ -8,6 +9,7 @@ import eu.clarussecure.dataoperations.DataOperation;
 import eu.clarussecure.dataoperations.Operation;
 import eu.clarussecure.dataoperations.Promise;
 import eu.clarussecure.dataoperations.anonymization.AnonymizeModule;
+import eu.clarussecure.proxy.spi.protection.DefaultPromise;
 import eu.clarussecure.proxy.spi.protection.ProtectionModule;
 import eu.clarussecure.proxy.spi.protection.ProtectionModuleCapabilities;
 
@@ -15,6 +17,8 @@ public class AnonymizationModule implements ProtectionModule, DataOperation {
 
     private static final String PROTECTION_MODULE_NAME = "Anonymization";
     private AnonymizeModule anonymizeModule;
+    private String[] dataIds;
+    private Pattern[] dataIdPatterns;
 
     private static class CapabilitiesHelper {
         private static final AnonymizationCapabilities INSTANCE = new AnonymizationCapabilities();
@@ -31,8 +35,12 @@ public class AnonymizationModule implements ProtectionModule, DataOperation {
     }
 
     @Override
-    public void initialize(Document document) {
+    public void initialize(Document document, String[] dataIds) {
         anonymizeModule = new AnonymizeModule(document);
+        this.dataIds = dataIds;
+        if (this.dataIds != null) {
+            this.dataIdPatterns = Arrays.stream(dataIds).map(s -> s.replace("*/", "(\\w*/)*")).map(Pattern::compile).toArray(Pattern[]::new);
+        }
     }
 
     @Override
@@ -47,37 +55,26 @@ public class AnonymizationModule implements ProtectionModule, DataOperation {
         if (index != -1) {
             criteria[index] = criteria[index].replaceAll("POINT", "POLYGON");
         }
-        Promise promise = anonymizeModule.get(attributeNames, criteria, operation);
-        if (promise == null && index != -1) {
-            promise = new Promise() {
-                
-                @Override
-                public String getOperation() {
-                    return null;
-                }
-                
-                @Override
-                public int getId() {
-                    return 0;
-                }
-                
-                @Override
-                public String[][] getCall() {
-                    return null;
-                }
-                
-                @Override
-                public String[] getAttributeNames() {
-                    return null;
-                }
-            };
-        }
+        // TODO workaround (promise not yet implemented in module) 
+        //Promise promise = anonymizeModule.get(attributeNames, criteria, operation);
+        DefaultPromise promise = new DefaultPromise();
+        promise.setAttributeNames(attributeNames);
         return promise;
     }
 
     @Override
     public String[][] get(Promise promise, String[][] contents) {
-        return anonymizeModule.get(promise, contents);
+        // TODO workaround (promise not yet implemented in module) 
+        //return anonymizeModule.get(promise, contents);
+        boolean modify = false;
+        if (dataIdPatterns != null && promise != null && promise.getAttributeNames() != null) {
+            modify = Arrays.stream(promise.getAttributeNames()).anyMatch(an -> Arrays.stream(dataIdPatterns).anyMatch(t -> t.matcher(an).matches()));
+        }
+        if (modify) {
+            return contents.clone();
+            //return Arrays.stream(contents).map(row -> Arrays.stream(row).map(v -> v + "*").toArray(String[]::new)).toArray(String[][]::new);
+        }
+        return contents;
     }
 
     @Override

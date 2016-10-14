@@ -11,7 +11,7 @@ public class PgsqlResponseForwarder extends ServerMessageForwarder<PgsqlRawPart>
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         PgsqlSession session = (PgsqlSession) ctx.channel().attr(TCPConstants.SESSION_KEY).get();
-        session.getSession().release();
+        session.getSession().reset();
         super.channelInactive(ctx);
     }
 }

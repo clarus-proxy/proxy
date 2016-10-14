@@ -2,12 +2,12 @@ package eu.clarussecure.proxy.protocol.plugins.pgsql.message;
 
 import io.netty.util.internal.StringUtil;
 
-public class PgsqlReadyForQueryMessage implements PgsqlQueryResponseMessage {
+public class PgsqlReadyForQueryMessage implements PgsqlQueryResponseMessage<Byte> {
 
     public static final byte TYPE = (byte) 'Z';
     public static final int HEADER_SIZE = Byte.BYTES + Integer.BYTES;
 
-    protected byte transactionStatus;
+    private byte transactionStatus;
 
     public PgsqlReadyForQueryMessage(byte transactionStatus) {
         this.transactionStatus = transactionStatus;
@@ -51,5 +51,10 @@ public class PgsqlReadyForQueryMessage implements PgsqlQueryResponseMessage {
         builder.append("transactionStatus=").append(transactionStatus).append(':').append(getTransactionStatusAsString());
         builder.append("]");
         return builder.toString();
+    }
+
+    @Override
+    public Byte getDetails() {
+        return getTransactionStatus();
     }
 }

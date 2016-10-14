@@ -19,5 +19,5 @@
 			<attribute_type type="non_confidential" protection="null"/>
 		</attribute_types>
 	</protection>
-    <protocol plugin="PostgreSQL" listen="5432"/>
+    <protocol plugin="PostgreSQL"/>
 </schema>	

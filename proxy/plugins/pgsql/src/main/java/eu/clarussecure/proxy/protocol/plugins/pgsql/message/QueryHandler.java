@@ -313,7 +313,7 @@ public class QueryHandler extends PgsqlMessageHandler<PgsqlQueryMessage> {
         sendResponse(ctx, msg);
     }
 
-    private <M extends PgsqlQueryResponseMessage> void sendResponse(ChannelHandlerContext ctx, M msg) throws IOException {
+    private <M extends PgsqlQueryResponseMessage<?>> void sendResponse(ChannelHandlerContext ctx, M msg) throws IOException {
         // Resolve writer
         PgsqlMessageWriter<M> writer = getWriter(ctx, msg.getClass());
         // Compute total length

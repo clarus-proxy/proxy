@@ -24,12 +24,12 @@ public class FrontendSidePipelineInitializer extends ChannelInitializer<Channel>
         pipeline.addLast("PgsqlPartCodec", new PgsqlRawPartCodec(true, configuration.getFramePartMaxLength()));
         EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
         String messageProcessing = System.getProperty("pgsql.message.processing");
-        if (!(messageProcessing != null && ("0".equalsIgnoreCase(messageProcessing) || "no".equalsIgnoreCase(messageProcessing) || "off".equalsIgnoreCase(messageProcessing)))) {
+        if (!(messageProcessing != null && (Boolean.FALSE.toString().equalsIgnoreCase(messageProcessing) || "0".equalsIgnoreCase(messageProcessing) || "no".equalsIgnoreCase(messageProcessing) || "off".equalsIgnoreCase(messageProcessing)))) {
             pipeline.addLast("PgsqlPartAggregator", new PgsqlRawPartAggregator(PgsqlStartupMessage.TYPE/*, PgsqlSimpleQueryMessage.TYPE*/));
             pipeline.addLast("PgsqlPartAccumulator", new PgsqlRawPartAccumulator(PgsqlSimpleQueryMessage.TYPE));
             pipeline.addLast(parserGroup, "AuthenticationHandler", new AuthenticationHandler());
             String queryProcessing = System.getProperty("pgsql.query.processing");
-            if (!(queryProcessing != null && ("0".equalsIgnoreCase(queryProcessing) || "no".equalsIgnoreCase(queryProcessing) || "off".equalsIgnoreCase(queryProcessing)))) {
+            if (!(queryProcessing != null && (Boolean.FALSE.toString().equalsIgnoreCase(queryProcessing) || "0".equalsIgnoreCase(queryProcessing) || "no".equalsIgnoreCase(queryProcessing) || "off".equalsIgnoreCase(queryProcessing)))) {
                 pipeline.addLast(parserGroup, "QueryHandler", new QueryHandler());
             }
         }
