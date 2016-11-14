@@ -38,6 +38,21 @@ allprojects {
                     node.append(child)
                 }
                 if (parent != null) {
+                    String installDir = null;
+                    if (projectDir.toPath().getParent().equals(parent.projectDir.toPath().resolve("modules"))
+                        || projectDir.toPath().getParent().equals(parent.projectDir.toPath().resolve("plugins"))) {
+                        installDir = "install/ext-libs"
+                    } else if (project.name.equals("proxy-main")) {
+                        installDir = "install/libs"
+                    }
+                    if (installDir != null) {
+                        String content = new File("$mainProject/src/main/maven/pom-profile-install-libs.xml").text
+                        content = content.replace("@INSTALL_DIR@", "\${project.parent.relativePath}/$installDir")
+                        root = new XmlParser().parseText(content)
+                        for (child in root.children()) {
+                            node.append(child)
+                        }
+                    }
                     asNode().remove(asNode().get('version'))
                 }
             }
@@ -58,6 +73,7 @@ allprojects {
 
 subprojects {
     apply plugin: 'java'
+    apply plugin: 'eclipse'
     compileJava.options.encoding = 'UTF-8'
     sourceCompatibility = "1.8";
     targetCompatibility = "1.8";
@@ -75,6 +91,11 @@ subprojects {
 
         // Test
         testCompile 'junit:junit:4.12'
+    }
+    eclipse {
+       classpath {
+           downloadSources=true
+        }
     }
     ext {
         packaging = 'jar'
@@ -101,7 +122,7 @@ ext {
 
 ext.moduleProjects = subprojects.findAll { project -> project.projectDir.toPath().getParent().equals(projectDir.toPath().resolve("modules")) }
 ext.pluginProjects = subprojects.findAll { project -> project.projectDir.toPath().getParent().equals(projectDir.toPath().resolve("plugins")) }
-ext.proxyProjects = subprojects.findAll { project -> !ext.moduleProjects.contains(project) && !ext.pluginProjects.contains(project) }
+ext.proxyProjects = subprojects.findAll { project -> project.name.equals("proxy-main") }
 
 task installAll(type: Copy, dependsOn: ['installScripts', 'installLibs', 'installExtensionLibs']) {
 }
