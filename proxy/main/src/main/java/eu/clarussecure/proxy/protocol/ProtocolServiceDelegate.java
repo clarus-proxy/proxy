@@ -21,6 +21,11 @@ public class ProtocolServiceDelegate implements ProtocolService {
         this.protectionModule = protectionModule;
     }
 
+	@Override
+	public CString newUserIdentification(CString user) {
+		return user;
+	}
+	
     @Override
     public List<DataOperation> newDataOperation(DataOperation dataOperation) {
         Objects.requireNonNull(dataOperation);
@@ -85,4 +90,6 @@ public class ProtocolServiceDelegate implements ProtocolService {
         }
         return Collections.singletonList(dataOperation);
     }
+
+
 }

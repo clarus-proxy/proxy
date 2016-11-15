@@ -12,7 +12,8 @@ import io.netty.channel.ChannelHandlerContext;
 public class NoopEventProcessor implements EventProcessor {
 
     @Override
-    public void processAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
+    public CString processAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
+		return null;
     }
 
     @Override
