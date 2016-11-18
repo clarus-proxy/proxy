@@ -1,15 +1,15 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql.message;
 
+import java.util.Objects;
+
 import eu.clarussecure.proxy.spi.CString;
 
-public abstract class PgsqlQueryMessage implements PgsqlMessage {
-
-    public static final int HEADER_SIZE = Byte.BYTES + Integer.BYTES;
+public abstract class PgsqlQueryMessage extends PgsqlQueryRequestMessage {
 
     protected CString query;
 
     public PgsqlQueryMessage(CString query) {
-        this.query = query;
+        this.query = Objects.requireNonNull(query, "query must not be null");
     }
 
     public CString getQuery() {
@@ -17,11 +17,6 @@ public abstract class PgsqlQueryMessage implements PgsqlMessage {
     }
 
     public void setQuery(CString query) {
-        this.query = query;
-    }
-
-    @Override
-    public int getHeaderSize() {
-        return HEADER_SIZE;
+        this.query = Objects.requireNonNull(query, "query must not be null");
     }
 }

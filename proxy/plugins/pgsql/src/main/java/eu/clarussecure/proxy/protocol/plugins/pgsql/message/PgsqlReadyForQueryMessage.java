@@ -2,10 +2,9 @@ package eu.clarussecure.proxy.protocol.plugins.pgsql.message;
 
 import io.netty.util.internal.StringUtil;
 
-public class PgsqlReadyForQueryMessage implements PgsqlQueryResponseMessage<Byte> {
+public class PgsqlReadyForQueryMessage extends PgsqlDetailedQueryResponseMessage<Byte> {
 
     public static final byte TYPE = (byte) 'Z';
-    public static final int HEADER_SIZE = Byte.BYTES + Integer.BYTES;
 
     private byte transactionStatus;
 
@@ -37,11 +36,6 @@ public class PgsqlReadyForQueryMessage implements PgsqlQueryResponseMessage<Byte
     @Override
     public byte getType() {
         return TYPE;
-    }
-
-    @Override
-    public int getHeaderSize() {
-        return HEADER_SIZE;
     }
 
     @Override

@@ -7,21 +7,19 @@ import java.util.Map;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlStartupMessage;
 import eu.clarussecure.proxy.spi.CString;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.UnpooledByteBufAllocator;
 
 public class PgsqlStartupMessageWriter implements PgsqlMessageWriter<PgsqlStartupMessage> {
 
     @Override
-    public int length(PgsqlStartupMessage msg) {
-        // Compute total length
-        int total = msg.getHeaderSize() + Integer.BYTES;
+    public int contentSize(PgsqlStartupMessage msg) {
+        // Get content size
+        int size = Integer.BYTES;
         for (Map.Entry<CString, CString> parameter : msg.getParameters().entrySet()) {
-            total += parameter.getKey().clen();
-            total += parameter.getValue().clen();
+            size += parameter.getKey().clen();
+            size += parameter.getValue().clen();
         }
-        total += Byte.BYTES;
-        return total;
+        size += Byte.BYTES;
+        return size;
     }
 
     @Override
@@ -41,17 +39,13 @@ public class PgsqlStartupMessageWriter implements PgsqlMessageWriter<PgsqlStartu
     }
 
     @Override
-    public ByteBuf write(PgsqlStartupMessage msg, ByteBuf buffer) throws IOException {
-        // Compute total length
-        int total = length(msg);
-        // Allocate buffer if necessary
-        if (buffer == null || buffer.writableBytes() < total) {
-            ByteBufAllocator allocator = buffer == null ? UnpooledByteBufAllocator.DEFAULT : buffer.alloc();
-            buffer = allocator.buffer(total);
-        }
+    public void writeHeader(PgsqlStartupMessage msg, int length, ByteBuf buffer) throws IOException {
         // Write header (length)
-        int len = total;
-        buffer.writeInt(len);
+        buffer.writeInt(length);
+    }
+
+    @Override
+    public void writeContent(PgsqlStartupMessage msg, ByteBuf buffer) throws IOException {
         // Write protocol
         buffer.writeInt(msg.getProtocolVersion());
         // Write parameters
@@ -62,7 +56,6 @@ public class PgsqlStartupMessageWriter implements PgsqlMessageWriter<PgsqlStartu
             writeBytes(buffer, value);
         }
         buffer.writeByte(0);
-        return buffer;
     }
 
 }

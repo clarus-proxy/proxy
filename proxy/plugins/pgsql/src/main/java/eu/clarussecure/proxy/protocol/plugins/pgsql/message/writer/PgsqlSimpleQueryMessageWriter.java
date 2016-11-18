@@ -6,15 +6,13 @@ import java.util.Map;
 
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlSimpleQueryMessage;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.UnpooledByteBufAllocator;
 
 public class PgsqlSimpleQueryMessageWriter implements PgsqlMessageWriter<PgsqlSimpleQueryMessage> {
 
     @Override
-    public int length(PgsqlSimpleQueryMessage msg) {
-        // Compute total length
-        return msg.getHeaderSize() + msg.getQuery().clen();
+    public int contentSize(PgsqlSimpleQueryMessage msg) {
+        // Get content size
+        return msg.getQuery().clen();
     }
 
     @Override
@@ -27,19 +25,7 @@ public class PgsqlSimpleQueryMessageWriter implements PgsqlMessageWriter<PgsqlSi
     }
 
     @Override
-    public ByteBuf write(PgsqlSimpleQueryMessage msg, ByteBuf buffer) throws IOException {
-        // Compute total length
-        int total = length(msg);
-        // Allocate buffer if necessary
-        if (buffer == null || buffer.writableBytes() < total) {
-            ByteBufAllocator allocator = buffer == null ? UnpooledByteBufAllocator.DEFAULT : buffer.alloc();
-            buffer = allocator.buffer(total);
-        }
-        // Write header (type + length)
-        buffer.writeByte(msg.getType());
-        // Compute length
-        int len = total - Byte.BYTES;
-        buffer.writeInt(len);
+    public void writeContent(PgsqlSimpleQueryMessage msg, ByteBuf buffer) throws IOException {
         // Write query
         ByteBuf value = msg.getQuery().getByteBuf();
         writeBytes(buffer, value);
@@ -47,6 +33,5 @@ public class PgsqlSimpleQueryMessageWriter implements PgsqlMessageWriter<PgsqlSi
         if (buffer.writableBytes() == 1) {
             buffer.writeByte(0);
         }
-        return buffer;
     }
 }

@@ -6,23 +6,20 @@ import java.util.Map;
 
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlDataRowMessage;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.UnpooledByteBufAllocator;
 
 public class PgsqlDataRowMessageWriter implements PgsqlMessageWriter<PgsqlDataRowMessage> {
 
     @Override
-    public int length(PgsqlDataRowMessage msg) {
-        // Compute total length
-        int total = msg.getHeaderSize();
-        total += Short.BYTES;
+    public int contentSize(PgsqlDataRowMessage msg) {
+        // Get content size
+        int size = Short.BYTES;
         for (ByteBuf value : msg.getValues()) {
-            total += Integer.BYTES;
+            size += Integer.BYTES;
             if (value != null) {
-                total += value.capacity();
+                size += value.capacity();
             }
         }
-        return total;
+        return size;
     }
 
     @Override
@@ -44,19 +41,7 @@ public class PgsqlDataRowMessageWriter implements PgsqlMessageWriter<PgsqlDataRo
     }
 
     @Override
-    public ByteBuf write(PgsqlDataRowMessage msg, ByteBuf buffer) throws IOException {
-        // Compute total length
-        int total = length(msg);
-        // Allocate buffer if necessary
-        if (buffer == null || buffer.writableBytes() < total) {
-            ByteBufAllocator allocator = buffer == null ? UnpooledByteBufAllocator.DEFAULT : buffer.alloc();
-            buffer = allocator.buffer(total);
-        }
-        // Write header (type + length)
-        buffer.writeByte(msg.getType());
-        // Compute length
-        int len = total - Byte.BYTES;
-        buffer.writeInt(len);
+    public void writeContent(PgsqlDataRowMessage msg, ByteBuf buffer) throws IOException {
         // Write number of values
         buffer.writeShort(msg.getValues().size());
         // Write values
@@ -66,7 +51,6 @@ public class PgsqlDataRowMessageWriter implements PgsqlMessageWriter<PgsqlDataRo
                 writeBytes(buffer, value);
             }
         }
-        return buffer;
     }
 
 }

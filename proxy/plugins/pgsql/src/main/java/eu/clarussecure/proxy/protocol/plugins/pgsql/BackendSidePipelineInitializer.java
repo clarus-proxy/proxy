@@ -1,8 +1,17 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql;
 
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlBindCompleteMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlCloseCompleteMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlCommandCompleteMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlDataRowMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlEmptyQueryMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlErrorMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlNoDataMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlNoticeMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlParameterDescriptionMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlParameterStatusMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlParseCompleteMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlPortalSuspendedMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlReadyForQueryMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlRowDescriptionMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.QueryResponseHandler;
@@ -18,6 +27,15 @@ import io.netty.util.concurrent.EventExecutorGroup;
 
 public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> {
 
+    private static boolean MESSAGE_PROCESSING_ACTIVATED;
+    private static boolean QUERY_PROCESSING_ACTIVATED;
+    static {
+        String messageProcessing = System.getProperty("pgsql.message.processing", "true");
+        MESSAGE_PROCESSING_ACTIVATED = Boolean.TRUE.toString().equalsIgnoreCase(messageProcessing) || "1".equalsIgnoreCase(messageProcessing) || "yes".equalsIgnoreCase(messageProcessing) || "on".equalsIgnoreCase(messageProcessing);
+        String queryProcessing = System.getProperty("pgsql.query.processing", "true");
+        QUERY_PROCESSING_ACTIVATED = Boolean.TRUE.toString().equalsIgnoreCase(queryProcessing) || "1".equalsIgnoreCase(queryProcessing) || "yes".equalsIgnoreCase(queryProcessing) || "on".equalsIgnoreCase(queryProcessing);
+    }
+
     public BackendSidePipelineInitializer() {
         super();
     }
@@ -28,11 +46,15 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
         ChannelPipeline pipeline = ch.pipeline();
         pipeline.addLast("PgsqlPartCodec", new PgsqlRawPartCodec(false, configuration.getFramePartMaxLength()));
         EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
-        String messageProcessing = System.getProperty("pgsql.message.processing");
-        if (!(messageProcessing != null && (Boolean.FALSE.toString().equalsIgnoreCase(messageProcessing) || "0".equalsIgnoreCase(messageProcessing) || "no".equalsIgnoreCase(messageProcessing) || "off".equalsIgnoreCase(messageProcessing)))) {
-            pipeline.addLast("PgsqlPartAggregator", new PgsqlRawPartAggregator(PgsqlRowDescriptionMessage.TYPE, PgsqlDataRowMessage.TYPE, PgsqlCommandCompleteMessage.TYPE, PgsqlErrorMessage.TYPE, PgsqlReadyForQueryMessage.TYPE));
-            String queryProcessing = System.getProperty("pgsql.query.processing");
-            if (!(queryProcessing != null && (Boolean.FALSE.toString().equalsIgnoreCase(queryProcessing) || "0".equalsIgnoreCase(queryProcessing) || "no".equalsIgnoreCase(queryProcessing) || "off".equalsIgnoreCase(queryProcessing)))) {
+        if (MESSAGE_PROCESSING_ACTIVATED) {
+            pipeline.addLast("PgsqlPartAggregator", new PgsqlRawPartAggregator(
+                    PgsqlParseCompleteMessage.TYPE, PgsqlBindCompleteMessage.TYPE,
+                    PgsqlParameterDescriptionMessage.TYPE, PgsqlParameterStatusMessage.TYPE,
+                    PgsqlRowDescriptionMessage.TYPE, PgsqlDataRowMessage.TYPE, PgsqlNoDataMessage.TYPE,
+                    PgsqlCommandCompleteMessage.TYPE, PgsqlEmptyQueryMessage.TYPE, PgsqlPortalSuspendedMessage.TYPE,
+                    PgsqlErrorMessage.TYPE, PgsqlCloseCompleteMessage.TYPE, PgsqlReadyForQueryMessage.TYPE,
+                    PgsqlNoticeMessage.TYPE));
+            if (QUERY_PROCESSING_ACTIVATED) {
                 pipeline.addLast(parserGroup, "QueryResultHandler", new QueryResponseHandler());
             }
         }

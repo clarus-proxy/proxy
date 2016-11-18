@@ -14,7 +14,7 @@ import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlConstants;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlSession;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.parser.PgsqlMessageParser;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.EventProcessor;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SqlSession;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLSession;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.writer.PgsqlMessageWriter;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.DefaultFullPgsqlRawMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.FullPgsqlRawMessage;
@@ -64,7 +64,7 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
 
     @Override
     protected void decode(ChannelHandlerContext ctx, PgsqlRawMessage rawMsg, List<Object> out) throws Exception {
-        if (isStreamingSupported() && rawMsg instanceof MutablePgsqlRawMessage && !((MutablePgsqlRawMessage) rawMsg).isComplete()) {
+        if (isStreamingSupported(rawMsg.getType()) && rawMsg instanceof MutablePgsqlRawMessage && !((MutablePgsqlRawMessage) rawMsg).isComplete()) {
             LOGGER.trace("Decoding raw message in streaming mode: {}...", rawMsg);
             decodeStream(ctx, rawMsg);
             LOGGER.trace("Full raw message decoded: {}", rawMsg);
@@ -100,7 +100,7 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
         }
     }
 
-    protected boolean isStreamingSupported() {
+    protected boolean isStreamingSupported(byte type) {
         // don't forget to configure PgsqlRawPartAccumulator in the pipeline
         return false;
     }
@@ -197,13 +197,16 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
         }
     }
 
-    protected SqlSession getSession(ChannelHandlerContext ctx) {
+    protected PgsqlSession getPsqlSession(ChannelHandlerContext ctx) {
         PgsqlSession pgsqlSession = (PgsqlSession) ctx.channel().attr(PgsqlConstants.SESSION_KEY).get();
-        return pgsqlSession.getSession();
+        return pgsqlSession;
+    }
+
+    protected SQLSession getSqlSession(ChannelHandlerContext ctx) {
+        return getPsqlSession(ctx).getSqlSession();
     }
 
     protected EventProcessor getEventProcessor(ChannelHandlerContext ctx) {
-        PgsqlSession pgsqlSession = (PgsqlSession) ctx.channel().attr(PgsqlConstants.SESSION_KEY).get();
-        return pgsqlSession.getEventProcessor();
+        return getPsqlSession(ctx).getEventProcessor();
     }
 }

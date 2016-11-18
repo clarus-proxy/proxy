@@ -6,10 +6,9 @@ import java.util.Objects;
 import eu.clarussecure.proxy.spi.CString;
 import io.netty.util.internal.StringUtil;
 
-public class PgsqlErrorMessage implements PgsqlQueryResponseMessage<Map<Byte, CString>> {
+public class PgsqlErrorMessage extends PgsqlDetailedQueryResponseMessage<Map<Byte, CString>> {
 
     public static final byte TYPE = (byte) 'E';
-    public static final int HEADER_SIZE = Byte.BYTES + Integer.BYTES;
 
     private Map<Byte, CString> fields;
 
@@ -28,11 +27,6 @@ public class PgsqlErrorMessage implements PgsqlQueryResponseMessage<Map<Byte, CS
     @Override
     public byte getType() {
         return TYPE;
-    }
-
-    @Override
-    public int getHeaderSize() {
-        return HEADER_SIZE;
     }
 
     @Override

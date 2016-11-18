@@ -7,10 +7,9 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.util.internal.StringUtil;
 
-public class PgsqlDataRowMessage implements PgsqlQueryResponseMessage<List<ByteBuf>> {
+public class PgsqlDataRowMessage extends PgsqlDetailedQueryResponseMessage<List<ByteBuf>> {
 
     public static final byte TYPE = (byte) 'D';
-    public static final int HEADER_SIZE = Byte.BYTES + Integer.BYTES;
 
     private List<ByteBuf> values;
 
@@ -29,11 +28,6 @@ public class PgsqlDataRowMessage implements PgsqlQueryResponseMessage<List<ByteB
     @Override
     public byte getType() {
         return TYPE;
-    }
-
-    @Override
-    public int getHeaderSize() {
-        return HEADER_SIZE;
     }
 
     @Override

@@ -82,9 +82,9 @@ public class CString implements CharSequence, Cloneable {
         if (buffer != null) {
             if (buffer.release()) {
                 buffer = null;
+                strLen = 0;
+                hash = 0;
             }
-            strLen = 0;
-            hash = 0;
         }
         return buffer == null;
     }
@@ -127,6 +127,14 @@ public class CString implements CharSequence, Cloneable {
             throw new StringIndexOutOfBoundsException(index);
         }
         return str != null ? str.charAt(index) : (char) (buffer.getByte(index) & 0xFF);
+    }
+
+    public CString substring(int beginIndex) {
+        return subSequence(beginIndex, length());
+    }
+
+    public CString substring(int beginIndex, int endIndex) {
+        return subSequence(beginIndex, endIndex);
     }
 
     @Override
@@ -191,11 +199,11 @@ public class CString implements CharSequence, Cloneable {
         return -1;
     }
 
-    public CString append(CharSequence other) throws IOException {
+    public CString append(CharSequence other) {
         return append(other, other.length());
     }
 
-    public CString append(CharSequence other, int length) throws IOException {
+    public CString append(CharSequence other, int length) {
         if (length <= 0) {
             return this;
         }
@@ -227,7 +235,12 @@ public class CString implements CharSequence, Cloneable {
                 str = new StringBuilder(str);
             }
             // Append other's char sequence to this internal char sequence
-            ((Appendable)str).append(src.subSequence(0, length));
+            try {
+                ((Appendable)str).append(src.subSequence(0, length));
+            } catch (IOException e) {
+                // Should not occurs
+                throw new IllegalStateException(e);
+            }
         }
         // Reset hashcode (really necessary ?)
         hash = 0;

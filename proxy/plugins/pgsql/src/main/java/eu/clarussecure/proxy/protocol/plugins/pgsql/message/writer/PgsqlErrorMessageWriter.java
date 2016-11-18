@@ -7,21 +7,19 @@ import java.util.Map;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlErrorMessage;
 import eu.clarussecure.proxy.spi.CString;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.UnpooledByteBufAllocator;
 
 public class PgsqlErrorMessageWriter implements PgsqlMessageWriter<PgsqlErrorMessage> {
 
     @Override
-    public int length(PgsqlErrorMessage msg) {
-        // Compute total length
-        int total = msg.getHeaderSize();
+    public int contentSize(PgsqlErrorMessage msg) {
+        // Get content size
+        int size = 0;
         for (Map.Entry<Byte, CString> field : msg.getFields().entrySet()) {
-            total += Byte.BYTES;
-            total += field.getValue().clen();
+            size += Byte.BYTES;
+            size += field.getValue().clen();
         }
-        total += Byte.BYTES;
-        return total;
+        size += Byte.BYTES;
+        return size;
     }
 
     @Override
@@ -40,19 +38,7 @@ public class PgsqlErrorMessageWriter implements PgsqlMessageWriter<PgsqlErrorMes
     }
 
     @Override
-    public ByteBuf write(PgsqlErrorMessage msg, ByteBuf buffer) throws IOException {
-        // Compute total length
-        int total = length(msg);
-        // Allocate buffer if necessary
-        if (buffer == null || buffer.writableBytes() < total) {
-            ByteBufAllocator allocator = buffer == null ? UnpooledByteBufAllocator.DEFAULT : buffer.alloc();
-            buffer = allocator.buffer(total);
-        }
-        // Write header (type + length)
-        buffer.writeByte(msg.getType());
-        // Compute length
-        int len = total - Byte.BYTES;
-        buffer.writeInt(len);
+    public void writeContent(PgsqlErrorMessage msg, ByteBuf buffer) throws IOException {
         // Write fields
         for (Map.Entry<Byte, CString> field : msg.getFields().entrySet()) {
             byte key = field.getKey().byteValue();
@@ -61,7 +47,6 @@ public class PgsqlErrorMessageWriter implements PgsqlMessageWriter<PgsqlErrorMes
             writeBytes(buffer, value);
         }
         buffer.writeByte(0);
-        return buffer;
     }
 
 }

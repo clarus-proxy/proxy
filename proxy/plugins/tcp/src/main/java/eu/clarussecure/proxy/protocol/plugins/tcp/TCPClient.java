@@ -48,6 +48,7 @@ public class TCPClient<CI extends ChannelInitializer<Channel>, S extends TCPSess
         LOGGER.trace("Initialize connection to {}", configuration.getServerEndpoint());
         ChannelFuture connectFuture = bootstrap.connect(configuration.getServerEndpoint());
         Channel serverSideChannel = connectFuture.channel();
+        session.setServerSideChannel(serverSideChannel);
         return serverSideChannel;
     }
 

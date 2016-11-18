@@ -6,10 +6,9 @@ import java.util.Objects;
 import eu.clarussecure.proxy.spi.CString;
 import io.netty.util.internal.StringUtil;
 
-public class PgsqlRowDescriptionMessage implements PgsqlQueryResponseMessage<List<PgsqlRowDescriptionMessage.Field>> {
+public class PgsqlRowDescriptionMessage extends PgsqlDetailedQueryResponseMessage<List<PgsqlRowDescriptionMessage.Field>> {
 
     public static final byte TYPE = (byte) 'T';
-    public static final int HEADER_SIZE = Byte.BYTES + Integer.BYTES;
 
     public static class Field {
 
@@ -129,11 +128,6 @@ public class PgsqlRowDescriptionMessage implements PgsqlQueryResponseMessage<Lis
     @Override
     public byte getType() {
         return TYPE;
-    }
-
-    @Override
-    public int getHeaderSize() {
-        return HEADER_SIZE;
     }
 
     @Override

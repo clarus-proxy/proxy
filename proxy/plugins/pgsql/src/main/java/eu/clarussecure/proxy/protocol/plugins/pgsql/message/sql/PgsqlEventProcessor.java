@@ -4,9 +4,12 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Iterator;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,8 +17,8 @@ import org.slf4j.LoggerFactory;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlConstants;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlSession;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlRowDescriptionMessage;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlRowDescriptionMessage.Field;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SqlSession.BufferedStatement;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLSession.ExtendedQueryStatus;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLSession.QueryResponseType;
 import eu.clarussecure.proxy.spi.CString;
 import eu.clarussecure.proxy.spi.DataOperation;
 import eu.clarussecure.proxy.spi.Mode;
@@ -33,21 +36,30 @@ import net.sf.jsqlparser.expression.Function;
 import net.sf.jsqlparser.expression.NullValue;
 import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
+import net.sf.jsqlparser.expression.operators.relational.MultiExpressionList;
 import net.sf.jsqlparser.parser.CCJSqlParser;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.parser.TokenMgrError;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.Statement;
+import net.sf.jsqlparser.statement.delete.Delete;
 import net.sf.jsqlparser.statement.insert.Insert;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
 import net.sf.jsqlparser.statement.select.SelectExpressionItem;
 import net.sf.jsqlparser.statement.select.SelectItem;
+import net.sf.jsqlparser.statement.select.SubSelect;
+import net.sf.jsqlparser.statement.update.Update;
 
 public class PgsqlEventProcessor implements EventProcessor {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(EventProcessor.class);
+    private static boolean FORCE_SQL_PROCESSING;
+    static {
+        String sqlForceProcessing = System.getProperty("pgsql.sql.force.processing", "false");
+        FORCE_SQL_PROCESSING = Boolean.TRUE.toString().equalsIgnoreCase(sqlForceProcessing) || "1".equalsIgnoreCase(sqlForceProcessing) || "yes".equalsIgnoreCase(sqlForceProcessing) || "on".equalsIgnoreCase(sqlForceProcessing);
+    }
 
     public static final String USER_KEY = "user";
     public static final String DATABASE_KEY = "database";
@@ -55,236 +67,508 @@ public class PgsqlEventProcessor implements EventProcessor {
     @Override
     public void processAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
         CString databaseName = parameters.get(CString.valueOf(DATABASE_KEY));
-        SqlSession sqlSession = getSession(ctx);
+        SQLSession sqlSession = getSession(ctx);
         sqlSession.setDatabaseName((CString) databaseName.clone());
     }
 
     @Override
-    public StatementTransferMode processStatement(ChannelHandlerContext ctx, CString statement, boolean lastStatement) throws IOException {
-        LOGGER.debug("SQL statement: {}", statement);
-        TransferMode transferMode;
-        CString newStatements = statement;
+    public QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException {
+        LOGGER.debug("SQL statement: {}", sqlStatement);
+        TransferMode transferMode = TransferMode.FORWARD;
+        List<Query> newQueries = Collections.singletonList(sqlStatement);
         CString response = null;
-        if (statement.isEmpty()) {
-            transferMode = getSession(ctx).getTransferMode();
-        } else {
-            transferMode = TransferMode.FORWARD;
-            boolean toProcess = false;
-            Mode processingMode;
-            StatementType type = SimpleSqlParserUtil.parse(statement);
-            if (type != null) {
-                switch (type) {
-                case START_TRANSACTION:
-                    getSession(ctx).setInTransaction(true);
-                    break;
-                case COMMIT:
-                case ROLLBACK:
-                    getSession(ctx).setInTransaction(false);
-                    getSession(ctx).setInDatasetCreation(false);
-                    break;
-                case SELECT:
-                    processingMode = getProcessingMode(ctx, false, Operation.READ);
-                    toProcess = isStatementToProcess(processingMode);
+        Map<Byte, CString> errorDetails = null;
+        boolean toProcess = false;
+        Operation operation = null;
+        SQLSession session = getSession(ctx);
+        session.setCurrentOperation(operation);
+        SQLCommandType type = SimpleSQLParserUtil.parse(sqlStatement.getSQL());
+        if (type != null) {
+            CString error = null;
+            switch (type) {
+            case START_TRANSACTION: {
+                toProcess = isSQLStatementToProcess(null);
+                if (sqlStatement instanceof SimpleQuery && session.getTransactionStatus() != (byte)'E') {
+                    // transaction status is followed by tracking ready for query responses
+                    // however, in case of simple query, starting a transaction may be part of a whole script in a single query
+                    // in that case, we can't wait for ready for query response
+                    // so we suppose starting a transaction is ok (provided that transaction status is not error)
+                    session.setTransactionStatus((byte)'T');
+                }
+                break;
+            }
+            case COMMIT:
+            case ROLLBACK: {
+                toProcess = isSQLStatementToProcess(null);
+                if (sqlStatement instanceof SimpleQuery && session.getTransactionStatus() != (byte)'E') {
+                    // transaction status is followed by tracking ready for query responses
+                    // however, in case of simple query, closing a transaction may be part of a whole script in a single query
+                    // in that case, we can't wait for ready for query response
+                    // so we suppose closing a transaction is ok (provided that transaction status is not error)
+                    session.setTransactionStatus((byte)'I');
+                }
+                if (session.isInDatasetCreation()) {
+                    // Closing a transaction completes creation of a dataset (arbitrary decision)
+                    session.setInDatasetCreation(false);
+                }
+                break;
+            }
+            case SELECT: {
+                operation = Operation.READ;
+                // TODO detect if select is on the whole dataset
+                boolean retrieveWholeDataset = false;
+                Mode processingMode = getProcessingMode(ctx, retrieveWholeDataset, operation);
+                toProcess = isSQLStatementToProcess(processingMode);
+                if (toProcess) {
                     if (processingMode == null) {
-                        transferMode = TransferMode.DENY;
-                        response = CString.valueOf("Record read not supported by this CLARUS proxy");
+                        transferMode = TransferMode.ERROR;
+                        error = CString.valueOf(String.format("%s read not supported by this CLARUS proxy",
+                                retrieveWholeDataset ? "Dataset" : "Record"));
+                    } else if (processingMode == Mode.ORCHESTRATION) {
+                        // TODO orchestration mode. Meanwhile, same as AS_IT_IS mode
+                        session.setCurrentOperation(operation);
+                    } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.BUFFERING || processingMode == Mode.STREAMING) {
+                        session.setCurrentOperation(operation);
                     }
-                    if (toProcess) {
-                        getSession(ctx).setCurrentOperation(Operation.READ);
-                    }
-                    break;
-                case INSERT:
-                    if (getSession(ctx).isInDatasetCreation()) {
-                        processingMode = getProcessingMode(ctx, true, Operation.CREATE);
-                        toProcess = isStatementToProcess(processingMode);
-                        if (processingMode == null) {
-                            transferMode = TransferMode.DENY;
-                            response = CString.valueOf("Dataset creation not supported by this CLARUS proxy");
-                        } else if (processingMode == Mode.BUFFERING) {
+                }
+                break;
+            }
+            case INSERT: {
+                operation = Operation.CREATE;
+                boolean inDatasetCreation = session.isInDatasetCreation();
+                Mode processingMode = getProcessingMode(ctx, inDatasetCreation, operation);
+                toProcess = isSQLStatementToProcess(processingMode);
+                if (toProcess) {
+                    if (processingMode == null) {
+                        transferMode = TransferMode.ERROR;
+                        error = CString.valueOf(String.format("%s creation not supported by this CLARUS proxy",
+                                inDatasetCreation ? "Dataset" : "Record"));
+                    } else if (processingMode == Mode.BUFFERING) {
+                        if (inDatasetCreation) {
                             transferMode = TransferMode.FORGET;
-                            if (lastStatement) {
+                            if (sqlStatement instanceof SimpleQuery) {
                                 response = CString.valueOf("INSERT 0 1");
                             }
-                        } else if (toProcess) {
-                            getSession(ctx).setCurrentOperation(Operation.CREATE);
+                        } else {
+                            // Should not occur
+                            transferMode = TransferMode.ERROR;
+                            error = CString.valueOf("Buffering processing mode not supported for record creation by this CLARUS proxy");
                         }
-                    } else {
-                        processingMode = getProcessingMode(ctx, false, Operation.CREATE);
-                        toProcess = isStatementToProcess(processingMode);
-                        if (processingMode == null) {
-                            transferMode = TransferMode.DENY;
-                            response = CString.valueOf("Record creation not supported by this CLARUS proxy");
-                        } else if (toProcess) {
-                            getSession(ctx).setCurrentOperation(Operation.CREATE);
-                        }
+                    } else if (processingMode == Mode.ORCHESTRATION) {
+                        // Should not occur
+                        transferMode = TransferMode.ERROR;
+                        error = CString.valueOf("Orchestration processing mode not supported for dataset or record creation by this CLARUS proxy");
+                    } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.STREAMING) {
+                        session.setCurrentOperation(operation);
                     }
-                    break;
-                case CREATE_TABLE:
-                    if (getProcessingMode(ctx, true, Operation.CREATE) == null) {
-                        transferMode = TransferMode.DENY;
-                        response = CString.valueOf("Dataset creation not supported by this CLARUS proxy");
-                    }
-                    if (getSession(ctx).isInTransaction()) {
-                        getSession(ctx).setInDatasetCreation(true);
-                    }
-                    break;
-                case ADD_GEOMETRY_COLUMN:
-                    toProcess = true;
-                default:
-                    break;
                 }
+                break;
             }
-            getSession(ctx).setTransferMode(transferMode);
-            if (transferMode == TransferMode.FORWARD) {
-                newStatements = buildNewStatements(ctx, statement, toProcess, lastStatement);
-            } else if (transferMode == TransferMode.FORGET) {
-                if (statement != null) {
-                    bufferStatement(ctx, statement, toProcess, lastStatement);
+            case CREATE_TABLE: {
+                Mode processingMode = getProcessingMode(ctx, true, Operation.CREATE);
+                toProcess = isSQLStatementToProcess(processingMode);
+                if (toProcess) {
+                    if (processingMode == null) {
+                        transferMode = TransferMode.ERROR;
+                        error = CString.valueOf("Dataset creation not supported by this CLARUS proxy");
+                    } else {
+                        if (session.getTransactionStatus() == (byte)'T') {
+                            session.setInDatasetCreation(true);
+                        }
+                    }
                 }
-                newStatements = null;
-            } else if (transferMode == TransferMode.DENY) {
-                getSession(ctx).resetCurrentCommand();
-                newStatements = null;
+                break;
+            }
+            case ADD_GEOMETRY_COLUMN: {
+                toProcess = true;
+                break;
+            }
+            case UPDATE: {
+                operation = Operation.UPDATE;
+                // TODO detect if update is on the whole dataset
+                boolean inDatasetModification = false;
+                Mode processingMode = getProcessingMode(ctx, inDatasetModification, operation);
+                toProcess = isSQLStatementToProcess(processingMode);
+                if (toProcess) {
+                    if (processingMode == null) {
+                        transferMode = TransferMode.ERROR;
+                        error = CString.valueOf(String.format("%s update not supported by this CLARUS proxy",
+                                inDatasetModification ? "Dataset" : "Record"));
+                    } else if (processingMode == Mode.BUFFERING) {
+                        if (inDatasetModification) {
+                            transferMode = TransferMode.FORGET;
+                            if (sqlStatement instanceof SimpleQuery) {
+                                response = CString.valueOf("UPDATE 0 1");
+                            }
+                        } else {
+                            // Should not occur
+                            transferMode = TransferMode.ERROR;
+                            error = CString.valueOf("Buffering processing mode not supported for record modification by this CLARUS proxy");
+                        }
+                    } else if (processingMode == Mode.ORCHESTRATION) {
+                        // Should not occur
+                        transferMode = TransferMode.ERROR;
+                        error = CString.valueOf("Orchestration processing mode not supported for dataset or record modification by this CLARUS proxy");
+                    } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.STREAMING) {
+                        session.setCurrentOperation(operation);
+                    }
+                }
+                break;
+            }
+            case DELETE: {
+                operation = Operation.DELETE;
+                // TODO detect if delete is on the whole dataset
+                boolean deleteWholeDataset = false;
+                Mode processingMode = getProcessingMode(ctx, deleteWholeDataset, operation);
+                toProcess = isSQLStatementToProcess(processingMode);
+                if (toProcess) {
+                    if (processingMode == null) {
+                        transferMode = TransferMode.ERROR;
+                        error = CString.valueOf(String.format("%s delete not supported by this CLARUS proxy",
+                                deleteWholeDataset ? "Dataset" : "Record"));
+                    } else if (processingMode == Mode.BUFFERING) {
+                        if (deleteWholeDataset) {
+                            transferMode = TransferMode.FORGET;
+                            if (sqlStatement instanceof SimpleQuery) {
+                                response = CString.valueOf("DELETE 0 1");
+                            }
+                        } else {
+                            // Should not occur
+                            transferMode = TransferMode.ERROR;
+                            error = CString.valueOf("Buffering processing mode not supported for record delete by this CLARUS proxy");
+                        }
+                    } else if (processingMode == Mode.ORCHESTRATION) {
+                        // Should not occur
+                        transferMode = TransferMode.ERROR;
+                        error = CString.valueOf("Orchestration processing mode not supported for dataset or record delete by this CLARUS proxy");
+                    } else {
+                        session.setCurrentOperation(operation);
+                    }
+                }
+                break;
+            }
+            default:
+                break;
+            }
+            if (error != null) {
+                errorDetails = new LinkedHashMap<>();
+                errorDetails.put((byte) 'S', CString.valueOf("FATAL"));
+                errorDetails.put((byte) 'M', error);
             }
         }
-        StatementTransferMode mode = new StatementTransferMode(newStatements, transferMode, response);
-        LOGGER.debug("SQL statement processed: new statements={}, transfer mode={}", mode.getNewStatements(), mode.getTransferMode());
+        session.setTransferMode(transferMode);
+        if (transferMode == TransferMode.FORWARD) {
+            if (sqlStatement instanceof SimpleQuery) {
+                // Process simple query immediately
+                newQueries = buildNewQueries(ctx, (SimpleSQLStatement) sqlStatement, toProcess);
+            } else {
+                // Track parse step (for bind, describe and close steps)
+                session.addParseStep((ParseStep) sqlStatement, operation);
+                // Postpone processing of extended query
+                transferMode = TransferMode.FORGET;
+                newQueries = null;
+                session.addLastQueryResponseToIgnore(QueryResponseType.PARSE_COMPLETE);
+            }
+        } else if (transferMode == TransferMode.FORGET) {
+            // Buffer sql statement
+            errorDetails = bufferQuery(ctx, sqlStatement);
+            if (errorDetails != null) {
+                transferMode = TransferMode.ERROR;
+            }
+            if (!(sqlStatement instanceof SimpleQuery)) {
+                // Track parse step (for bind, describe and close steps)
+                session.addParseStep((ParseStep) sqlStatement, operation);
+            }
+            newQueries = null;
+        } else if (transferMode == TransferMode.ERROR) {
+            if (session.getTransactionStatus() == (byte)'T') {
+                session.setTransactionErrorDetails(errorDetails);
+            }
+            session.resetCurrentCommand();
+            newQueries = null;
+        }
+        QueriesTransferMode<SQLStatement, CString> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
+        LOGGER.debug("SQL statement processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
         return mode;
     }
 
-    private boolean isStatementToProcess(Mode processingMode) {
-        String statementForceProcessing = System.getProperty("pgsql.statement.force.processing");
-        if (statementForceProcessing != null && (Boolean.TRUE.toString().equalsIgnoreCase(statementForceProcessing) || "1".equalsIgnoreCase(statementForceProcessing) || "yes".equalsIgnoreCase(statementForceProcessing) || "on".equalsIgnoreCase(statementForceProcessing))) {
-            return true;
-        }
-        return processingMode != null && processingMode != Mode.AS_IT_IS;
+    private boolean isSQLStatementToProcess(Mode processingMode) {
+        return FORCE_SQL_PROCESSING || processingMode != Mode.AS_IT_IS;
     }
 
-    private CString buildNewStatements(ChannelHandlerContext ctx, CString statement, boolean toProcess, boolean lastStatement) throws IOException {
-        processBufferedStatements(ctx);
-        CString newStatement = toProcess ? processStatement(ctx, statement) : statement;
-        CString newStatements;
-        if (getSession(ctx).getBufferedStatements().isEmpty()) {
-            newStatements = newStatement;
+    private List<Query> buildNewQueries(ChannelHandlerContext ctx, SimpleSQLStatement sqlStatement, boolean toProcess) throws IOException {
+        List<Query> newQueries = processBufferedQueries(ctx);
+        SimpleSQLStatement newSQLStatement = toProcess ? processSimpleSQLStatement(ctx, sqlStatement) : sqlStatement;
+        if (newQueries.isEmpty()) {
+            newQueries = Collections.singletonList(newSQLStatement);
         } else {
-            // Compute new statement size
+            // Compute new SQL statement size (if buffered queries are all simple)
+            boolean allSimple = true;
             int newSize = 0;
-            for (BufferedStatement bufferedStatement : getSession(ctx).getBufferedStatements()) {
-                newSize += bufferedStatement.getResult().length();
+            for (Query newQuery : newQueries) {
+                if (newQuery instanceof SimpleQuery) {
+                    newSize += ((SQLStatement) newQuery).getSQL().length();
+                } else {
+                    allSimple = false;
+                    break;
+                }
             }
-            newSize += newStatement.length();
-            newStatements = CString.valueOf(new StringBuilder(newSize));
-            for (Iterator<BufferedStatement> iter = getSession(ctx).getBufferedStatements().iterator(); iter.hasNext();) {
-                BufferedStatement bufferedStatement = iter.next();
-                newStatements.append(bufferedStatement.getResult());
-                iter.remove();
+            if (allSimple) {
+                newSize += newSQLStatement.getSQL().length();
+                CString newSQL = CString.valueOf(new StringBuilder(newSize));
+                for (Query newQuery : newQueries) {
+                    newSQL.append(((SQLStatement) newQuery).getSQL());
+                }
+                newSQL.append(newSQLStatement.getSQL());
+                newSQLStatement = new SimpleSQLStatement(newSQL);
+                newQueries = Collections.singletonList(newSQLStatement);
+                // Remove expected response messages
+                SQLSession session = getSession(ctx);
+                QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+                while (nextQueryResponseToIgnore == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+                    session.removeFirstQueryResponseToIgnore();
+                    nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+                }
+            } else {
+                newQueries.add(newSQLStatement);
             }
-            newStatements.append(newStatement);
         }
-        return newStatements;
+        return newQueries;
     }
 
-    private void processBufferedStatements(ChannelHandlerContext ctx) {
+    private List<Query> processBufferedQueries(ChannelHandlerContext ctx) {
         DataOperation dataOperation = null;
-        for (BufferedStatement bufferedStatement : getSession(ctx).getBufferedStatements()) {
-            if (!bufferedStatement.isToProcess()) {
-                continue;
+        SQLSession session = getSession(ctx);
+        List<Statement> allStatements = new ArrayList<>(session.getBufferedQueries().size());
+        List<List<ParameterValue>> allParameterValues = new ArrayList<>(session.getBufferedQueries().size());
+        List<Integer> rows = new ArrayList<>(session.getBufferedQueries().size());
+        List<Query> newQueries = session.getBufferedQueries();
+        // Track indexes of parse steps (necessary for bind steps)
+        Map<CString, Integer> lastParseStepIndexes = new HashMap<>();
+        // Track usage of parse steps and bind steps to know if they must be closed
+        Map<CString, Integer> parseStepCounters = session.getParseStepStatuses().keySet().stream()
+                .collect(Collectors.toMap(java.util.function.Function.identity(), i -> 1));     // Initialize parse step counters
+        Map<CString, Integer> bindStepCounters = session.getBindStepStatuses().keySet().stream()
+                .collect(Collectors.toMap(java.util.function.Function.identity(), i -> 1));     // Initialize bind step counters
+        int index = 0;
+        int row = 0;
+        for (Query bufferedQuery : session.getBufferedQueries()) {
+            Statement stmt = null;
+            List<ParameterValue> parameterValues = null;
+            Integer optionalRow = null;
+            boolean extract = false;
+            if (bufferedQuery instanceof SimpleQuery) {
+                // Parse SQL statement
+                stmt = parseSQL(ctx, ((SimpleSQLStatement)bufferedQuery).getSQL());
+                // Save row for this SQL statement
+                optionalRow = Integer.valueOf(row ++);
+                // Ready to extract and protect data for this query
+                extract = true;
+            } else {
+                ExtendedQuery query = (ExtendedQuery) bufferedQuery;
+                if (query instanceof ParseStep) {
+                    ParseStep parseStep = (ParseStep) query;
+                    // Parse SQL statement
+                    stmt = parseSQL(ctx, parseStep.getSQL());
+                    // Save row for this SQL statement
+                    optionalRow = Integer.valueOf(row); // Row incremented during bind step 
+                    // Track index of this parse step (necessary for bind step)
+                    lastParseStepIndexes.put(parseStep.getName(), index);
+                    // Increment parse step counter
+                    Integer counter = parseStepCounters.get(parseStep.getName());
+                    parseStepCounters.put(parseStep.getName(), counter + 1);
+                } else if (query instanceof BindStep) {
+                    // Extract parameter values
+                    BindStep bindStep = (BindStep) query;
+                    ParseStep parseStep = null;
+                    if (lastParseStepIndexes.containsKey(bindStep.getPreparedStatement())) {
+                        // Parse step was within buffered queries
+                        int lastParseStepIndex = lastParseStepIndexes.get(bindStep.getPreparedStatement());
+                        // Retrieve parse step from buffered queries
+                        parseStep = (ParseStep) session.getBufferedQueries().get(lastParseStepIndex);
+                        // SQL statement was already parsed 
+                        stmt = allStatements.get(lastParseStepIndex);
+                    } else {
+                        // Parse step was done long time ago (and is tracked by session)
+                        ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(bindStep.getPreparedStatement());
+                        if (parseStepStatus != null) {
+                            parseStep = parseStepStatus.getQuery();
+                            // Parse SQL statement
+                            stmt = parseSQL(ctx, parseStep.getSQL());
+                        }
+                    }
+                    if (parseStep != null) {
+                        // Build portal parameter (type+format+value)
+                        parameterValues = bindStep.getParameterValues().stream()
+                                .map(ParameterValue::new)       // create a PortalParameter for each parameter value
+                                .collect(Collectors.toList());  // build a list
+                        final List<Long> parameterTypes = parseStep.getParameterTypes();
+                        for (int idx = 0; idx < parameterTypes.size(); idx ++) {
+                            // set parameter type
+                            parameterValues.get(idx).setType(parameterTypes.get(idx));
+                        }
+                        final List<Short> formats = bindStep.getParameterFormats();
+                        for (int i = 0; i < parameterValues.size(); i ++) {
+                            ParameterValue parameterValue = parameterValues.get(i);
+                            Short format = formats.get(formats.size() == 1 ? 0 : i);
+                            // set parameter value format
+                            parameterValue.setFormat(format);
+                        }
+                        // Save row for this bind step
+                        optionalRow = Integer.valueOf(row ++);
+                        // Ready to extract and protect data for this query
+                        extract = true;
+                    }
+                    // Increment bind step counter
+                    Integer counter = bindStepCounters.get(bindStep.getName());
+                    bindStepCounters.put(bindStep.getName(), counter + 1);
+                } else if (query instanceof DescribeStep) {
+                    // nothing to do, just send as-it-is
+                } else if (query instanceof ExecuteStep) {
+                    // nothing to do, just send as-it-is
+                } else if (query instanceof CloseStep) {
+                    CloseStep closeStep = (CloseStep) query;
+                    if (closeStep.getCode() == 'S') {
+                        // Decrement parse step counter
+                        Integer counter = parseStepCounters.get(closeStep.getName());
+                        parseStepCounters.put(closeStep.getName(), counter - 1);
+                    } else {
+                        // Decrement bind step counter
+                        Integer counter = bindStepCounters.get(closeStep.getName());
+                        bindStepCounters.put(closeStep.getName(), counter - 1);
+                    }
+                } else if (query instanceof SynchronizeStep) {
+                    // nothing to do, just send as-it-is
+                } else if (query instanceof FlushStep) {
+                    // nothing to do, just send as-it-is
+                }
             }
-            // Parse statement
-            Statement stmt = parseStatement(ctx, bufferedStatement.getOriginal());
-            if (stmt == null) {
-                continue;
+            allStatements.add(stmt);
+            allParameterValues.add(parameterValues);
+            rows.add(optionalRow);
+            if (extract) {
+                // Extract data operation
+                if (stmt instanceof Insert) {
+                    dataOperation = extractInsertOperation(ctx, (Insert)stmt, parameterValues, dataOperation);
+                } else if (stmt instanceof Select) {
+                    dataOperation = extractSelectOperation(ctx, (Select)stmt, parameterValues, dataOperation);
+                }
             }
-            // Extract data operation
-            if (stmt instanceof Insert) {
-                dataOperation = extractInsertOperation(ctx, (Insert)stmt, dataOperation);
-            } else if (stmt instanceof Select) {
-                dataOperation = extractSelectOperation(ctx, (Select)stmt, dataOperation);
-            }
-            bufferedStatement.setStmt(stmt);
+            index ++;
         }
+        // Close parse steps and bind steps if their counter is negative or zero
+        bindStepCounters.forEach((name, counter) -> {
+            if (counter <= 0) {
+                session.removeBindStep(name);
+            }
+        });
+        parseStepCounters.forEach((name, counter) -> {
+            if (counter <= 0) {
+                session.removeParseStep(name);
+            }
+        });
         // Process data operation
         if (dataOperation != null) {
             List<DataOperation> newDataOperations = getProtocolService(ctx).newDataOperation(dataOperation);
             dataOperation = newDataOperations.get(0);
             if (dataOperation.isModified()) {
-                // Modify statements
-                int row = 0;
-                for (BufferedStatement bufferedStatement : getSession(ctx).getBufferedStatements()) {
-                    if (!bufferedStatement.isToProcess()) {
-                        continue;
+                // Modify SQL queries (and parameter values)
+                newQueries = new ArrayList<>(session.getBufferedQueries().size());
+                index = 0;
+                for (Query bufferedQuery : session.getBufferedQueries()) {
+                    Statement stmt = allStatements.get(index);
+                    Query newQuery = bufferedQuery;
+                    if (stmt != null) {
+                        List<ParameterValue> parameterValues = allParameterValues.get(index);
+                        // Modify SQL statement
+                        Integer optionalRow = rows.get(index);
+                        if (optionalRow != null) {
+                            if (stmt instanceof Insert) {
+                                modifyInsertStatement(ctx, (Insert)stmt, parameterValues, dataOperation, optionalRow);
+                            } else if (stmt instanceof Select) {
+                                modifySelectStatement(ctx, (Select)stmt, parameterValues, dataOperation, optionalRow);
+                            }
+                        }
+                        if (bufferedQuery instanceof SimpleQuery) {
+                            SimpleSQLStatement simpleSQLStatement = (SimpleSQLStatement)bufferedQuery;
+                            String newSQL = stmt.toString();
+                            newSQL = StringUtilities.addIrrelevantCharacters(newSQL, simpleSQLStatement.getSQL(), " \t\r\n;");
+                            newQuery = new SimpleSQLStatement(CString.valueOf(newSQL));
+                        } else {
+                            ExtendedQuery query = (ExtendedQuery)bufferedQuery;
+                            if (query instanceof ParseStep) {
+                                ParseStep parseStep = (ParseStep)query;
+                                String newSQL = stmt.toString();
+                                newSQL = StringUtilities.addIrrelevantCharacters(newSQL, parseStep.getSQL(), " \t\r\n;");
+                                newQuery = new ParseStep(parseStep.getName(), CString.valueOf(newSQL), parseStep.getParameterTypes());
+                            } else if (query instanceof BindStep) {
+                                BindStep bindStep = (BindStep)query;
+                                List<ByteBuf> parameterBinaryValues = parameterValues.stream()
+                                        .map(ParameterValue::getValue)  // get the parameter value
+                                        .collect(Collectors.toList());  // build a list
+                                if (!parameterBinaryValues.equals(bindStep.getParameterValues())) {
+                                    // At least one parameter ByteBuf values has been changed
+                                    newQuery = new BindStep(bindStep.getName(), bindStep.getPreparedStatement(),
+                                            bindStep.getParameterFormats(), parameterBinaryValues, bindStep.getResultColumnFormats());
+                                }
+                            }
+                        }
                     }
-                    // Modify statement
-                    if (bufferedStatement.getStmt() instanceof Insert) {
-                        modifyInsertOperation(ctx, (Insert)bufferedStatement.getStmt(), dataOperation, row ++);
-                    } else if (bufferedStatement.getStmt() instanceof Select) {
-                        modifySelectOperation(ctx, (Select)bufferedStatement.getStmt(), dataOperation, row ++);
-                    }
-                    String newStatement = bufferedStatement.getStmt().toString();
-                    newStatement = StringUtilities.addIrrelevantCharacters(newStatement, bufferedStatement.getOriginal(), " \t\r\n;");
-                    bufferedStatement.setModified(CString.valueOf(newStatement));
+                    newQuery.retain();
+                    newQueries.add(newQuery);
+                    index ++;
                 }
             }
         }
+        session.resetBufferedQueries();
+        return newQueries;
     }
 
-    private CString processStatement(ChannelHandlerContext ctx, CString statement) {
-        // Parse statement
-        Statement stmt = parseStatement(ctx, statement);
+    private SimpleSQLStatement processSimpleSQLStatement(ChannelHandlerContext ctx, SimpleSQLStatement sqlStatement) {
+        // Parse SQL statement
+        Statement stmt = parseSQL(ctx, sqlStatement.getSQL());
         if (stmt == null) {
-            return statement;
+            return sqlStatement;
         }
         // Extract data operation
         DataOperation dataOperation = null;
         if (stmt instanceof Insert) {
-            dataOperation = extractInsertOperation(ctx, (Insert)stmt, null);
+            dataOperation = extractInsertOperation(ctx, (Insert)stmt, null, null);
         } else if (stmt instanceof Select) {
-            dataOperation = extractSelectOperation(ctx, (Select)stmt, null);
+            dataOperation = extractSelectOperation(ctx, (Select)stmt, null, null);
+        } else if (stmt instanceof Update) {
+            // TODO Update
+        } else if (stmt instanceof Delete) {
+            // TODO Delete
         }
         // Process data operation
         if (dataOperation != null) {
             List<DataOperation> newDataOperations = getProtocolService(ctx).newDataOperation(dataOperation);
             dataOperation = newDataOperations.get(0);
             if (dataOperation.isModified()) {
-                // Modify statement
+                // Modify SQL statement
                 if (stmt instanceof Insert) {
-                    modifyInsertOperation(ctx, (Insert)stmt, dataOperation, 0);
+                    modifyInsertStatement(ctx, (Insert)stmt, null, dataOperation, 0);
                 } else if (stmt instanceof Select) {
-                    modifySelectOperation(ctx, (Select)stmt, dataOperation, 0);
+                    modifySelectStatement(ctx, (Select)stmt, null, dataOperation, 0);
+                } else if (stmt instanceof Update) {
+                    // TODO Update
+                } else if (stmt instanceof Delete) {
+                    // TODO Delete
                 }
-                String newStatement = stmt.toString();
-                newStatement = StringUtilities.addIrrelevantCharacters(newStatement, statement, " \t\r\n;");
-                statement = CString.valueOf(newStatement);
+                String newSQL = stmt.toString();
+                newSQL = StringUtilities.addIrrelevantCharacters(newSQL, sqlStatement.getSQL(), " \t\r\n;");
+                sqlStatement = new SimpleSQLStatement(CString.valueOf(newSQL));
             }
-            if (getSession(ctx).getCurrentOperation() == Operation.READ) {
-                getSession(ctx).setPromise(dataOperation.getPromise());
+            SQLSession session = getSession(ctx);
+            if (session.getCurrentOperation() == Operation.READ) {
+                session.setPromise(dataOperation.getPromise());
             }
         }
-        return statement;
+        return sqlStatement;
     }
 
-    private Statement parseStatement(ChannelHandlerContext ctx, CString statement) {
-        // Parse statement
-        Statement stmt = null;
-        ByteBuf byteBuf = null;
-        try {
-            if (statement.isBuffered()) {
-                byteBuf = statement.getByteBuf();
-                byteBuf.markReaderIndex();
-                stmt = CCJSqlParserUtil.parse(new ByteBufInputStream(byteBuf.readSlice(statement.length())), StandardCharsets.ISO_8859_1.name());
-            } else {
-                stmt = CCJSqlParserUtil.parse(statement.toString());
-            }
-        } catch (JSQLParserException | TokenMgrError e) {
-            if (byteBuf != null) {
-                byteBuf.resetReaderIndex();
-            }
-            LOGGER.error("Parsing error for {} : ", statement, e);
-        }
-        return stmt;
-    }
-
-    private DataOperation extractInsertOperation(ChannelHandlerContext ctx, Insert stmt, DataOperation dataOperation) {
+    private DataOperation extractInsertOperation(ChannelHandlerContext ctx, Insert stmt, List<ParameterValue> parameterValues, DataOperation dataOperation) {
         if (dataOperation == null) {
             dataOperation = new DataOperation();
             dataOperation.setOperation(Operation.CREATE);
@@ -296,8 +580,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                     sb.append(databaseName).append('/');
                 }
             }
-            if (sb.length() == 0 && getSession(ctx).getDatabaseName() != null) {
-                sb.append(getSession(ctx).getDatabaseName()).append('/');
+            SQLSession session = getSession(ctx);
+            if (sb.length() == 0 && session.getDatabaseName() != null) {
+                sb.append(session.getDatabaseName()).append('/');
             }
             String schemaName = StringUtilities.unquote(stmt.getTable().getSchemaName());
             if (schemaName != null) {
@@ -307,29 +592,74 @@ public class PgsqlEventProcessor implements EventProcessor {
             sb.append(tableName).append('/');
             String datasetId = sb.toString();
             // Extract data ids
-            for (Column column : stmt.getColumns()) {
-                dataOperation.addDataId(CString.valueOf(datasetId + StringUtilities.unquote(column.getColumnName())));
-            }
+            List<CString> dataIds = stmt.getColumns().stream()
+                .map(Column::getColumnName)     // get column name
+                .map(StringUtilities::unquote)  // unquote string
+                .map(cn -> datasetId + cn)      // build dataId
+                .map(CString::valueOf)          // transform to CString
+                .collect(Collectors.toList());  // build a list
+            dataOperation.setDataIds(dataIds);
         }
         // Extract data values
-        List<CString> dataValues = new ArrayList<>();
-        for (Expression expression : ((ExpressionList) stmt.getItemsList()).getExpressions()) {
-            dataValues.add(expression instanceof NullValue ? null : CString.valueOf(expression.toString()));
+        List<CString> dataValues = null;
+        if (stmt.getItemsList() instanceof ExpressionList) {
+            dataValues = ((ExpressionList) stmt.getItemsList()).getExpressions().stream()
+                    .map(exp -> (exp instanceof NullValue) ? null : exp.toString())     // transform to string
+                    .map(CString::valueOf)                                              // transform to CString
+                    .collect(Collectors.toList());                                      // build a list
+        }
+        // TODO more complex insert statement
+//        else if (stmt.getItemsList() instanceof MultiExpressionList) {
+//        } else if (stmt.getItemsList() instanceof SubSelect) {
+//        }
+        if (parameterValues != null) {
+            // Replace parameter id by parameter value
+            dataValues.replaceAll(value -> {                                            // replace each data value ...
+                if (value != null && value.charAt(0) == '$') {                          // if value is a parameter id ($<index>)
+                    int idx = Integer.parseInt(value.substring(1).toString()) - 1;      // get the parameter index
+                    ParameterValue parameterValue = parameterValues.get(idx);           // get the parameter value
+                    value = convertToText(parameterValue.getType(),                     // convert parameter value to string
+                                parameterValue.getFormat(), parameterValue.getValue());
+                }
+                return value;
+            });
         }
         dataOperation.addDataValues(dataValues);
         return dataOperation;
     }
 
-    private void modifyInsertOperation(ChannelHandlerContext ctx, Insert stmt, DataOperation dataOperation, int row) {
+    private void modifyInsertStatement(ChannelHandlerContext ctx, Insert stmt, List<ParameterValue> parameterValues, DataOperation dataOperation, int row) {
         List<CString> dataValues = dataOperation.getDataValues().get(row);
-        List<Expression> values = ((ExpressionList) stmt.getItemsList()).getExpressions();
-        for (int i = 0; i < values.size(); i ++) {
-            CString dataValue = dataValues.get(i);
-            values.set(i, dataValue == null ? new NullValue() : new StringValue(dataValue.toString()));
+        if (stmt.getItemsList() instanceof ExpressionList) {
+            final List<Expression> expressions = ((ExpressionList) stmt.getItemsList()).getExpressions();
+            for (int i = 0; i < dataValues.size(); i ++) {
+                Expression expression = expressions.get(i);
+                if (!(expression instanceof NullValue)) {
+                    String strValue = expression.toString();
+                    if (strValue.charAt(0) == '$') {
+                        // modify parameter
+                        if (parameterValues != null) {
+                            int paramIndex = Integer.parseInt(strValue.substring(1)) - 1;       // get the parameter index
+                            ParameterValue parameterValue = parameterValues.get(paramIndex);    // get the parameter value
+                            ByteBuf value = convertToByteBuf(parameterValue.getType(),          // convert string to ByteBuf
+                                    parameterValue.getFormat(), dataValues.get(i));
+                            // modify parameter value
+                            parameterValue.setValue(value);
+                        }
+                    } else {
+                        // modify expression
+                        expressions.set(i, new StringValue(dataValues.get(i).toString()));
+                    }
+                }
+            }
+        } else if (stmt.getItemsList() instanceof MultiExpressionList) {
+            // TODO more complex insert statement
+        } else if (stmt.getItemsList() instanceof SubSelect) {
+            // TODO more complex insert statement
         }
     }
 
-    private DataOperation extractSelectOperation(ChannelHandlerContext ctx, Select stmt, DataOperation dataOperation) {
+    private DataOperation extractSelectOperation(ChannelHandlerContext ctx, Select stmt, List<ParameterValue> parameterValues, DataOperation dataOperation) {
         if (dataOperation == null) {
             dataOperation = new DataOperation();
             dataOperation.setOperation(Operation.READ);
@@ -348,8 +678,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                         sb.append(databaseName).append('/');
                     }
                 }
-                if (sb.length() == 0 && getSession(ctx).getDatabaseName() != null) {
-                    sb.append(getSession(ctx).getDatabaseName()).append('/');
+                SQLSession session = getSession(ctx);
+                if (sb.length() == 0 && session.getDatabaseName() != null) {
+                    sb.append(session.getDatabaseName()).append('/');
                 }
                 String schemaName = StringUtilities.unquote(table.getSchemaName());
                 if (schemaName != null) {
@@ -370,7 +701,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                     } else {
                         dataOperation.addDataId(CString.valueOf(datasetId + StringUtilities.unquote(selectExpressionItem.getExpression().toString())));
                     }
-                } /* else TODO All columns (*) */
+                } else {
+                    // TODO All columns (*)
+                }
             }
             // Extract parameter ids and values (functions)
             for (SelectItem selectItem : select.getSelectItems()) {
@@ -378,7 +711,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                     Function function = (Function) ((SelectExpressionItem)selectItem).getExpression();
                     if (function.getParameters() != null) {
                         dataOperation.addParameterId(CString.valueOf(function.getName()));
-                        dataOperation.addParameterValue(CString.valueOf(PlainSelect.getStringList(function.getParameters().getExpressions(), true, false)));
+                        CString value = CString.valueOf(PlainSelect.getStringList(function.getParameters().getExpressions(), true, false));
+                        dataOperation.addParameterValue(value);
                     }
                 }
             }
@@ -387,7 +721,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         return dataOperation;
     }
 
-    private void modifySelectOperation(ChannelHandlerContext ctx, Select stmt, DataOperation dataOperation, int row) {
+    private void modifySelectStatement(ChannelHandlerContext ctx, Select stmt, List<ParameterValue> parameterValues, DataOperation dataOperation, int row) {
         PlainSelect select = (PlainSelect) stmt.getSelectBody();
         for (SelectItem selectItem : select.getSelectItems()) {
             if (selectItem instanceof SelectExpressionItem && ((SelectExpressionItem)selectItem).getExpression() instanceof Function) {
@@ -408,29 +742,637 @@ public class PgsqlEventProcessor implements EventProcessor {
         // TODO Modify parameter values (clause where)
     }
 
-    private void bufferStatement(ChannelHandlerContext ctx, CString statement, boolean toProcess, boolean lastStatement) {
-        if (getSession(ctx).getBufferedStatements().isEmpty()) {
-            getSession(ctx).resetCommandResultsToIgnore();
+    @Override
+    public QueriesTransferMode<BindStep, Void> processBindStep(ChannelHandlerContext ctx, BindStep bindStep) throws IOException {
+        LOGGER.debug("Bind step: {}", bindStep);
+        TransferMode transferMode = TransferMode.FORWARD;
+        List<Query> newQueries = Collections.singletonList(bindStep);
+        Void response = null;
+        Map<Byte, CString> errorDetails = null;
+        SQLSession session = getSession(ctx);
+        ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(bindStep.getPreparedStatement());
+        if (parseStepStatus == null) {
+            throw new IllegalStateException(String.format("Parse step not found for bind step '%s'", bindStep.getName()));
         }
-        getSession(ctx).addBufferedStatements(statement, toProcess);
-        if (lastStatement) {
-            getSession(ctx).incrementeCommandResultsToIgnore();
+        // Track bind step (for describe, execute and close steps)
+        ExtendedQueryStatus<BindStep> bindStepStatus = session.addBindStep(bindStep, parseStepStatus.getOperation());
+        Operation operation = parseStepStatus.getOperation();
+        if (operation != null) {
+            CString error = null;
+            Mode processingMode;
+            switch (operation) {
+            case READ:
+                // TODO detect if select is on the whole dataset
+                boolean retrieveWholeDataset = false;
+                processingMode = getProcessingMode(ctx, retrieveWholeDataset, Operation.READ);
+                if (processingMode == null) {
+                    // Should not occur
+                    transferMode = TransferMode.ERROR;
+                    error = CString.valueOf(String.format("%s read not supported by this CLARUS proxy",
+                            retrieveWholeDataset ? "Dataset" : "Record"));
+                } else if (processingMode == Mode.ORCHESTRATION) {
+                    // TODO orchestration mode. Meanwhile, same as AS_IT_IS mode
+                    transferMode = TransferMode.FORWARD;
+                } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.BUFFERING || processingMode == Mode.STREAMING) {
+                    transferMode = TransferMode.FORWARD;
+                }
+                break;
+            case CREATE:
+                boolean inDatasetCreation = session.isInDatasetCreation();
+                processingMode = getProcessingMode(ctx, inDatasetCreation, Operation.CREATE);
+                if (processingMode == null) {
+                    transferMode = TransferMode.ERROR;
+                    error = CString.valueOf(String.format("%s creation not supported by this CLARUS proxy",
+                            inDatasetCreation ? "Dataset" : "Record"));
+                } else if (processingMode == Mode.BUFFERING) {
+                    if (inDatasetCreation) {
+                        transferMode = TransferMode.FORGET;
+                    } else {
+                        // Should not occur
+                        transferMode = TransferMode.ERROR;
+                        error = CString.valueOf("Buffering processing mode not supported for record creation by this CLARUS proxy");
+                    }
+                } else if (processingMode == Mode.ORCHESTRATION) {
+                    // Should not occur
+                    transferMode = TransferMode.ERROR;
+                    error = CString.valueOf("Orchestration processing mode not supported for dataset or record creation by this CLARUS proxy");
+                } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.STREAMING) {
+                    transferMode = TransferMode.FORWARD;
+                }
+                break;
+            case UPDATE:
+                // TODO detect if update is on the whole dataset
+                boolean inDatasetModification = false;
+                processingMode = getProcessingMode(ctx, inDatasetModification, Operation.UPDATE);
+                if (processingMode == null) {
+                    transferMode = TransferMode.ERROR;
+                    error = CString.valueOf(String.format("%s modification not supported by this CLARUS proxy",
+                            inDatasetModification ? "Dataset" : "Record"));
+                } else if (processingMode == Mode.BUFFERING) {
+                    if (inDatasetModification) {
+                        transferMode = TransferMode.FORGET;
+                    } else {
+                        // Should not occur
+                        transferMode = TransferMode.ERROR;
+                        error = CString.valueOf("Buffering processing mode not supported for record modification by this CLARUS proxy");
+                    }
+                } else if (processingMode == Mode.ORCHESTRATION) {
+                    // Should not occur
+                    transferMode = TransferMode.ERROR;
+                    error = CString.valueOf("Orchestration processing mode not supported for dataset or record modification by this CLARUS proxy");
+                } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.STREAMING) {
+                    transferMode = TransferMode.FORWARD;
+                }
+                break;
+            case DELETE:
+                // TODO detect if delete is on the whole dataset
+                boolean deleteWholeDataset = false;
+                processingMode = getProcessingMode(ctx, deleteWholeDataset, Operation.DELETE);
+                if (processingMode == null) {
+                    transferMode = TransferMode.ERROR;
+                    error = CString.valueOf(String.format("%s delete not supported by this CLARUS proxy",
+                            deleteWholeDataset ? "Dataset" : "Record"));
+                } else if (processingMode == Mode.BUFFERING) {
+                    if (deleteWholeDataset) {
+                        transferMode = TransferMode.FORGET;
+                    } else {
+                        // Should not occur
+                        transferMode = TransferMode.ERROR;
+                        error = CString.valueOf("Buffering processing mode not supported for record delete by this CLARUS proxy");
+                    }
+                } else if (processingMode == Mode.ORCHESTRATION) {
+                    // Should not occur
+                    transferMode = TransferMode.ERROR;
+                    error = CString.valueOf("Orchestration processing mode not supported for dataset or record delete by this CLARUS proxy");
+                } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.STREAMING) {
+                    transferMode = TransferMode.FORWARD;
+                }
+                break;
+            default:
+                break;
+            }
+            if (error != null) {
+                errorDetails = new LinkedHashMap<>();
+                errorDetails.put((byte) 'S', CString.valueOf("FATAL"));
+                errorDetails.put((byte) 'M', error);
+            }
         }
+        session.setTransferMode(transferMode);
+        if (transferMode == TransferMode.FORWARD) {
+            newQueries = buildNewQueries(ctx, parseStepStatus, bindStepStatus);
+        } else if (transferMode == TransferMode.FORGET) {
+            // Buffer extended query
+            errorDetails = bufferQuery(ctx, bindStep);
+            if (errorDetails != null) {
+                transferMode = TransferMode.ERROR;
+            }
+            newQueries = null;
+        } else if (transferMode == TransferMode.ERROR) {
+            if (session.getTransactionStatus() == (byte)'T') {
+                session.setTransactionErrorDetails(errorDetails);
+            }
+            session.resetCurrentCommand();
+            newQueries = null;
+        }
+        QueriesTransferMode<BindStep, Void> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
+        LOGGER.debug("Bind step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
+        return mode;
+    }
+
+    @Override
+    public QueriesTransferMode<DescribeStep, List<?>[]> processDescribeStep(ChannelHandlerContext ctx, DescribeStep describeStep) throws IOException {
+        LOGGER.debug("Describe step: {}", describeStep);
+        SQLSession session = getSession(ctx);
+        TransferMode transferMode = session.getTransferMode();
+        List<Query> newQueries = Collections.singletonList(describeStep);
+        List<?>[] response = null;
+        Map<Byte, CString> errorDetails = null;
+        if (transferMode == TransferMode.FORWARD) {
+            if (describeStep.getCode() == 'S') {
+                // Postpone processing of extended query
+                session.addDescribeStep(describeStep);
+                transferMode = TransferMode.FORGET;
+                newQueries = null;
+                ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(describeStep.getName());
+                session.addLastQueryResponseToIgnore(QueryResponseType.PARAMETER_DESCRIPTION);
+                if (parseStepStatus.getOperation() == Operation.READ) {
+                    session.addLastQueryResponseToIgnore(QueryResponseType.ROW_DESCRIPTION_AND_ROW_DATA);
+                } else {
+                    session.addLastQueryResponseToIgnore(QueryResponseType.NO_DATA);
+                }
+            } else {
+                // nothing to do, just forward query
+            }
+        } else if (transferMode == TransferMode.FORGET) {
+            // TODO parse SQL statement to extract selected columns (to row description)
+            List<PgsqlRowDescriptionMessage.Field> rowDescription = null;       // null means no data
+            List<Long> parameterTypes = null;
+            if (describeStep.getCode() == 'S') {
+                ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(describeStep.getName());
+                // TODO parse SQL statement to extract exact list of parameter
+                parameterTypes = new ArrayList<Long>(parseStepStatus.getQuery().getParameterTypes());
+                response = new List<?>[] { parameterTypes, rowDescription };
+            } else {
+                response = new List<?>[] { rowDescription };
+            }
+            // Buffer extended query
+            errorDetails = bufferQuery(ctx, describeStep);
+            if (errorDetails != null) {
+                transferMode = TransferMode.ERROR;
+            }
+            newQueries = null;
+        } else if (transferMode == TransferMode.ERROR) {
+            errorDetails = session.getRetainedTransactionErrorDetails();
+            session.resetCurrentCommand();
+            newQueries = null;
+        }
+        QueriesTransferMode<DescribeStep, List<?>[]> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
+        LOGGER.debug("Describe step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
+        return mode;
+    }
+
+    @Override
+    public QueriesTransferMode<ExecuteStep, CString> processExecuteStep(ChannelHandlerContext ctx, ExecuteStep executeStep) throws IOException {
+        LOGGER.debug("Execute step: {}", executeStep);
+        SQLSession session = getSession(ctx);
+        TransferMode transferMode = session.getTransferMode();
+        List<Query> newQueries = Collections.singletonList(executeStep);
+        CString response = null;
+        Map<Byte, CString> errorDetails = null;
+        if (transferMode == TransferMode.FORWARD) {
+            // nothing to do, just forward query
+        } else if (transferMode == TransferMode.FORGET) {
+            ExtendedQueryStatus<BindStep> bindStepStatus = session.getBindStepStatus(executeStep.getPortal()); 
+            Operation operation = bindStepStatus.getOperation();
+            if (operation != null) {
+                switch (operation) {
+                case READ:
+                    break;
+                case CREATE:
+                    response = CString.valueOf("INSERT 0 1");
+                    break;
+                case UPDATE:
+                    response = CString.valueOf("UPDATE 0 1");
+                    break;
+                case DELETE:
+                    response = CString.valueOf("DELETE 0 1");
+                    break;
+                default:
+                    break;
+                }
+            }
+            // Buffer extended query
+            errorDetails = bufferQuery(ctx, executeStep);
+            if (errorDetails != null) {
+                transferMode = TransferMode.ERROR;
+            }
+            newQueries = null;
+        } else if (transferMode == TransferMode.ERROR) {
+            errorDetails = session.getRetainedTransactionErrorDetails();
+            session.resetCurrentCommand();
+            newQueries = null;
+        }
+        QueriesTransferMode<ExecuteStep, CString> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
+        LOGGER.debug("Execute step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
+        return mode;
+    }
+
+    @Override
+    public QueriesTransferMode<CloseStep, Void> processCloseStep(ChannelHandlerContext ctx, CloseStep closeStep) throws IOException {
+        LOGGER.debug("Close step: {}", closeStep);
+        SQLSession session = getSession(ctx);
+        TransferMode transferMode = session.getTransferMode();
+        List<Query> newQueries = Collections.singletonList(closeStep);
+        Void response = null;
+        Map<Byte, CString> errorDetails = null;
+        if (transferMode == TransferMode.FORWARD) {
+            if (closeStep.getCode() == 'S') {
+                session.removeParseStep(closeStep.getName());
+            } else {
+                session.removeBindStep(closeStep.getName());
+            }
+        } else if (transferMode == TransferMode.FORGET) {
+            // Buffer extended query
+            errorDetails = bufferQuery(ctx, closeStep);
+            if (errorDetails != null) {
+                transferMode = TransferMode.ERROR;
+            }
+            newQueries = null;
+        } else if (transferMode == TransferMode.ERROR) {
+            errorDetails = session.getRetainedTransactionErrorDetails();
+            session.resetCurrentCommand();
+            newQueries = null;
+        }
+        QueriesTransferMode<CloseStep, Void> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
+        LOGGER.debug("Close step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
+        return mode;
+    }
+
+    @Override
+    public QueriesTransferMode<SynchronizeStep, Byte> processSynchronizeStep(ChannelHandlerContext ctx, SynchronizeStep synchronizeStep) throws IOException {
+        LOGGER.debug("Synchronize step: {}", synchronizeStep);
+        SQLSession session = getSession(ctx);
+        TransferMode transferMode = session.getTransferMode();
+        List<Query> newQueries = Collections.singletonList(synchronizeStep);
+        Byte response = null;
+        Map<Byte, CString> errorDetails = null;
+        if (transferMode == TransferMode.FORGET) {
+            response = session.getTransactionStatus();
+            // Buffer extended query
+            errorDetails = bufferQuery(ctx, synchronizeStep);
+            if (errorDetails != null) {
+                transferMode = TransferMode.ERROR;
+            }
+            newQueries = null;
+        } else if (transferMode == TransferMode.ERROR) {
+            // Reset transfer mode for next queries
+            session.setTransferMode(TransferMode.FORWARD);
+        }
+        QueriesTransferMode<SynchronizeStep, Byte> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
+        LOGGER.debug("Synchronize step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
+        return mode;
+    }
+
+    @Override
+    public QueriesTransferMode<FlushStep, Void> processFlushStep(ChannelHandlerContext ctx, FlushStep flushStep) throws IOException {
+        LOGGER.debug("Flush step: {}", flushStep);
+        SQLSession session = getSession(ctx);
+        TransferMode transferMode = session.getTransferMode();
+        List<Query> newQueries = Collections.singletonList(flushStep);
+        Void response = null;
+        Map<Byte, CString> errorDetails = null;
+        if (transferMode == TransferMode.FORWARD) {
+            // nothing to do, just forward query
+        } else if (transferMode == TransferMode.FORGET) {
+            // Buffer extended query
+            errorDetails = bufferQuery(ctx, flushStep);
+            if (errorDetails != null) {
+                transferMode = TransferMode.ERROR;
+            }
+            newQueries = null;
+        } else if (transferMode == TransferMode.ERROR) {
+            errorDetails = session.getRetainedTransactionErrorDetails();
+            session.resetCurrentCommand();
+            newQueries = null;
+        }
+        QueriesTransferMode<FlushStep, Void> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
+        LOGGER.debug("Flush step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
+        return mode;
+    }
+
+    private List<Query> buildNewQueries(ChannelHandlerContext ctx, ExtendedQueryStatus<ParseStep> parseStepStatus, ExtendedQueryStatus<BindStep> bindStepStatus) throws IOException {
+        List<Query> newQueries = processBufferedQueries(ctx);
+        List<ExtendedQuery> newExtendedQuery = processExtendedQuery(ctx, parseStepStatus, bindStepStatus);
+        if (newQueries.isEmpty()) {
+            newQueries = newExtendedQuery.stream().map(q -> (Query)q).collect(Collectors.toList());
+        } else {
+            newQueries.addAll(newExtendedQuery);
+        }
+        return newQueries;
+    }
+
+    private List<ExtendedQuery> processExtendedQuery(ChannelHandlerContext ctx, ExtendedQueryStatus<ParseStep> parseStepStatus, ExtendedQueryStatus<BindStep> bindStepStatus) {
+        ParseStep parseStep = parseStepStatus.getQuery();
+        BindStep bindStep = bindStepStatus.getQuery();
+        // Parse SQL statement
+        Statement stmt = parseSQL(ctx, parseStep.getSQL());
+        SQLSession session = getSession(ctx);
+        if (stmt != null) {
+            // Build bind parameter (type+format+value)
+            List<ParameterValue> parameterValues = bindStep.getParameterValues().stream()
+                    .map(ParameterValue::new)           // create a ParameterValue for each parameter value
+                    .collect(Collectors.toList());      // build a list
+            if (!parseStep.getParameterTypes().isEmpty()) {
+                final List<Long> parameterTypes = parseStep.getParameterTypes();
+                for (int idx = 0; idx < parameterTypes.size(); idx ++) {
+                    // set parameter type
+                    parameterValues.get(idx).setType(parameterTypes.get(idx));
+                }
+            }
+            if (!bindStep.getParameterFormats().isEmpty()) {
+                final List<Short> formats = bindStep.getParameterFormats();
+                for (int i = 0; i < parameterValues.size(); i ++) {
+                    ParameterValue parameterValue = parameterValues.get(i);
+                    Short format = formats.get(formats.size() == 1 ? 0 : i);
+                    // set parameter value format
+                    parameterValue.setFormat(format);
+                }
+            }
+            // Extract data operation
+            DataOperation dataOperation = null;
+            if (stmt instanceof Insert) {
+                dataOperation = extractInsertOperation(ctx, (Insert)stmt, parameterValues, null);
+            } else if (stmt instanceof Select) {
+                dataOperation = extractSelectOperation(ctx, (Select)stmt, parameterValues, null);
+            } else if (stmt instanceof Update) {
+                // TODO Update
+            } else if (stmt instanceof Delete) {
+                // TODO Delete
+            }
+            // Process data operation
+            if (dataOperation != null) {
+                List<DataOperation> newDataOperations = getProtocolService(ctx).newDataOperation(dataOperation);
+                dataOperation = newDataOperations.get(0);
+                if (dataOperation.isModified()) {
+                    // Modify SQL statement
+                    if (stmt instanceof Insert) {
+                        modifyInsertStatement(ctx, (Insert)stmt, parameterValues, dataOperation, 0);
+                    } else if (stmt instanceof Select) {
+                        modifySelectStatement(ctx, (Select)stmt, parameterValues, dataOperation, 0);
+                    }
+                    String newSQL = stmt.toString();
+                    newSQL = StringUtilities.addIrrelevantCharacters(newSQL, parseStep.getSQL(), " \t\r\n;");
+                    parseStep = new ParseStep(parseStep.getName(), CString.valueOf(newSQL), parseStep.getParameterTypes());
+                    boolean allMatch = parameterValues.stream()
+                            .map(ParameterValue::getValue).collect(Collectors.toList()) // build a list of parameter ByteBuf values
+                            .equals(bindStep.getParameterValues());                     // test if parameter ByteBuf values has been changed
+                    if (!allMatch) {
+                        List<ByteBuf> newParameterValues = parameterValues.stream()
+                                .map(ParameterValue::getValue)  // get the parameter value
+                                .collect(Collectors.toList());  // build a list
+                        bindStep = new BindStep(bindStep.getName(), bindStep.getPreparedStatement(),
+                                bindStep.getParameterFormats(), newParameterValues, bindStep.getResultColumnFormats());
+                    }
+                }
+                if (parseStepStatus.getOperation() == Operation.READ) {
+                    session.setPromise(dataOperation.getPromise());
+                }
+            }
+        }
+        List<ExtendedQuery> newQueries = new ArrayList<ExtendedQuery>();
+        if (!parseStepStatus.isProcessed()) {
+            newQueries.add(parseStep);
+            parseStep.retain();
+            parseStepStatus.setProcessed(true);
+        }
+        DescribeStep describeStep = session.getDescribeStep((byte) 'S', parseStep.getName());
+        if (describeStep != null) {
+            newQueries.add(describeStep);
+            describeStep.retain();
+            session.removeDescribeStep(describeStep.getCode(), describeStep.getName());
+        }
+        if (!bindStepStatus.isProcessed()) {
+            newQueries.add(bindStep);
+            bindStep.retain();
+            bindStepStatus.setProcessed(true);
+        }
+        return newQueries;
+    }
+
+    private Statement parseSQL(ChannelHandlerContext ctx, CString sql) {
+        // Parse statement
+        Statement stmt = null;
+        ByteBuf byteBuf = null;
+        try {
+            if (sql.isBuffered()) {
+                byteBuf = sql.getByteBuf();
+                byteBuf.markReaderIndex();
+                stmt = CCJSqlParserUtil.parse(new ByteBufInputStream(byteBuf.readSlice(sql.length())), StandardCharsets.ISO_8859_1.name());
+            } else {
+                stmt = CCJSqlParserUtil.parse(sql.toString());
+            }
+        } catch (JSQLParserException | TokenMgrError e) {
+            if (byteBuf != null) {
+                byteBuf.resetReaderIndex();
+            }
+            LOGGER.error("Parsing error for {} : ", sql);
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("Parsing error details:", e);
+            }
+        }
+        return stmt;
+    }
+
+    private Map<Byte, CString> bufferQuery(ChannelHandlerContext ctx, Query query) {
+        Map<Byte, CString> errorDetails = null;
+        SQLSession session = getSession(ctx);
+        session.addBufferedQuery(query);
+        if (query instanceof SimpleQuery) {
+            if (session.getTransactionStatus() == (byte)'E') {
+                if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+                    // command ignored, don't expect to receive command complete response 
+                    // don't notify frontend of error
+                } else {
+                    // expect to receive error response
+                    session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                }
+                // notify frontend of error
+                errorDetails = session.getRetainedTransactionErrorDetails();
+            } else {
+                session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+            }
+        } else {
+            ExtendedQuery extendedQuery = (ExtendedQuery) query;
+            if (session.getTransactionStatus() == (byte)'E') {
+                if (extendedQuery instanceof ParseStep) {
+                    // expect to receive error response
+                    session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                    // notify frontend of error
+                    errorDetails = session.getRetainedTransactionErrorDetails();
+                } else if (extendedQuery instanceof BindStep) {
+                    if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+                        // command ignored, don't expect to receive bind complete response 
+                        // don't notify frontend of error
+                    } else {
+                        // expect to receive error response
+                        session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                        // notify frontend of error
+                        errorDetails = session.getRetainedTransactionErrorDetails();
+                    }
+                } else if (extendedQuery instanceof DescribeStep) {
+                    if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+                        // command ignored, don't expect to receive parameter description, row description or no data responses 
+                        // don't notify frontend of error
+                    } else {
+                        // expect to receive error response
+                        session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                        // notify frontend of error
+                        errorDetails = session.getRetainedTransactionErrorDetails();
+                    }
+                } else if (extendedQuery instanceof ExecuteStep) {
+                    if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+                        // command ignored, don't expect to receive command complete response 
+                        // don't notify frontend of error
+                    } else {
+                        // expect to receive error response
+                        session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                        // notify frontend of error
+                        errorDetails = session.getRetainedTransactionErrorDetails();
+                    }
+                } else if (extendedQuery instanceof CloseStep) {
+                    if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+                        // command ignored, don't expect to receive close complete response 
+                        // don't notify frontend of error
+                    } else {
+                        // expect to receive error response
+                        session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                        // notify frontend of error
+                        errorDetails = session.getRetainedTransactionErrorDetails();
+                    }
+                } else if (extendedQuery instanceof SynchronizeStep) {
+                    // expect to receive ready for query response after error response
+                    session.addLastQueryResponseToIgnore(QueryResponseType.READY_FOR_QUERY);
+                    // don't notify frontend of error
+                } else if (extendedQuery instanceof FlushStep) {
+                    // don't expect to receive any response 
+                    if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+                        // don't notify frontend of error
+                    } else {
+                        // notify frontend of error
+                        errorDetails = session.getRetainedTransactionErrorDetails();
+                    }
+                }
+            } else {
+                if (extendedQuery instanceof ParseStep) {
+                    session.addLastQueryResponseToIgnore(QueryResponseType.PARSE_COMPLETE);
+                } else if (extendedQuery instanceof BindStep) {
+                    session.addLastQueryResponseToIgnore(QueryResponseType.BIND_COMPLETE);
+                } else if (extendedQuery instanceof DescribeStep) {
+                    if (((DescribeStep) query).getCode() == 'S') {
+                        session.addLastQueryResponseToIgnore(QueryResponseType.PARAMETER_DESCRIPTION);
+                    }
+                    if (session.getCurrentOperation() == Operation.READ) {
+                        session.addLastQueryResponseToIgnore(QueryResponseType.ROW_DESCRIPTION_AND_ROW_DATA);
+                    } else {
+                        session.addLastQueryResponseToIgnore(QueryResponseType.NO_DATA);
+                    }
+                } else if (extendedQuery instanceof ExecuteStep) {
+                    session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                } else if (extendedQuery instanceof CloseStep) {
+                    session.addLastQueryResponseToIgnore(QueryResponseType.CLOSE_COMPLETE);
+                } else if (extendedQuery instanceof SynchronizeStep) {
+                    session.addLastQueryResponseToIgnore(QueryResponseType.READY_FOR_QUERY);
+                } else if (extendedQuery instanceof FlushStep) {
+                    // don't expect to receive any response 
+                }
+            }
+        }
+        return errorDetails;
+    }
+
+    @Override
+    public MessageTransferMode<Void> processParseCompleteResponse(ChannelHandlerContext ctx) {
+        LOGGER.debug("Parse complete");
+        TransferMode transferMode;
+        SQLSession session = getSession(ctx);
+        QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+        if (nextQueryResponseToIgnore == null) {
+            transferMode = TransferMode.FORWARD;
+        } else if (nextQueryResponseToIgnore == QueryResponseType.PARSE_COMPLETE) {
+            transferMode = TransferMode.FORGET;
+            session.removeFirstQueryResponseToIgnore();
+        } else {
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.PARSE_COMPLETE, nextQueryResponseToIgnore));
+        }
+        MessageTransferMode<Void> mode = new MessageTransferMode<>(null, transferMode);
+        LOGGER.debug("Parse complete processed: transfer mode={}", mode.getTransferMode());
+        return mode;
+    }
+
+    @Override
+    public MessageTransferMode<Void> processBindCompleteResponse(ChannelHandlerContext ctx) {
+        LOGGER.debug("Bind complete");
+        TransferMode transferMode;
+        SQLSession session = getSession(ctx);
+        QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+        if (nextQueryResponseToIgnore == null) {
+            transferMode = TransferMode.FORWARD;
+        } else if (nextQueryResponseToIgnore == QueryResponseType.BIND_COMPLETE) {
+            transferMode = TransferMode.FORGET;
+            session.removeFirstQueryResponseToIgnore();
+        } else {
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.BIND_COMPLETE, nextQueryResponseToIgnore));
+        }
+        MessageTransferMode<Void> mode = new MessageTransferMode<>(null, transferMode);
+        LOGGER.debug("Bind complete processed: transfer mode={}", mode.getTransferMode());
+        return mode;
+    }
+
+    @Override
+    public MessageTransferMode<List<Long>> processParameterDescriptionResponse(ChannelHandlerContext ctx, List<Long> types) {
+        LOGGER.debug("Parameter description: {}", types);
+        TransferMode transferMode;
+        List<Long> newTypes = null;
+        SQLSession session = getSession(ctx);
+        QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+        if (nextQueryResponseToIgnore == null) {
+            transferMode = TransferMode.FORWARD;
+            newTypes = types;
+        } else if (nextQueryResponseToIgnore == QueryResponseType.PARAMETER_DESCRIPTION) {
+            transferMode = TransferMode.FORGET;
+            session.removeFirstQueryResponseToIgnore();
+        } else {
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.PARAMETER_DESCRIPTION, nextQueryResponseToIgnore));
+        }
+        MessageTransferMode<List<Long>> mode = new MessageTransferMode<>(newTypes, transferMode);
+        LOGGER.debug("Parameter description processed: new types={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
+        return mode;
     }
 
     @Override
     public MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> processRowDescriptionResponse(ChannelHandlerContext ctx, List<PgsqlRowDescriptionMessage.Field> fields) {
         LOGGER.debug("Row description: {}", fields);
-        TransferMode transferMode = TransferMode.FORWARD;
-        List<PgsqlRowDescriptionMessage.Field> newFields = fields;
-        if (getSession(ctx).getCurrentOperation() == Operation.READ) {
-            getSession(ctx).setRowDescription(fields);
-            // Modify promise in case query don't explicitly specify columns (e.g. '*')
-            if (getSession(ctx).getPromise() instanceof DefaultPromise && (getSession(ctx).getPromise().getAttributeNames() == null || getSession(ctx).getPromise().getAttributeNames().length == 0)) {
-                ((DefaultPromise)getSession(ctx).getPromise()).setAttributeNames(newFields.stream().map(PgsqlRowDescriptionMessage.Field::getName).map(CString::toString).toArray(String[]::new));
+        TransferMode transferMode;
+        List<PgsqlRowDescriptionMessage.Field> newFields = null;
+        SQLSession session = getSession(ctx);
+        QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+        if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY) {
+            transferMode = TransferMode.FORWARD;
+            newFields = fields;
+            if (session.getCurrentOperation() == Operation.READ) {
+                session.setRowDescription(fields);
+                // Modify promise in case query don't explicitly specify columns (e.g. '*')
+                if (session.getPromise() instanceof DefaultPromise && (session.getPromise().getAttributeNames() == null || session.getPromise().getAttributeNames().length == 0)) {
+                    ((DefaultPromise)session.getPromise()).setAttributeNames(newFields.stream().map(PgsqlRowDescriptionMessage.Field::getName).map(CString::toString).toArray(String[]::new));
+                }
             }
+        } else if (nextQueryResponseToIgnore == QueryResponseType.ROW_DESCRIPTION_AND_ROW_DATA) {
+            transferMode = TransferMode.FORGET;
+            session.removeFirstQueryResponseToIgnore();
+        } else {
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.ROW_DESCRIPTION_AND_ROW_DATA, nextQueryResponseToIgnore));
         }
-        MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> mode = new MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>>(newFields, transferMode);
+        MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> mode = new MessageTransferMode<>(newFields, transferMode);
         LOGGER.debug("Row description processed: new fields={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
         return mode;
     }
@@ -438,12 +1380,22 @@ public class PgsqlEventProcessor implements EventProcessor {
     @Override
     public MessageTransferMode<List<ByteBuf>> processDataRowResponse(ChannelHandlerContext ctx, List<ByteBuf> values) throws IOException {
         LOGGER.debug("Data row: {}", values);
-        TransferMode transferMode = TransferMode.FORWARD;
-        List<ByteBuf> newValues = values;
-        if (getSession(ctx).getCurrentOperation() == Operation.READ) {
-            newValues = processDataResult(ctx, values);
+        TransferMode transferMode;
+        List<ByteBuf> newValues = null;
+        SQLSession session = getSession(ctx);
+        QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+        if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY) {
+            transferMode = TransferMode.FORWARD;
+            newValues = values;
+            if (session.getCurrentOperation() == Operation.READ) {
+                newValues = processDataResult(ctx, values);
+            }
+        } else if (nextQueryResponseToIgnore == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+            transferMode = TransferMode.FORGET;
+        } else {
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.NO_DATA, nextQueryResponseToIgnore));
         }
-        MessageTransferMode<List<ByteBuf>> mode = new MessageTransferMode<List<ByteBuf>>(newValues, transferMode);
+        MessageTransferMode<List<ByteBuf>> mode = new MessageTransferMode<>(newValues, transferMode);
         LOGGER.debug("Data row processed: new values={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
         return mode;
     }
@@ -454,14 +1406,15 @@ public class PgsqlEventProcessor implements EventProcessor {
         dataOperation.setOperation(Operation.READ);
         int i = 0;
         List<CString> dataValues = new ArrayList<>();
-        for (PgsqlRowDescriptionMessage.Field field : getSession(ctx).getRowDescription()) {
+        SQLSession session = getSession(ctx);
+        for (PgsqlRowDescriptionMessage.Field field : session.getRowDescription()) {
             dataOperation.addDataId(field.getName());
-            CString dataValue = convert(field, values.get(i));
+            CString dataValue = convertToText(field.getTypeOID(), field.getFormat(), values.get(i));
             dataValues.add(dataValue);
             i ++;
         }
         dataOperation.addDataValues(dataValues);
-        dataOperation.setPromise(getSession(ctx).getPromise());
+        dataOperation.setPromise(session.getPromise());
         // Process data operation
         List<DataOperation> newDataOperations = getProtocolService(ctx).newDataOperation(dataOperation);
         dataOperation = newDataOperations.get(0);
@@ -482,43 +1435,152 @@ public class PgsqlEventProcessor implements EventProcessor {
         return newValues;
     }
 
-    private CString convert(Field field, ByteBuf value) {
+    private CString convertToText(long type, short format, ByteBuf value) {
         CString cs;
-        if (field.getFormat() == 0) { // Text format
+        if (format == 0) {
+            // Text format
             cs = value != null ? CString.valueOf(value, value.capacity()) : null;
-        } else { // Binary format
-            // TODO
-            cs = CString.valueOf("binary data");
+        } else {
+            // TODO Binary format
+            throw new UnsupportedOperationException("convert binary to text not yet supported");
         }
         return cs;
+    }
+
+    private ByteBuf convertToByteBuf(long type, short format, CString cs) {
+        ByteBuf value;
+        if (format == 0) {
+            // Text format
+            value = cs != null ? cs.getByteBuf() : null;
+        } else {
+            // TODO Binary format
+            throw new UnsupportedOperationException("convert text to binary not yet supported");
+        }
+        return value;
+    }
+
+    @Override
+    public MessageTransferMode<Void> processNoDataResponse(ChannelHandlerContext ctx) {
+        LOGGER.debug("No data");
+        TransferMode transferMode;
+        SQLSession session = getSession(ctx);
+        QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+        if (nextQueryResponseToIgnore == null) {
+            transferMode = TransferMode.FORWARD;
+        } else if (nextQueryResponseToIgnore == QueryResponseType.NO_DATA) {
+            transferMode = TransferMode.FORGET;
+            session.removeFirstQueryResponseToIgnore();
+        } else {
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.NO_DATA, nextQueryResponseToIgnore));
+        }
+        MessageTransferMode<Void> mode = new MessageTransferMode<>(null, transferMode);
+        LOGGER.debug("No data processed: transfer mode={}", mode.getTransferMode());
+        return mode;
     }
 
     @Override
     public MessageTransferMode<CString> processCommandCompleteResult(ChannelHandlerContext ctx, CString tag) throws IOException {
         LOGGER.debug("Command complete: {}", tag);
         TransferMode transferMode;
-        CString newTag = tag;
-        if (getSession(ctx).getCommandResultsToIgnore() == 0) {
+        CString newTag = null;
+        SQLSession session = getSession(ctx);
+        QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+        if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY) {
             transferMode = TransferMode.FORWARD;
-        } else {
+            newTag = tag;
+            session.resetCurrentOperation();
+        } else if (nextQueryResponseToIgnore == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
             transferMode = TransferMode.FORGET;
-            newTag = null;
-            getSession(ctx).decrementeCommandResultsToIgnore();
+            session.removeFirstQueryResponseToIgnore();
+        } else {
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR, nextQueryResponseToIgnore));
         }
-        getSession(ctx).resetCurrentOperation();
-        MessageTransferMode<CString> mode = new MessageTransferMode<CString>(newTag, transferMode);
+        MessageTransferMode<CString> mode = new MessageTransferMode<>(newTag, transferMode);
         LOGGER.debug("Command complete processed: new tag={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
+        return mode;
+    }
+
+    @Override
+    public MessageTransferMode<Void> processEmptyQueryResponse(ChannelHandlerContext ctx) throws IOException {
+        LOGGER.debug("Empty query");
+        TransferMode transferMode;
+        SQLSession session = getSession(ctx);
+        QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+        if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY) {
+            transferMode = TransferMode.FORWARD;
+            session.resetCurrentOperation();
+        } else if (nextQueryResponseToIgnore == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+            transferMode = TransferMode.FORGET;
+            session.removeFirstQueryResponseToIgnore();
+        } else {
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR, nextQueryResponseToIgnore));
+        }
+        MessageTransferMode<Void> mode = new MessageTransferMode<>(null, transferMode);
+        LOGGER.debug("Empty query processed: transfer mode={}", mode.getTransferMode());
+        return mode;
+    }
+
+    @Override
+    public MessageTransferMode<Void> processPortalSuspendedResponse(ChannelHandlerContext ctx) throws IOException {
+        LOGGER.debug("Portal suspended");
+        TransferMode transferMode;
+        SQLSession session = getSession(ctx);
+        QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+        if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY) {
+            transferMode = TransferMode.FORWARD;
+        } else if (nextQueryResponseToIgnore == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+            transferMode = TransferMode.FORGET;
+            session.removeFirstQueryResponseToIgnore();
+        } else {
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR, nextQueryResponseToIgnore));
+        }
+        MessageTransferMode<Void> mode = new MessageTransferMode<>(null, transferMode);
+        LOGGER.debug("Portal suspended processed: transfer mode={}", mode.getTransferMode());
         return mode;
     }
 
     @Override
     public MessageTransferMode<Map<Byte, CString>> processErrorResult(ChannelHandlerContext ctx, Map<Byte, CString> fields) throws IOException {
         LOGGER.debug("Error: {}", fields);
-        TransferMode transferMode = TransferMode.FORWARD;
-        Map<Byte, CString> newFields = fields;
-        getSession(ctx).resetCurrentOperation();
-        MessageTransferMode<Map<Byte, CString>> mode = new MessageTransferMode<Map<Byte, CString>>(newFields, transferMode);
-        LOGGER.debug("Command complete processed: new fields={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
+        TransferMode transferMode;
+        Map<Byte, CString> newFields = null;
+        // Save current error
+        SQLSession session = getSession(ctx);
+        session.setTransactionErrorDetails(fields);
+        // Skip any expected response before expected ready for query
+        QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+        while (nextQueryResponseToIgnore != null && nextQueryResponseToIgnore != QueryResponseType.READY_FOR_QUERY) {
+            session.removeFirstQueryResponseToIgnore();
+            nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+        }
+        if (session.getQueryResponsesToIgnore().isEmpty()) {
+            transferMode = TransferMode.FORWARD;
+            newFields = fields;
+            session.resetCurrentOperation();
+        } else {
+            transferMode = TransferMode.FORGET;
+        }
+        MessageTransferMode<Map<Byte, CString>> mode = new MessageTransferMode<>(newFields, transferMode);
+        LOGGER.debug("Error processed: new fields={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
+        return mode;
+    }
+
+    @Override
+    public MessageTransferMode<Void> processCloseCompleteResponse(ChannelHandlerContext ctx) {
+        LOGGER.debug("Close complete");
+        TransferMode transferMode;
+        SQLSession session = getSession(ctx);
+        QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+        if (nextQueryResponseToIgnore == null) {
+            transferMode = TransferMode.FORWARD;
+        } else if (nextQueryResponseToIgnore == QueryResponseType.CLOSE_COMPLETE) {
+            transferMode = TransferMode.FORGET;
+            session.removeFirstQueryResponseToIgnore();
+        } else {
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.CLOSE_COMPLETE, nextQueryResponseToIgnore));
+        }
+        MessageTransferMode<Void> mode = new MessageTransferMode<>(null, transferMode);
+        LOGGER.debug("Close complete processed: transfer mode={}", mode.getTransferMode());
         return mode;
     }
 
@@ -526,22 +1588,32 @@ public class PgsqlEventProcessor implements EventProcessor {
     public MessageTransferMode<Byte> processReadyForQueryResponse(ChannelHandlerContext ctx, Byte transactionStatus) throws IOException {
         LOGGER.debug("Ready for query: {}", (char) transactionStatus.byteValue());
         TransferMode transferMode;
-        Byte newTransactionStatus = transactionStatus;
-        if (getSession(ctx).getReadyForQueryToIgnore() == 0) {
-            transferMode = TransferMode.FORWARD;
-        } else {
-            transferMode = TransferMode.FORGET;
-            newTransactionStatus = null;
-            getSession(ctx).decrementeReadyForQueryToIgnore();
+        Byte newTransactionStatus = null;
+        // Save current transaction status
+        SQLSession session = getSession(ctx);
+        session.setTransactionStatus(transactionStatus);
+        if (transactionStatus != (byte)'E') {
+            // Reset current error
+            session.setTransactionErrorDetails(null);
         }
-        MessageTransferMode<Byte> mode = new MessageTransferMode<Byte>(newTransactionStatus, transferMode);
+        QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
+        if (nextQueryResponseToIgnore == null) {
+            transferMode = TransferMode.FORWARD;
+            newTransactionStatus = transactionStatus;
+        } else if (nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY) {
+            transferMode = TransferMode.FORGET;
+            session.removeFirstQueryResponseToIgnore();
+        } else {
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.READY_FOR_QUERY, nextQueryResponseToIgnore));
+        }
+        MessageTransferMode<Byte> mode = new MessageTransferMode<>(newTransactionStatus, transferMode);
         LOGGER.debug("Ready for query processed: new transaction status={}, transfer mode={}", newTransactionStatus == null ? null : (char) newTransactionStatus.byteValue(), mode.getTransferMode());
         return mode;
     }
 
-    private SqlSession getSession(ChannelHandlerContext ctx) {
+    private SQLSession getSession(ChannelHandlerContext ctx) {
         PgsqlSession pgsqlSession = (PgsqlSession) ctx.channel().attr(PgsqlConstants.SESSION_KEY).get();
-        return pgsqlSession.getSession();
+        return pgsqlSession.getSqlSession();
     }
 
     private Mode getProcessingMode(ChannelHandlerContext ctx, boolean wholeDataset, Operation operation) {

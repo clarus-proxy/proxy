@@ -15,7 +15,24 @@ import io.netty.buffer.UnpooledByteBufAllocator;
 
 public interface PgsqlMessageWriter<T extends PgsqlMessage> {
 
-    int length(T msg);
+    default int length(T msg) {
+        // Compute total length
+        return headerSize(msg) + contentSize(msg);
+    }
+
+    default int headerSize(T msg) {
+        // Get header size
+        return msg.getHeaderSize();
+    }
+
+    default int contentSize(T msg) {
+        // Get content size
+        return 0;
+    }
+
+    default ByteBuf allocate(T msg) {
+        return allocate(msg, null);
+    }
 
     default ByteBuf allocate(T msg, ByteBuf buffer) {
         // Compute total length
@@ -48,6 +65,7 @@ public interface PgsqlMessageWriter<T extends PgsqlMessage> {
                         ByteBuf intermediateBuffer = allocator.buffer(intermediateSize).writerIndex(intermediateSize);
                         components.add(intermediateBuffer);
                     }
+                    msgBuffer = msgBuffer.slice(0, msgBuffer.capacity());
                     components.add(msgBuffer);
                     previousOffset = offset + msgBuffer.capacity();
                 }
@@ -58,7 +76,7 @@ public interface PgsqlMessageWriter<T extends PgsqlMessage> {
                     components.add(intermediateBuffer);
                 }
                 // Allocate composite buffer
-                newBuffer = buffer.alloc().compositeBuffer(components.size()).addComponents(components);
+                newBuffer = allocator.compositeBuffer(components.size()).addComponents(components);
             }
         } else /*if (buffer != null && len <= buffer.capacity()) && ByteBufUtilities.containsAt(buffer, <msg's buffers>, <msg's buffer offsets>)*/ {
             newBuffer = buffer.retainedSlice(0, len);
@@ -69,6 +87,31 @@ public interface PgsqlMessageWriter<T extends PgsqlMessage> {
 
     default Map<Integer, ByteBuf> offsets(T msg) {
         return Collections.emptyMap();
+    }
+
+    default ByteBuf write(T msg, ByteBuf buffer) throws IOException {
+        // Compute total length
+        int len = length(msg);
+        // Allocate buffer if necessary
+        if (buffer == null || buffer.writableBytes() < len) {
+            ByteBufAllocator allocator = buffer == null ? UnpooledByteBufAllocator.DEFAULT : buffer.alloc();
+            buffer = allocator.buffer(len);
+        }
+        // Write message header in buffer
+        writeHeader(msg, len, buffer);
+        // Write message content in buffer
+        writeContent(msg, buffer);
+        return buffer;
+    }
+
+    default void writeHeader(T msg, int length, ByteBuf buffer) throws IOException {
+        // Write header (type + length)
+        buffer.writeByte(msg.getType());
+        // Write length
+        buffer.writeInt(length - Byte.BYTES);
+    }
+
+    default void writeContent(T msg, ByteBuf buffer) throws IOException {
     }
 
     default ByteBuf writeBytes(ByteBuf dst, ByteBuf src) {
@@ -86,9 +129,9 @@ public interface PgsqlMessageWriter<T extends PgsqlMessage> {
             skipCopy = ByteBufUtilities.containsAt(dst, src, dst.writerIndex());
         }
         if (skipCopy) {
-            dst.writerIndex(dst.writerIndex() + src.readableBytes());
+            dst.writerIndex(dst.writerIndex() + src.capacity());
         } else {
-            dst.writeBytes(src);
+            dst.writeBytes(src, 0, src.capacity());
             if (release) {
                 src.release();
             }
@@ -96,5 +139,4 @@ public interface PgsqlMessageWriter<T extends PgsqlMessage> {
         return dst;
     }
 
-    ByteBuf write(T msg, ByteBuf buffer) throws IOException;
 }

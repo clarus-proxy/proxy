@@ -13,15 +13,41 @@ public interface EventProcessor {
 
     void processAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException;
 
-    StatementTransferMode processStatement(ChannelHandlerContext ctx, CString statement, boolean lastStatement) throws IOException;
+    QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException;
+
+    QueriesTransferMode<BindStep, Void> processBindStep(ChannelHandlerContext ctx, BindStep bindStep) throws IOException;
+
+    QueriesTransferMode<DescribeStep, List<?>[]> processDescribeStep(ChannelHandlerContext ctx, DescribeStep describeStep) throws IOException;
+
+    QueriesTransferMode<ExecuteStep, CString> processExecuteStep(ChannelHandlerContext ctx, ExecuteStep executeStep) throws IOException;
+
+    QueriesTransferMode<CloseStep, Void> processCloseStep(ChannelHandlerContext ctx, CloseStep closeStep) throws IOException;
+
+    QueriesTransferMode<SynchronizeStep, Byte> processSynchronizeStep(ChannelHandlerContext ctx, SynchronizeStep synchronizeStep) throws IOException;
+
+    QueriesTransferMode<FlushStep, Void> processFlushStep(ChannelHandlerContext ctx, FlushStep flushStep) throws IOException;
+
+    MessageTransferMode<Void> processParseCompleteResponse(ChannelHandlerContext ctx) throws IOException;
+
+    MessageTransferMode<Void> processBindCompleteResponse(ChannelHandlerContext ctx) throws IOException;
+
+    MessageTransferMode<List<Long>> processParameterDescriptionResponse(ChannelHandlerContext ctx, List<Long> types) throws IOException;
 
     MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> processRowDescriptionResponse(ChannelHandlerContext ctx, List<PgsqlRowDescriptionMessage.Field> fields) throws IOException;
 
     MessageTransferMode<List<ByteBuf>> processDataRowResponse(ChannelHandlerContext ctx, List<ByteBuf> values) throws IOException;
 
+    MessageTransferMode<Void> processNoDataResponse(ChannelHandlerContext ctx) throws IOException;
+
     MessageTransferMode<CString> processCommandCompleteResult(ChannelHandlerContext ctx, CString tag) throws IOException;
 
+    MessageTransferMode<Void> processEmptyQueryResponse(ChannelHandlerContext ctx) throws IOException;
+
+    MessageTransferMode<Void> processPortalSuspendedResponse(ChannelHandlerContext ctx) throws IOException;
+
     MessageTransferMode<Map<Byte, CString>> processErrorResult(ChannelHandlerContext ctx, Map<Byte, CString> fields) throws IOException;
+
+    MessageTransferMode<Void>  processCloseCompleteResponse(ChannelHandlerContext ctx)  throws IOException;
 
     MessageTransferMode<Byte> processReadyForQueryResponse(ChannelHandlerContext ctx, Byte transactionStatus) throws IOException;
 

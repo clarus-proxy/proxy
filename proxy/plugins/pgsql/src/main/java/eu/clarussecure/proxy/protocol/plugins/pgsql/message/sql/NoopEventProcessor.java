@@ -16,33 +16,98 @@ public class NoopEventProcessor implements EventProcessor {
     }
 
     @Override
-    public StatementTransferMode processStatement(ChannelHandlerContext ctx, CString statement, boolean lastStatement) throws IOException {
-        return new StatementTransferMode(statement, TransferMode.FORWARD);
+    public QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException {
+        return new QueriesTransferMode<>(sqlStatement, TransferMode.FORWARD);
     }
 
     @Override
-    public MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> processRowDescriptionResponse(ChannelHandlerContext ctx, List<PgsqlRowDescriptionMessage.Field> fields) {
-        return new MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>>(fields, TransferMode.FORWARD);
+    public QueriesTransferMode<BindStep, Void> processBindStep(ChannelHandlerContext ctx, BindStep bindStep) throws IOException {
+        return new QueriesTransferMode<>(bindStep, TransferMode.FORWARD);
+    }
+
+    @Override
+    public QueriesTransferMode<DescribeStep, List<?>[]> processDescribeStep(ChannelHandlerContext ctx, DescribeStep describeStep) throws IOException {
+        return new QueriesTransferMode<>(describeStep, TransferMode.FORWARD);
+    }
+
+    @Override
+    public QueriesTransferMode<ExecuteStep, CString> processExecuteStep(ChannelHandlerContext ctx, ExecuteStep executeStep) throws IOException {
+        return new QueriesTransferMode<>(executeStep, TransferMode.FORWARD);
+    }
+
+    @Override
+    public QueriesTransferMode<CloseStep, Void> processCloseStep(ChannelHandlerContext ctx, CloseStep closeStep) throws IOException {
+        return new QueriesTransferMode<>(closeStep, TransferMode.FORWARD);
+    }
+
+    @Override
+    public QueriesTransferMode<SynchronizeStep, Byte> processSynchronizeStep(ChannelHandlerContext ctx, SynchronizeStep synchronizeStep) throws IOException {
+        return new QueriesTransferMode<>(synchronizeStep, TransferMode.FORWARD);
+    }
+
+    @Override
+    public QueriesTransferMode<FlushStep, Void> processFlushStep(ChannelHandlerContext ctx, FlushStep flushStep) throws IOException {
+        return new QueriesTransferMode<>(flushStep, TransferMode.FORWARD);
+    }
+
+    @Override
+    public MessageTransferMode<Void> processParseCompleteResponse(ChannelHandlerContext ctx) throws IOException {
+        return new MessageTransferMode<>(null, TransferMode.FORWARD);
+    }
+
+    @Override
+    public MessageTransferMode<Void> processBindCompleteResponse(ChannelHandlerContext ctx) throws IOException {
+        return new MessageTransferMode<>(null, TransferMode.FORWARD);
+    }
+
+    @Override
+    public MessageTransferMode<List<Long>> processParameterDescriptionResponse(ChannelHandlerContext ctx, List<Long> types) throws IOException {
+        return new MessageTransferMode<>(types, TransferMode.FORWARD);
+    }
+
+    @Override
+    public MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> processRowDescriptionResponse(ChannelHandlerContext ctx, List<PgsqlRowDescriptionMessage.Field> fields) throws IOException {
+        return new MessageTransferMode<>(fields, TransferMode.FORWARD);
     }
 
     @Override
     public MessageTransferMode<List<ByteBuf>> processDataRowResponse(ChannelHandlerContext ctx, List<ByteBuf> values) throws IOException {
-        return new MessageTransferMode<List<ByteBuf>>(values, TransferMode.FORWARD);
+        return new MessageTransferMode<>(values, TransferMode.FORWARD);
+    }
+
+    @Override
+    public MessageTransferMode<Void> processNoDataResponse(ChannelHandlerContext ctx) throws IOException {
+        return new MessageTransferMode<>(null, TransferMode.FORWARD);
     }
 
     @Override
     public MessageTransferMode<CString> processCommandCompleteResult(ChannelHandlerContext ctx, CString tag) throws IOException {
-        return new MessageTransferMode<CString>(tag, TransferMode.FORWARD);
+        return new MessageTransferMode<>(tag, TransferMode.FORWARD);
+    }
+
+    @Override
+    public MessageTransferMode<Void> processEmptyQueryResponse(ChannelHandlerContext ctx) throws IOException {
+        return new MessageTransferMode<>(null, TransferMode.FORWARD);
+    }
+
+    @Override
+    public MessageTransferMode<Void> processPortalSuspendedResponse(ChannelHandlerContext ctx) throws IOException {
+        return new MessageTransferMode<>(null, TransferMode.FORWARD);
     }
 
     @Override
     public MessageTransferMode<Map<Byte, CString>> processErrorResult(ChannelHandlerContext ctx, Map<Byte, CString> fields) throws IOException {
-        return new MessageTransferMode<Map<Byte, CString>>(fields, TransferMode.FORWARD);
+        return new MessageTransferMode<>(fields, TransferMode.FORWARD);
+    }
+
+    @Override
+    public MessageTransferMode<Void> processCloseCompleteResponse(ChannelHandlerContext ctx) throws IOException {
+        return new MessageTransferMode<>(null, TransferMode.FORWARD);
     }
 
     @Override
     public MessageTransferMode<Byte> processReadyForQueryResponse(ChannelHandlerContext ctx, Byte transactionStatus) throws IOException {
-        return new MessageTransferMode<Byte>(transactionStatus, TransferMode.FORWARD);
+        return new MessageTransferMode<>(transactionStatus, TransferMode.FORWARD);
     }
 
 }

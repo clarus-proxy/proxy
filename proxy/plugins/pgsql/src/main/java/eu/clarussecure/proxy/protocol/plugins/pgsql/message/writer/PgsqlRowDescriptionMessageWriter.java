@@ -6,26 +6,23 @@ import java.util.Map;
 
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlRowDescriptionMessage;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.UnpooledByteBufAllocator;
 
 public class PgsqlRowDescriptionMessageWriter implements PgsqlMessageWriter<PgsqlRowDescriptionMessage> {
 
     @Override
-    public int length(PgsqlRowDescriptionMessage msg) {
-        // Compute total length
-        int total = msg.getHeaderSize();
-        total += Short.BYTES;
+    public int contentSize(PgsqlRowDescriptionMessage msg) {
+        // Get content size
+        int size = Short.BYTES;
         for (PgsqlRowDescriptionMessage.Field field : msg.getFields()) {
-            total += field.getName().clen();
-            total += Integer.BYTES;
-            total += Short.BYTES;
-            total += Integer.BYTES;
-            total += Short.BYTES;
-            total += Integer.BYTES;
-            total += Short.BYTES;
+            size += field.getName().clen();
+            size += Integer.BYTES;
+            size += Short.BYTES;
+            size += Integer.BYTES;
+            size += Short.BYTES;
+            size += Integer.BYTES;
+            size += Short.BYTES;
         }
-        return total;
+        return size;
     }
 
     @Override
@@ -50,19 +47,7 @@ public class PgsqlRowDescriptionMessageWriter implements PgsqlMessageWriter<Pgsq
     }
 
     @Override
-    public ByteBuf write(PgsqlRowDescriptionMessage msg, ByteBuf buffer) throws IOException {
-        // Compute total length
-        int total = length(msg);
-        // Allocate buffer if necessary
-        if (buffer == null || buffer.writableBytes() < total) {
-            ByteBufAllocator allocator = buffer == null ? UnpooledByteBufAllocator.DEFAULT : buffer.alloc();
-            buffer = allocator.buffer(total);
-        }
-        // Write header (type + length)
-        buffer.writeByte(msg.getType());
-        // Compute length
-        int len = total - Byte.BYTES;
-        buffer.writeInt(len);
+    public void writeContent(PgsqlRowDescriptionMessage msg, ByteBuf buffer) throws IOException {
         // Write number of fields
         buffer.writeShort(msg.getFields().size());
         // Write fields
@@ -75,7 +60,6 @@ public class PgsqlRowDescriptionMessageWriter implements PgsqlMessageWriter<Pgsq
             buffer.writeInt(field.getTypeModifier());
             buffer.writeShort(field.getFormat());
         }
-        return buffer;
     }
 
 }
