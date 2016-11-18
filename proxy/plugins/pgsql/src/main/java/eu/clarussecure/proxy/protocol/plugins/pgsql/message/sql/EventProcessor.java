@@ -11,7 +11,7 @@ import io.netty.channel.ChannelHandlerContext;
 
 public interface EventProcessor {
 
-    void processAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException;
+    CString processAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException;
 
     QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException;
 

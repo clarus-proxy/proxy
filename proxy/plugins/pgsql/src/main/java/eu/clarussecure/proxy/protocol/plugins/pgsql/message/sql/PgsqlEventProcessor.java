@@ -65,10 +65,12 @@ public class PgsqlEventProcessor implements EventProcessor {
     public static final String DATABASE_KEY = "database";
 
     @Override
-    public void processAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
+    public CString processAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
         CString databaseName = parameters.get(CString.valueOf(DATABASE_KEY));
         SQLSession sqlSession = getSession(ctx);
         sqlSession.setDatabaseName((CString) databaseName.clone());
+        CString userName = getProtocolService(ctx).newUserIdentification(parameters.get(CString.valueOf(USER_KEY)));
+        return userName;
     }
 
     @Override
