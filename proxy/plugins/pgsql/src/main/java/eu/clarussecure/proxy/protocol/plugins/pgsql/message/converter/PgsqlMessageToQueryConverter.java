@@ -12,22 +12,15 @@ import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlSimpleQueryMess
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlSyncMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.BindStep;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.CloseStep;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.CloseStep;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.BindStep;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.DescribeStep;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.DescribeStep;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.ExecuteStep;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.ExecuteStep;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.ExtendedQuery;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.FlushStep;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.FlushStep;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.ParseStep;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.ParseStep;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.Query;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLStatement;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SimpleQuery;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SimpleSQLStatement;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SynchronizeStep;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SynchronizeStep;
 import io.netty.util.internal.StringUtil;
 
