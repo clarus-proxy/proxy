@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -265,7 +266,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                 newQueries = buildNewQueries(ctx, (SimpleSQLStatement) sqlStatement, toProcess);
             } else {
                 // Track parse step (for bind, describe and close steps)
-                session.addParseStep((ParseStep) sqlStatement, operation);
+                session.addParseStep((ParseStep) sqlStatement, operation, toProcess);
                 // Postpone processing of extended query
                 transferMode = TransferMode.FORGET;
                 newQueries = null;
@@ -279,7 +280,7 @@ public class PgsqlEventProcessor implements EventProcessor {
             }
             if (!(sqlStatement instanceof SimpleQuery)) {
                 // Track parse step (for bind, describe and close steps)
-                session.addParseStep((ParseStep) sqlStatement, operation);
+                session.addParseStep((ParseStep) sqlStatement, operation, toProcess);
             }
             newQueries = null;
         } else if (transferMode == TransferMode.ERROR) {
@@ -594,12 +595,18 @@ public class PgsqlEventProcessor implements EventProcessor {
             sb.append(tableName).append('/');
             String datasetId = sb.toString();
             // Extract data ids
-            List<CString> dataIds = stmt.getColumns().stream()
-                .map(Column::getColumnName)     // get column name
-                .map(StringUtilities::unquote)  // unquote string
-                .map(cn -> datasetId + cn)      // build dataId
-                .map(CString::valueOf)          // transform to CString
-                .collect(Collectors.toList());  // build a list
+            List<CString> dataIds;
+            if (stmt.getColumns() == null) {
+                // TODO retrieve column names
+                dataIds = Collections.emptyList();
+            } else {
+                dataIds = stmt.getColumns().stream()
+                    .map(Column::getColumnName)     // get column name
+                    .map(StringUtilities::unquote)  // unquote string
+                    .map(cn -> datasetId + cn)      // build dataId
+                    .map(CString::valueOf)          // transform to CString
+                    .collect(Collectors.toList());  // build a list
+            }
             dataOperation.setDataIds(dataIds);
         }
         // Extract data values
@@ -747,17 +754,17 @@ public class PgsqlEventProcessor implements EventProcessor {
     @Override
     public QueriesTransferMode<BindStep, Void> processBindStep(ChannelHandlerContext ctx, BindStep bindStep) throws IOException {
         LOGGER.debug("Bind step: {}", bindStep);
-        TransferMode transferMode = TransferMode.FORWARD;
-        List<Query> newQueries = Collections.singletonList(bindStep);
-        Void response = null;
-        Map<Byte, CString> errorDetails = null;
         SQLSession session = getSession(ctx);
         ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(bindStep.getPreparedStatement());
         if (parseStepStatus == null) {
             throw new IllegalStateException(String.format("Parse step not found for bind step '%s'", bindStep.getName()));
         }
+        TransferMode transferMode = TransferMode.FORWARD;
+        List<Query> newQueries = Collections.singletonList(bindStep);
+        Void response = null;
+        Map<Byte, CString> errorDetails = null;
         // Track bind step (for describe, execute and close steps)
-        ExtendedQueryStatus<BindStep> bindStepStatus = session.addBindStep(bindStep, parseStepStatus.getOperation());
+        ExtendedQueryStatus<BindStep> bindStepStatus = session.addBindStep(bindStep, parseStepStatus.getOperation(), parseStepStatus.isToProcess());
         Operation operation = parseStepStatus.getOperation();
         if (operation != null) {
             CString error = null;
@@ -1064,7 +1071,8 @@ public class PgsqlEventProcessor implements EventProcessor {
 
     private List<Query> buildNewQueries(ChannelHandlerContext ctx, ExtendedQueryStatus<ParseStep> parseStepStatus, ExtendedQueryStatus<BindStep> bindStepStatus) throws IOException {
         List<Query> newQueries = processBufferedQueries(ctx);
-        List<ExtendedQuery> newExtendedQuery = processExtendedQuery(ctx, parseStepStatus, bindStepStatus);
+        List<ExtendedQuery> newExtendedQuery = parseStepStatus.isToProcess() ? processExtendedQuery(ctx, parseStepStatus, bindStepStatus) : Arrays.asList(parseStepStatus.getQuery(), bindStepStatus.getQuery());
+        newExtendedQuery.forEach(Query::retain);
         if (newQueries.isEmpty()) {
             newQueries = newExtendedQuery.stream().map(q -> (Query)q).collect(Collectors.toList());
         } else {
@@ -1144,18 +1152,15 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<ExtendedQuery> newQueries = new ArrayList<ExtendedQuery>();
         if (!parseStepStatus.isProcessed()) {
             newQueries.add(parseStep);
-            parseStep.retain();
             parseStepStatus.setProcessed(true);
         }
         DescribeStep describeStep = session.getDescribeStep((byte) 'S', parseStep.getName());
         if (describeStep != null) {
             newQueries.add(describeStep);
-            describeStep.retain();
             session.removeDescribeStep(describeStep.getCode(), describeStep.getName());
         }
         if (!bindStepStatus.isProcessed()) {
             newQueries.add(bindStep);
-            bindStep.retain();
             bindStepStatus.setProcessed(true);
         }
         return newQueries;
