@@ -20,7 +20,6 @@ import org.xml.sax.SAXException;
 import eu.clarussecure.proxy.protection.ProtectionModuleLoader;
 import eu.clarussecure.proxy.protocol.ProtocolLoader;
 import eu.clarussecure.proxy.protocol.ProtocolServiceDelegate;
-import eu.clarussecure.proxy.protocol.ProtocolServiceNoop;
 import eu.clarussecure.proxy.spi.Mode;
 import eu.clarussecure.proxy.spi.Operation;
 import eu.clarussecure.proxy.spi.protection.ProtectionModule;
@@ -29,6 +28,7 @@ import eu.clarussecure.proxy.spi.protocol.Configuration;
 import eu.clarussecure.proxy.spi.protocol.Protocol;
 import eu.clarussecure.proxy.spi.protocol.ProtocolCapabilities;
 import eu.clarussecure.proxy.spi.protocol.ProtocolService;
+import eu.clarussecure.proxy.spi.protocol.ProtocolServiceNoop;
 import eu.clarussecure.proxy.spi.security.policy.SecurityPolicy;
 
 public class Proxy {

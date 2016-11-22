@@ -1,4 +1,4 @@
-package eu.clarussecure.proxy.protocol;
+package eu.clarussecure.proxy.spi.protocol;
 
 import java.util.Collections;
 import java.util.List;
@@ -6,7 +6,6 @@ import java.util.Objects;
 
 import eu.clarussecure.proxy.spi.CString;
 import eu.clarussecure.proxy.spi.DataOperation;
-import eu.clarussecure.proxy.spi.protocol.ProtocolService;
 
 public class ProtocolServiceNoop implements ProtocolService {
 
@@ -16,9 +15,8 @@ public class ProtocolServiceNoop implements ProtocolService {
         return Collections.singletonList(dataOperation);
     }
 
-	@Override
-	public CString newUserIdentification(CString user) {
-		return user;
-	}
-
+    @Override
+    public CString newUserIdentification(CString user) {
+        return user;
+    }
 }
