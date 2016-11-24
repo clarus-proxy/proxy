@@ -18,6 +18,7 @@ public class SessionIT {
 
     @Before
     public void startProxy() throws Exception {
+        System.setProperty("pgsql.sql.force.processing", "true");
         pgsqlProtocol = new PgsqlProtocol();
         pgsqlProtocol.getConfiguration().setServerAddress(InetAddress.getByName("10.15.0.89"));
         //pgsqlProtocol.getConfiguration().setMessagePartMaxLength(20);
