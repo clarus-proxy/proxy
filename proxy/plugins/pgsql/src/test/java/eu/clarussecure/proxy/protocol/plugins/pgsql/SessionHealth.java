@@ -87,17 +87,17 @@ public class SessionHealth {
     @Test
     public void testSimpleSelectOneParamInt() throws Exception{
         try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement();){    
-            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_report WHERE dis_id = ?";
+            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_advanced WHERE dis_id = ?";
             PreparedStatement prep = con.prepareStatement(request, ResultSet.TYPE_SCROLL_INSENSITIVE,
                     ResultSet.CONCUR_UPDATABLE,
                     ResultSet.HOLD_CURSORS_OVER_COMMIT);
             prep.setString(1, "00000000000000000000");
             ResultSet res = prep.executeQuery();
             Assert.assertNotNull("Result's request is empty", res);
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000000", TestUtils.getFirstOrLastFieldValueString(res, 1, "first"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "GIN", TestUtils.getFirstOrLastFieldValueString(res, 4, "first"));
-            Assert.assertEquals("Discharge's day is not the good one" , 3, TestUtils.getFirstOrLastFieldValueInt(res, 7, "first"));
-            Assert.assertEquals("Discharge's adm is not the good one" , "2015-04-04", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 5, "first")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000000", TestUtils.getFirstOrLastFieldValueString(res, 10, "first"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "GIN", TestUtils.getFirstOrLastFieldValueString(res, 12, "first"));
+            Assert.assertEquals("Discharge's day is not the good one" , 3, TestUtils.getFirstOrLastFieldValueInt(res, 15, "first"));
+            Assert.assertEquals("Discharge's adm is not the good one" , "2015-04-04", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 13, "first")));
         }
     }
     
@@ -121,7 +121,7 @@ public class SessionHealth {
     @Test
     public void testSimpleSelectOneParamDate() throws Exception{
         try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement();){    
-            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_report WHERE dis_adm = ? ORDER BY dis_id";
+            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_advanced WHERE dis_adm = ? ORDER BY dis_id";
             PreparedStatement prep = con.prepareStatement(request, ResultSet.TYPE_SCROLL_INSENSITIVE,
                     ResultSet.CONCUR_UPDATABLE,
                     ResultSet.HOLD_CURSORS_OVER_COMMIT);
@@ -129,10 +129,10 @@ public class SessionHealth {
             prep.setDate(1, date);
             ResultSet res = prep.executeQuery();
             Assert.assertNotNull("Result's request is empty", res);
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000000", TestUtils.getFirstOrLastFieldValueString(res, 1, "first"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "GIN", TestUtils.getFirstOrLastFieldValueString(res, 4, "first"));
-            Assert.assertEquals("Discharge's day is not the good one" , 10, TestUtils.getFirstOrLastFieldValueInt(res, 7, "last"));
-            Assert.assertEquals("Discharge's adm is not the good one" , "2015-04-14", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 6, "last")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000000", TestUtils.getFirstOrLastFieldValueString(res, 10, "first"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "GIN", TestUtils.getFirstOrLastFieldValueString(res, 12, "first"));
+            Assert.assertEquals("Discharge's day is not the good one" , 10, TestUtils.getFirstOrLastFieldValueInt(res, 15, "last"));
+            Assert.assertEquals("Discharge's dis is not the good one" , "2015-04-14", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 14, "last")));
         }
     }
     
@@ -143,7 +143,7 @@ public class SessionHealth {
     @Test
     public void testSimpleSelectTwoParamStringAndInt() throws Exception{
         try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement();){    
-            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_report WHERE dis_serv = ? AND dis_days = ? ORDER BY dis_id";
+            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_advanced WHERE dis_serv = ? AND dis_days = ? ORDER BY dis_id";
             PreparedStatement prep = con.prepareStatement(request, ResultSet.TYPE_SCROLL_INSENSITIVE,
                     ResultSet.CONCUR_UPDATABLE,
                     ResultSet.HOLD_CURSORS_OVER_COMMIT);
@@ -152,22 +152,22 @@ public class SessionHealth {
             ResultSet res = prep.executeQuery();
             Assert.assertNotNull("Result's request is empty", res);
             // test on first row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000022", TestUtils.getFirstOrLastFieldValueString(res, 1, "first"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 2, "first"));
-            Assert.assertEquals("Discharge's day is not the good one" , 21, TestUtils.getFirstOrLastFieldValueInt(res, 7, "first"));
-            Assert.assertEquals("Discharge's dis is not the good one" , "2015-10-15", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 6, "first")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000022", TestUtils.getFirstOrLastFieldValueString(res, 10, "first"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 11, "first"));
+            Assert.assertEquals("Discharge's day is not the good one" , 21, TestUtils.getFirstOrLastFieldValueInt(res, 15, "first"));
+            Assert.assertEquals("Discharge's dis is not the good one" , "2015-10-15", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 14, "first")));
             // test on last row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000034011", TestUtils.getFirstOrLastFieldValueString(res, 1, "last"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "OFT", TestUtils.getFirstOrLastFieldValueString(res, 4, "last"));
-            Assert.assertEquals("Discharge's day is not the good one" , 21, TestUtils.getFirstOrLastFieldValueInt(res, 7, "last"));
-            Assert.assertEquals("Discharge's adm is not the good one" , "2015-11-25", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 5, "last")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000034011", TestUtils.getFirstOrLastFieldValueString(res, 10, "last"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "OFT", TestUtils.getFirstOrLastFieldValueString(res, 12, "last"));
+            Assert.assertEquals("Discharge's day is not the good one" , 21, TestUtils.getFirstOrLastFieldValueInt(res, 15, "last"));
+            Assert.assertEquals("Discharge's adm is not the good one" , "2015-11-25", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 13, "last")));
         }
     }
     
     @Test
     public void testSimpleSelectTwoParamStringAndDate() throws Exception{
         try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement();){    
-            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_report WHERE dis_serv = ? AND dis_adm = ? ORDER BY dis_id";
+            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_advanced WHERE dis_serv = ? AND dis_adm = ? ORDER BY dis_id";
             PreparedStatement prep = con.prepareStatement(request, ResultSet.TYPE_SCROLL_INSENSITIVE,
                     ResultSet.CONCUR_UPDATABLE,
                     ResultSet.HOLD_CURSORS_OVER_COMMIT);
@@ -176,22 +176,22 @@ public class SessionHealth {
             ResultSet res = prep.executeQuery();
             Assert.assertNotNull("Result's request is empty", res);
             // test on first row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000540", TestUtils.getFirstOrLastFieldValueString(res, 1, "first"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 2, "first"));
-            Assert.assertEquals("Discharge's day is not the good one" , 15, TestUtils.getFirstOrLastFieldValueInt(res, 7, "first"));
-            Assert.assertEquals("Discharge's dis is not the good one" , "2015-03-17", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 6, "first")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000540", TestUtils.getFirstOrLastFieldValueString(res, 10, "first"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 11, "first"));
+            Assert.assertEquals("Discharge's day is not the good one" , 15, TestUtils.getFirstOrLastFieldValueInt(res, 15, "first"));
+            Assert.assertEquals("Discharge's dis is not the good one" , "2015-03-17", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 14, "first")));
             // test on last row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000033903", TestUtils.getFirstOrLastFieldValueString(res, 1, "last"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "OFT", TestUtils.getFirstOrLastFieldValueString(res, 4, "last"));
-            Assert.assertEquals("Discharge's day is not the good one" , 29, TestUtils.getFirstOrLastFieldValueInt(res, 7, "last"));
-            Assert.assertEquals("Discharge's dis is not the good one" , "2015-03-31", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 6, "last")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000033903", TestUtils.getFirstOrLastFieldValueString(res, 10, "last"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "OFT", TestUtils.getFirstOrLastFieldValueString(res, 12, "last"));
+            Assert.assertEquals("Discharge's day is not the good one" , 29, TestUtils.getFirstOrLastFieldValueInt(res, 15, "last"));
+            Assert.assertEquals("Discharge's dis is not the good one" , "2015-03-31", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 14, "last")));
         }
     }
     
     @Test
     public void testSimpleSelectTwoParamIntAndDate() throws Exception{
         try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement();){    
-            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_report WHERE dis_days = ? AND dis_adm = ? ORDER BY dis_id";
+            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_advanced WHERE dis_days = ? AND dis_adm = ? ORDER BY dis_id";
             PreparedStatement prep = con.prepareStatement(request, ResultSet.TYPE_SCROLL_INSENSITIVE,
                     ResultSet.CONCUR_UPDATABLE,
                     ResultSet.HOLD_CURSORS_OVER_COMMIT);
@@ -200,22 +200,22 @@ public class SessionHealth {
             ResultSet res = prep.executeQuery();
             Assert.assertNotNull("Result's request is empty", res);
             // test on first row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000462", TestUtils.getFirstOrLastFieldValueString(res, 1, "first"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 2, "first"));
-            Assert.assertEquals("Discharge's day is not the good one" , 10, TestUtils.getFirstOrLastFieldValueInt(res, 7, "first"));
-            Assert.assertEquals("Discharge's dis is not the good one" , "2015-03-12", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 6, "first")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000462", TestUtils.getFirstOrLastFieldValueString(res, 10, "first"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 11, "first"));
+            Assert.assertEquals("Discharge's day is not the good one" , 10, TestUtils.getFirstOrLastFieldValueInt(res, 15, "first"));
+            Assert.assertEquals("Discharge's dis is not the good one" , "2015-03-12", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 14, "first")));
             // test on last row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000033804", TestUtils.getFirstOrLastFieldValueString(res, 1, "last"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "GIN", TestUtils.getFirstOrLastFieldValueString(res, 4, "last"));
-            Assert.assertEquals("Discharge's day is not the good one" , 10, TestUtils.getFirstOrLastFieldValueInt(res, 7, "last"));
-            Assert.assertEquals("Discharge's dis is not the good one" , "2015-03-12", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 6, "last")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000033804", TestUtils.getFirstOrLastFieldValueString(res, 10, "last"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "GIN", TestUtils.getFirstOrLastFieldValueString(res, 12, "last"));
+            Assert.assertEquals("Discharge's day is not the good one" , 10, TestUtils.getFirstOrLastFieldValueInt(res, 15, "last"));
+            Assert.assertEquals("Discharge's dis is not the good one" , "2015-03-12", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 14, "last")));
         }
     }
     
     @Test
     public void testSimpleSelectTwoParamOperatorBetweenTwoDate() throws Exception{
         try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement();){    
-            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_report WHERE dis_adm BETWEEN ? AND ? ORDER BY dis_id";
+            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_advanced WHERE dis_adm BETWEEN ? AND ? ORDER BY dis_id";
             PreparedStatement prep = con.prepareStatement(request, ResultSet.TYPE_SCROLL_INSENSITIVE,
                     ResultSet.CONCUR_UPDATABLE,
                     ResultSet.HOLD_CURSORS_OVER_COMMIT);
@@ -224,15 +224,15 @@ public class SessionHealth {
             ResultSet res = prep.executeQuery();
             Assert.assertNotNull("Result's request is empty", res);
             // test on first row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000135", TestUtils.getFirstOrLastFieldValueString(res, 1, "first"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 2, "first"));
-            Assert.assertEquals("Discharge's day is not the good one" , 19, TestUtils.getFirstOrLastFieldValueInt(res, 7, "first"));
-            Assert.assertEquals("Discharge's dis is not the good one" , "2015-02-20", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 6, "first")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000135", TestUtils.getFirstOrLastFieldValueString(res, 10, "first"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 11, "first"));
+            Assert.assertEquals("Discharge's day is not the good one" , 19, TestUtils.getFirstOrLastFieldValueInt(res, 15, "first"));
+            Assert.assertEquals("Discharge's dis is not the good one" , "2015-02-20", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 14, "first")));
             // test on last row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000033965", TestUtils.getFirstOrLastFieldValueString(res, 1, "last"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "GIN", TestUtils.getFirstOrLastFieldValueString(res, 4, "last"));
-            Assert.assertEquals("Discharge's day is not the good one" , 28, TestUtils.getFirstOrLastFieldValueInt(res, 7, "last"));
-            Assert.assertEquals("Discharge's dis is not the good one" , "2015-03-01", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 6, "last")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000033965", TestUtils.getFirstOrLastFieldValueString(res, 10, "last"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "GIN", TestUtils.getFirstOrLastFieldValueString(res, 12, "last"));
+            Assert.assertEquals("Discharge's day is not the good one" , 28, TestUtils.getFirstOrLastFieldValueInt(res, 15, "last"));
+            Assert.assertEquals("Discharge's dis is not the good one" , "2015-03-01", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 14, "last")));
         }
     }
     
@@ -243,7 +243,7 @@ public class SessionHealth {
     @Test
     public void testSimpleSelectThreeParamStringAndStringAndInt() throws Exception{
         try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement();){    
-            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_report WHERE dis_serv = ? AND dis_sig1 = ? AND dis_days = ? ORDER BY dis_id";
+            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_advanced WHERE dis_serv = ? AND dis_sig1 = ? AND dis_days = ? ORDER BY dis_id";
             PreparedStatement prep = con.prepareStatement(request, ResultSet.TYPE_SCROLL_INSENSITIVE,
                     ResultSet.CONCUR_UPDATABLE,
                     ResultSet.HOLD_CURSORS_OVER_COMMIT);
@@ -253,22 +253,22 @@ public class SessionHealth {
             ResultSet res = prep.executeQuery();
             Assert.assertNotNull("Result's request is empty", res);
             // test on first row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000022", TestUtils.getFirstOrLastFieldValueString(res, 1, "first"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 2, "first"));
-            Assert.assertEquals("Discharge's day is not the good one" , 21, TestUtils.getFirstOrLastFieldValueInt(res, 7, "first"));
-            Assert.assertEquals("Discharge's adm is not the good one" , "2015-09-24", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 5, "first")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000022", TestUtils.getFirstOrLastFieldValueString(res, 10, "first"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 11, "first"));
+            Assert.assertEquals("Discharge's day is not the good one" , 21, TestUtils.getFirstOrLastFieldValueInt(res, 15, "first"));
+            Assert.assertEquals("Discharge's adm is not the good one" , "2015-09-24", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 13, "first")));
             // test on last row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000030683", TestUtils.getFirstOrLastFieldValueString(res, 1, "last"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "OFT", TestUtils.getFirstOrLastFieldValueString(res, 4, "last"));
-            Assert.assertEquals("Discharge's day is not the good one" , 21, TestUtils.getFirstOrLastFieldValueInt(res, 7, "last"));
-            Assert.assertEquals("Discharge's adm is not the good one" , "2015-02-08", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 5, "last")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000030683", TestUtils.getFirstOrLastFieldValueString(res, 10, "last"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "OFT", TestUtils.getFirstOrLastFieldValueString(res, 12, "last"));
+            Assert.assertEquals("Discharge's day is not the good one" , 21, TestUtils.getFirstOrLastFieldValueInt(res, 15, "last"));
+            Assert.assertEquals("Discharge's adm is not the good one" , "2015-02-08", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 13, "last")));
         }
     }
     
     @Test
     public void testSimpleSelectThreeParamStringAndStringAndDate() throws Exception{
         try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement();){    
-            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_report WHERE dis_serv = ? AND dis_adtp = ? AND dis_adm = ? ORDER BY dis_id";
+            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_advanced WHERE dis_serv = ? AND dis_adtp = ? AND dis_adm = ? ORDER BY dis_id";
             PreparedStatement prep = con.prepareStatement(request, ResultSet.TYPE_SCROLL_INSENSITIVE,
                     ResultSet.CONCUR_UPDATABLE,
                     ResultSet.HOLD_CURSORS_OVER_COMMIT);
@@ -278,22 +278,22 @@ public class SessionHealth {
             ResultSet res = prep.executeQuery();
             Assert.assertNotNull("Result's request is empty", res);
             // test on first row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000241", TestUtils.getFirstOrLastFieldValueString(res, 1, "first"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 2, "first"));
-            Assert.assertEquals("Discharge's day is not the good one" , 22, TestUtils.getFirstOrLastFieldValueInt(res, 7, "first"));
-            Assert.assertEquals("Discharge's dis is not the good one" , "2015-02-24", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 6, "first")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000241", TestUtils.getFirstOrLastFieldValueString(res, 10, "first"));
+            Assert.assertEquals("Discharge's ver is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 11, "first"));
+            Assert.assertEquals("Discharge's day is not the good one" , 22, TestUtils.getFirstOrLastFieldValueInt(res, 15, "first"));
+            Assert.assertEquals("Discharge's dis is not the good one" , "2015-02-24", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 14, "first")));
             // test on last row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000033720", TestUtils.getFirstOrLastFieldValueString(res, 1, "last"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "OFT", TestUtils.getFirstOrLastFieldValueString(res, 4, "last"));
-            Assert.assertEquals("Discharge's day is not the good one" , 3, TestUtils.getFirstOrLastFieldValueInt(res, 7, "last"));
-            Assert.assertEquals("Discharge's dis is not the good one" , "2015-02-05", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 6, "last")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000033720", TestUtils.getFirstOrLastFieldValueString(res, 10, "last"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "OFT", TestUtils.getFirstOrLastFieldValueString(res, 12, "last"));
+            Assert.assertEquals("Discharge's day is not the good one" , 3, TestUtils.getFirstOrLastFieldValueInt(res, 15, "last"));
+            Assert.assertEquals("Discharge's dis is not the good one" , "2015-02-05", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 14, "last")));
         }
     }
     
     @Test
     public void testSimpleSelectThreeParamStringAndDateAndDate() throws Exception{
         try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement();){    
-            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_report WHERE dis_ver = ? AND dis_adm = ? AND dis_dis = ? ORDER BY dis_id";
+            String request = "SELECT DISTINCT ON (dis_id, dis_ver) * FROM discharge_advanced WHERE dis_ver = ? AND dis_adm = ? AND dis_dis = ? ORDER BY dis_id";
             PreparedStatement prep = con.prepareStatement(request, ResultSet.TYPE_SCROLL_INSENSITIVE,
                     ResultSet.CONCUR_UPDATABLE,
                     ResultSet.HOLD_CURSORS_OVER_COMMIT);
@@ -303,15 +303,15 @@ public class SessionHealth {
             ResultSet res = prep.executeQuery();
             Assert.assertNotNull("Result's request is empty", res);
             // test on first row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000004908", TestUtils.getFirstOrLastFieldValueString(res, 1, "first"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 2, "first"));
-            Assert.assertEquals("Discharge's day is not the good one" , 1, TestUtils.getFirstOrLastFieldValueInt(res, 7, "first"));
-            Assert.assertEquals("Discharge's dis is not the good one" , "2015-02-03", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 6, "first")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000004908", TestUtils.getFirstOrLastFieldValueString(res, 10, "first"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "00", TestUtils.getFirstOrLastFieldValueString(res, 11, "first"));
+            Assert.assertEquals("Discharge's day is not the good one" , 1, TestUtils.getFirstOrLastFieldValueInt(res, 15, "first"));
+            Assert.assertEquals("Discharge's dis is not the good one" , "2015-02-03", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 14, "first")));
             // test on last row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000021883", TestUtils.getFirstOrLastFieldValueString(res, 1, "last"));
-            Assert.assertEquals("Discharge's serv is not the good one" , "HEM", TestUtils.getFirstOrLastFieldValueString(res, 4, "last"));
-            Assert.assertEquals("Discharge's day is not the good one" , 1, TestUtils.getFirstOrLastFieldValueInt(res, 7, "last"));
-            Assert.assertEquals("Discharge's dis is not the good one" , "2015-02-03", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 6, "last")));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000021883", TestUtils.getFirstOrLastFieldValueString(res, 10, "last"));
+            Assert.assertEquals("Discharge's serv is not the good one" , "HEM", TestUtils.getFirstOrLastFieldValueString(res, 12, "last"));
+            Assert.assertEquals("Discharge's day is not the good one" , 1, TestUtils.getFirstOrLastFieldValueInt(res, 15, "last"));
+            Assert.assertEquals("Discharge's dis is not the good one" , "2015-02-03", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 14, "last")));
         }
     }
     
