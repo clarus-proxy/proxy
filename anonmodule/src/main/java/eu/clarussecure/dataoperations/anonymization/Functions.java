@@ -521,9 +521,6 @@ public class Functions{
 				geomStr = reg.attrValues[posGeom];
                                 //AKKA 1st review: use WKT
                                 //geom = reader.read(WKBReader.hexToBytes(geomStr));
-                                if (geomStr.startsWith("SRID")) {
-                                    geomStr = geomStr.substring(geomStr.indexOf(';') + 1);
-                                }
                                 int srid = 0;
                                 if (geomStr.startsWith("SRID")) {
                                     int begin = geomStr.indexOf('=') + 1;
