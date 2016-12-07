@@ -5,7 +5,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
-import java.util.Date;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -453,7 +452,7 @@ public class SessionHealth {
             int rowBefore = TestUtils.getRowCount(resCheckBefore);
             // create new random (String) patient's id & name
             String newId = TestUtils.createNewIdByIncrement(resCheckBefore);
-            String newName = TestUtils.generateRandomString(5);
+            String newName = TestUtils.generateRandomString();
             // request to insert new input in table PATIENT
             String request = "INSERT INTO PATIENT VALUES ('"+newId+"', '"+newName+"', 'TEST LASTNAME', 'TEST LASTNAMEBIS', 'M', 'OTHER')";
             stmt.execute(request);
@@ -472,13 +471,13 @@ public class SessionHealth {
     public void testSimpleUpdateRequest() throws Exception{
         try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement();){
             // select a random row in table PATIENT
-            String rqstrowRand = "SELECT * FROM patient ORDER BY RANDOM() LIMIT 1";
-            ResultSet resrowRand = stmt.executeQuery(rqstrowRand);
+            String rqstRowRand = "SELECT * FROM patient ORDER BY RANDOM() LIMIT 1";
+            ResultSet resRowRand = stmt.executeQuery(rqstRowRand);
             // get random row selected id
-            int index = resrowRand.findColumn("pat_id");
+            int index = resRowRand.findColumn("pat_id");
             String idrow = null;
-            if(resrowRand.next()){
-                idrow = TestUtils.concatenationZeroIntAsString(resrowRand.getInt(index), 8);
+            if(resRowRand.next()){
+                idrow = TestUtils.concatenationZeroIntAsString(resRowRand.getInt(index), 8);
             }
             // update previous selected row
             String rqstUpdaterow = "UPDATE patient SET pat_name='TEST UPDATE', pat_last1='TEST LASTUPDATE', pat_last2='TEST LASTUPDATEBIS' WHERE pat_id='"+idrow+"'";
@@ -486,7 +485,7 @@ public class SessionHealth {
             // compare both items to check if it's different
             String rqstGetUpdatedrow = "SELECT * FROM patient WHERE pat_id='"+idrow+"'";
             ResultSet resGetUpdatedrow = stmt.executeQuery(rqstGetUpdatedrow);
-            Assert.assertNotEquals("Both row are identical, updating failed", resrowRand, resGetUpdatedrow);
+            Assert.assertNotEquals("Both row are identical, updating failed", resRowRand, resGetUpdatedrow);
         }
     }   
     
@@ -494,13 +493,13 @@ public class SessionHealth {
     public void testSimpleDeleteRequest() throws Exception{
         try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement();){    
             // select a random row in table PATIENT
-            String rqstrowRand = "SELECT * FROM patient ORDER BY RANDOM() LIMIT 1";
-            ResultSet resrowRand = stmt.executeQuery(rqstrowRand);
+            String rqstRowRand = "SELECT * FROM patient ORDER BY RANDOM() LIMIT 1";
+            ResultSet resRowRand = stmt.executeQuery(rqstRowRand);
             // get random row selected id
-            int index = resrowRand.findColumn("pat_id");
+            int index = resRowRand.findColumn("pat_id");
             String idrow = null;
-            if(resrowRand.next()){
-                idrow = TestUtils.concatenationZeroIntAsString(resrowRand.getInt(index), 8);
+            if(resRowRand.next()){
+                idrow = TestUtils.concatenationZeroIntAsString(resRowRand.getInt(index), 8);
             }
             // delete previous selected row
             String rqstUpdaterow = "DELETE FROM patient WHERE pat_id='"+idrow+"'";
