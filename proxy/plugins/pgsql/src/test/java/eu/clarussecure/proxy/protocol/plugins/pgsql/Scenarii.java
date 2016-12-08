@@ -185,33 +185,62 @@ public class Scenarii {
     }
     
     /*
+     * TEST SCENARION - LOGIC PARSE/BINDE/EXECUTE
+     */
+    
+    @Test
+    public void parseBindExecuteLogicScenario5() throws SQLException{
+        parseBindExecuteLogicScenario(insertRequestNumber5);
+    }
+    
+    @Test
+    public void parseBindExecuteLogicScenario10() throws SQLException{
+        parseBindExecuteLogicScenario(insertRequestNumber10);
+    }
+    
+    @Test
+    public void parseBindExecuteLogicScenario25() throws SQLException{
+        parseBindExecuteLogicScenario(insertRequestNumber25);
+    }
+    
+//    @Test
+//    public void parseBindExecuteLogicScenario50() throws SQLException{
+//        parseBindExecuteLogicScenario(insertRequestNumber50);
+//    }
+//    
+//    @Test
+//    public void parseBindExecuteLogicScenario100() throws SQLException{
+//        parseBindExecuteLogicScenario(insertRequestNumber100);
+//    }
+    
+    /*
      * TEST SCENARIO - RANDOM PARSE/BIND/EXECUTE
      */
     
     @Test
-    public void parseBindExecuteScenario5() throws SQLException{
+    public void parseBindExecuteRandomScenario5() throws SQLException{
         parseBindExecuteRandomScenario(insertRequestNumber5);
     }
     
     @Test
-    public void parseBindExecuteScenario10() throws SQLException{
+    public void parseBindExecuteRandomScenario10() throws SQLException{
         parseBindExecuteRandomScenario(insertRequestNumber10);
     }
     
     @Test
-    public void parseBindExecuteScenario25() throws SQLException{
+    public void parseBindExecuteRandomScenario25() throws SQLException{
         parseBindExecuteRandomScenario(insertRequestNumber25);
     }
     
-    @Test
-    public void parseBindExecuteScenario50() throws SQLException{
-        parseBindExecuteRandomScenario(insertRequestNumber50);
-    }
-
-    @Test
-    public void parseBindExecuteScenario100() throws SQLException{
-        parseBindExecuteRandomScenario(insertRequestNumber100);
-    }
+//    @Test
+//    public void parseBindExecuteRandomScenario50() throws SQLException{
+//        parseBindExecuteRandomScenario(insertRequestNumber50);
+//    }
+//
+//    @Test
+//    public void parseBindExecuteRandomScenario100() throws SQLException{
+//        parseBindExecuteRandomScenario(insertRequestNumber100);
+//    }
     
     /*
      * SCENARII METHOD'S TEST
@@ -361,6 +390,100 @@ public class Scenarii {
             stmt.execute(request);
             int rowAfter = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
             Assert.assertEquals("Number of row after delete shall be equals to "+(rowBefore - numberOfRequest), (rowBefore - numberOfRequest), rowAfter);
+        }
+    }
+    
+    /**
+     * method which process a scenario :
+     * - Parse X INSERT request
+     * - Bind X INSERT request
+     * - Execute X INSERT request
+     * - Parse X SELECT request
+     * - Bind X SELECT request
+     * - Execute X SELECT request 
+     * - Parse X UPDATE request
+     * - Bind X UPDATE request
+     * - Execute X UPDATE request
+     * - Parse X DELETE request
+     * - Bind X DELETE request
+     * - Execute X DELETE request
+     * @param numberOfRequet
+     * @throws SQLException
+     */
+    private void parseBindExecuteLogicScenario(int numberOfRequest) throws SQLException{
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = TestUtils.createStatement(con);){
+            // Check number of row before scenario
+            int rowBeforeInsert = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
+            Assert.assertNotNull("Table patient shall be not empty", rowBeforeInsert);
+            // Parse X INSERT request
+            List<PreparedStatement> lstInsertParsed = TestUtils.generateInsertPreparedStatementRequest(numberOfRequest);
+            parseRequestSuccessfullTest(numberOfRequest, lstInsertParsed);
+            // Bind X INSERT request
+            List<PreparedStatement> lstInsertBinded = TestUtils.bindInsertRequest(numberOfRequest, lstInsertParsed);
+            bindRequestSuccessfullTest(numberOfRequest, lstInsertBinded);
+            // Execute X INSERT request
+            int counter = 1;
+            Iterator<PreparedStatement> iterInsert = lstInsertBinded.iterator();
+            while(iterInsert.hasNext() && counter <= numberOfRequest){
+                stmt.execute(String.valueOf(iterInsert.next()));
+                Assert.assertEquals("Table patient shall contains "+(rowBeforeInsert + counter)+" rows", (rowBeforeInsert + counter), TestUtils.getNumberOfRow(stmt, "patient", "pat_id"));
+                counter ++;
+            }
+            counter = 0;
+            // check number of row after insert
+            int rowAfterInsert = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
+            Assert.assertNotNull("Table patient shall be not empty", rowAfterInsert);
+            Assert.assertEquals("Insert result's request unsuccesfull", rowBeforeInsert + numberOfRequest, rowAfterInsert);
+            // Parse X SELECT request
+            List<PreparedStatement> lstSelectParsed = TestUtils.generateSelectPreparedStatementRequest(numberOfRequest);
+            parseRequestSuccessfullTest(numberOfRequest, lstSelectParsed);
+            // Bind X SELECT request
+            List<PreparedStatement> lstSelectBinded = new ArrayList<PreparedStatement>();
+            List<String> lstIdSelected = new ArrayList<String>();
+            String request = "SELECT pat_id FROM patient WHERE pat_id IN (SELECT pat_id FROM patient ORDER BY pat_id DESC LIMIT "+numberOfRequest+") ORDER BY pat_id";
+            ResultSet res = stmt.executeQuery(request);
+            while(res.next()){
+                String id = res.getString(1);
+                lstIdSelected.add(id);
+            }
+            for(String id : lstIdSelected){
+                PreparedStatement prep = TestUtils.bindSelectRequest(numberOfRequest, lstSelectParsed.get(counter), id);
+                lstSelectBinded.add(prep);
+                counter ++;
+            }
+            counter = 1;
+            bindRequestSuccessfullTest(numberOfRequest, lstSelectBinded);
+            // Execute X Select request
+            Iterator<PreparedStatement> iterSelect = lstSelectBinded.iterator();
+            while(iterSelect.hasNext() && counter < numberOfRequest){
+                stmt.execute(String.valueOf(lstSelectBinded.get(counter)));
+                counter ++;
+            }
+            counter = 1;
+            // Parse X UPDATE request
+            List<PreparedStatement> lstUpdateParsed = TestUtils.generateUpdatePreparedStatementRequest(numberOfRequest);
+            parseRequestSuccessfullTest(numberOfRequest, lstUpdateParsed);
+            // Bind X UPDATE request
+            List<PreparedStatement> lstUpdateBinded = TestUtils.bindUpdateRequest(numberOfRequest, lstUpdateParsed, lstIdSelected);
+            bindRequestSuccessfullTest(numberOfRequest, lstUpdateBinded);
+            // Execute X UPDATE request
+            Iterator<PreparedStatement> iterUpdate = lstUpdateBinded.iterator();
+            while(iterUpdate.hasNext() && counter < numberOfRequest){
+                PreparedStatement prepStmt = iterUpdate.next();
+                stmt.execute(String.valueOf(prepStmt));
+                String rowBeforUpdate = getRowBeforeUpdate(con, prepStmt);
+                updateRequestTestSuccesfull(con, prepStmt, rowBeforUpdate);
+                updateRequestTestSuccesfull(con, prepStmt, rowBeforUpdate);
+            }
+            counter ++;
+            // Parse DELETE request
+            PreparedStatement requestDeleteParsed = TestUtils.generateDeletePreparedStatementRequest(numberOfRequest);
+            // Bind DELETE request
+            PreparedStatement requestDeleteBinded = TestUtils.bindDeleteBetweenRequest(numberOfRequest, requestDeleteParsed, lstIdSelected.get(0), lstIdSelected.get(lstIdSelected.size() - 1));
+            // Execute DELETE request
+            stmt.execute(String.valueOf(requestDeleteBinded));
+            int rowEnd = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
+            Assert.assertEquals("Table patient shall contains "+(rowAfterInsert - numberOfRequest)+" rows", (rowAfterInsert - numberOfRequest), rowEnd);
         }
     }
     

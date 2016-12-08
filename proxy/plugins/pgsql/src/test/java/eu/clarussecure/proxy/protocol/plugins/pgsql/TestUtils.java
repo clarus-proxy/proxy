@@ -370,51 +370,17 @@ public class TestUtils {
     }
     
     /**
-     * method which generate a list of X prepared statement containing DELETE (BETWEEN operator) request for PATIENT table
-     * @param numberOfRequest
-     * @return
-     * @throws SQLException
-     */
-    public static List<PreparedStatement> generateDeletePreparedStatementRequest(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
-            List<PreparedStatement> lstPreparedStmt = new ArrayList<PreparedStatement>();
-            String request = "DELETE FROM PATIENT WHERE pat_id = BETWEEN ? AND ?";
-            int counter = 0;
-            while(counter < numberOfRequest){
-                PreparedStatement prep = con.prepareStatement(request, ResultSet.TYPE_SCROLL_INSENSITIVE,
-                        ResultSet.CONCUR_READ_ONLY,
-                        ResultSet.HOLD_CURSORS_OVER_COMMIT);
-                lstPreparedStmt.add(prep);
-                counter = counter + 1; //increment counter
-            }
-            return lstPreparedStmt;
-        }
-    }
-    
-    /**
-     * method which bind SELECT request content of list of preparedStatement parameter
+     * method which bind SELECT request content of preparedStatement parameter
      * @param numberOfRequest
      * @param lstPrepStmt
      * @param idToSelect
      * @return
      * @throws SQLException
      */
-    public static List<PreparedStatement> bindSelectRequest(int numberOfRequest, List<PreparedStatement> lstPrepStmt, String idToSelect) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
-            List<PreparedStatement> lstPreparedStmt = lstPrepStmt;
-            List<PreparedStatement> lstPreparedStmtBinded = new ArrayList<PreparedStatement>();
-            int counter = 0;
-            while(counter < numberOfRequest){
-                PreparedStatement prep = con.prepareStatement(String.valueOf(lstPreparedStmt.get(counter)), ResultSet.TYPE_SCROLL_INSENSITIVE,
-                        ResultSet.CONCUR_READ_ONLY,
-                        ResultSet.HOLD_CURSORS_OVER_COMMIT);
-                prep.setString(1, idToSelect);
-                lstPreparedStmtBinded.add(prep);
-                counter = counter + 1; //increment counter
-            }
-            return lstPreparedStmtBinded;
+    public static PreparedStatement bindSelectRequest(int numberOfRequest, PreparedStatement prepStmt, String idToSelect) throws SQLException{
+        prepStmt.setString(1, idToSelect);
+        return prepStmt;
         }
-    }
     
     /**
      * method which bind INSERT request content of list of preparedStatement parameter
@@ -482,30 +448,6 @@ public class TestUtils {
         }
     
     /**
-     * method which generate SELECT request already binded for patient's Id in parameter
-     * @param numberOfRequest
-     * @param idToSelect
-     * @return
-     * @throws SQLException
-     */
-    public static List<PreparedStatement> generateSelectBindRequest(int numberOfRequest, String idToSelect) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
-            List<PreparedStatement> lstPreparedStmt = generateSelectPreparedStatementRequest(numberOfRequest);
-            List<PreparedStatement> lstPreparedStmtBinded = new ArrayList<PreparedStatement>();
-            int counter = 0;
-            while(counter < numberOfRequest){
-                PreparedStatement prep = con.prepareStatement(String.valueOf(lstPreparedStmt.get(counter)), ResultSet.TYPE_SCROLL_INSENSITIVE,
-                        ResultSet.CONCUR_READ_ONLY,
-                        ResultSet.HOLD_CURSORS_OVER_COMMIT);
-                prep.setString(1, idToSelect);
-                lstPreparedStmtBinded.add(prep);
-                counter = counter + 1; //increment counter
-            }
-            return lstPreparedStmtBinded;
-        }
-    }
-    
-    /**
      * method which generate INSERT request already binded for table patient. Field's value are generated randomly
      * @param numberOfRequest
      * @return
@@ -540,6 +482,30 @@ public class TestUtils {
     }
     
     /**
+     * method which generate SELECT request already binded for patient's Id in parameter
+     * @param numberOfRequest
+     * @param idToSelect
+     * @return
+     * @throws SQLException
+     */
+    public static List<PreparedStatement> generateSelectBindRequest(int numberOfRequest, String idToSelect) throws SQLException{
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
+            List<PreparedStatement> lstPreparedStmt = generateSelectPreparedStatementRequest(numberOfRequest);
+            List<PreparedStatement> lstPreparedStmtBinded = new ArrayList<PreparedStatement>();
+            int counter = 0;
+            while(counter < numberOfRequest){
+                PreparedStatement prep = con.prepareStatement(String.valueOf(lstPreparedStmt.get(counter)), ResultSet.TYPE_SCROLL_INSENSITIVE,
+                        ResultSet.CONCUR_READ_ONLY,
+                        ResultSet.HOLD_CURSORS_OVER_COMMIT);
+                prep.setString(1, idToSelect);
+                lstPreparedStmtBinded.add(prep);
+                counter = counter + 1; //increment counter
+            }
+            return lstPreparedStmtBinded;
+        }
+    }
+    
+    /**
      * method which generate UPDATE request already binded for table patient. Field's value are generated randomly
      * @param numberOfRequest
      * @return
@@ -568,31 +534,32 @@ public class TestUtils {
     }
     
     /**
+     * method which generate a prepared statement containing DELETE (BETWEEN operator) request for PATIENT table
+     * @param numberOfRequest
+     * @return
+     * @throws SQLException
+     */
+    public static PreparedStatement generateDeletePreparedStatementRequest(int numberOfRequest) throws SQLException{
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
+            String request = "DELETE FROM PATIENT WHERE pat_id BETWEEN ? AND ?";
+            PreparedStatement prep = con.prepareStatement(request, ResultSet.TYPE_SCROLL_INSENSITIVE,
+                        ResultSet.CONCUR_READ_ONLY,
+                        ResultSet.HOLD_CURSORS_OVER_COMMIT);
+            return prep;
+        }
+    }
+    
+    /**
      * method which generate DELETE request already binded for table patient. Field's value are generated randomly
      * @param numberOfRequest
      * @return
      * @throws SQLException
      */
-    public static List<PreparedStatement> generateDeleteBetweenBindRequest(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
-            List<PreparedStatement> lstPreparedStmt = generateDeletePreparedStatementRequest(numberOfRequest);
-            List<PreparedStatement> lstPreparedStmtBinded = new ArrayList<PreparedStatement>();
-            int counter = 0;
-            while(counter < numberOfRequest){
-                String newName = generateRandomString(); //generate random new name
-                String newLast = generateRandomString(); //generate random new last name
-                String newLast2 = generateRandomString(); //generate random new last name 2
-                PreparedStatement prep = con.prepareStatement(String.valueOf(lstPreparedStmt.get(counter)), ResultSet.TYPE_SCROLL_INSENSITIVE,
-                        ResultSet.CONCUR_READ_ONLY,
-                        ResultSet.HOLD_CURSORS_OVER_COMMIT);
-                prep.setString(1, newName);
-                prep.setString(2, newLast);
-                prep.setString(3, newLast2);
-                lstPreparedStmtBinded.add(prep);
-                counter = counter + 1; //increment counter
-            }
-            return lstPreparedStmtBinded;
-        }
+    public static PreparedStatement bindDeleteBetweenRequest(int numberOfRequest, PreparedStatement prepStmt, String id1, String id2) throws SQLException{
+        PreparedStatement prepDeleteBinded = prepStmt;
+        prepDeleteBinded.setString(1, id1);
+        prepDeleteBinded.setString(2, id2);
+        return prepDeleteBinded;
     }
     
 }
