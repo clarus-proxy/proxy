@@ -24,6 +24,18 @@ import javax.naming.Context;
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
 
+/**
+ * @author Mehdi.BENANIBA
+ *
+ */
+/**
+ * @author Mehdi.BENANIBA
+ *
+ */
+/**
+ * @author Mehdi.BENANIBA
+ *
+ */
 public class TestUtils {
 
     private TestUtils(){
@@ -236,9 +248,7 @@ public class TestUtils {
     }
     
     public static List<String> generateInsertRequest(int numberOfRequest) throws SQLException{
-        try(Connection con = getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
+        try(Connection con = getHealthConnection(); Statement stmt = createStatement(con);){
             List<String> tabRequest = new ArrayList<String>();
             int counter = 0;
             String rqstSelect = "SELECT * FROM patient ORDER BY pat_id"; //initialize SELECT request
@@ -260,10 +270,14 @@ public class TestUtils {
         }
     }
     
+    /**
+     * method which generate INSERT request (ready to insert) with X row values
+     * @param numberOfRequest
+     * @return
+     * @throws SQLException
+     */
     public static String generateInsertAllRequest(int numberOfRequest) throws SQLException{
-        try(Connection con = getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
+        try(Connection con = getHealthConnection(); Statement stmt = createStatement(con);){
             int counter = 0;
             String rqstSelect = "SELECT * FROM patient ORDER BY pat_id"; //initialize SELECT request
             ResultSet resRequest = stmt.executeQuery(rqstSelect); //execute SELECT
@@ -288,10 +302,14 @@ public class TestUtils {
         }
     }
     
+    /**
+     * method which generate a list of X prepared statement containing INSERT request for PATIENT table
+     * @param numberOfRequest
+     * @return
+     * @throws SQLException
+     */
     public static List<PreparedStatement> generateInsertPreparedStatementRequest(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
             List<PreparedStatement> lstPreparedStmt = new ArrayList<PreparedStatement>();
             String request = "INSERT INTO PATIENT VALUES (?, ?, ?, ?, 'M', 'OTHER')";
             int counter = 0;
@@ -306,10 +324,15 @@ public class TestUtils {
         }
     }
     
+    
+    /**
+     * method which generate a list of X prepared statement containing SELECT request for PATIENT table
+     * @param numberOfRequest
+     * @return
+     * @throws SQLException
+     */
     public static List<PreparedStatement> generateSelectPreparedStatementRequest(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
             List<PreparedStatement> lstPreparedStmt = new ArrayList<PreparedStatement>();
             String request = "SELECT * FROM PATIENT WHERE pat_id = ?";
             int counter = 0;
@@ -324,10 +347,14 @@ public class TestUtils {
         }
     }
     
+    /**
+     * method which generate a list of X prepared statement containing UPDATE request for PATIENT table
+     * @param numberOfRequest
+     * @return
+     * @throws SQLException
+     */
     public static List<PreparedStatement> generateUpdatePreparedStatementRequest(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
             List<PreparedStatement> lstPreparedStmt = new ArrayList<PreparedStatement>();
             String request = "UPDATE PATIENT SET pat_name = ?, pat_last1 = ?, pat_last2 = ?, pat_gen = 'M', pat_zip = 'OTHER' WHERE pat_id = ?";
             int counter = 0;
@@ -342,10 +369,14 @@ public class TestUtils {
         }
     }
     
+    /**
+     * method which generate a list of X prepared statement containing DELETE (BETWEEN operator) request for PATIENT table
+     * @param numberOfRequest
+     * @return
+     * @throws SQLException
+     */
     public static List<PreparedStatement> generateDeletePreparedStatementRequest(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
             List<PreparedStatement> lstPreparedStmt = new ArrayList<PreparedStatement>();
             String request = "DELETE FROM PATIENT WHERE pat_id = BETWEEN ? AND ?";
             int counter = 0;
@@ -360,10 +391,16 @@ public class TestUtils {
         }
     }
     
+    /**
+     * method which bind SELECT request content of list of preparedStatement parameter
+     * @param numberOfRequest
+     * @param lstPrepStmt
+     * @param idToSelect
+     * @return
+     * @throws SQLException
+     */
     public static List<PreparedStatement> bindSelectRequest(int numberOfRequest, List<PreparedStatement> lstPrepStmt, String idToSelect) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
             List<PreparedStatement> lstPreparedStmt = lstPrepStmt;
             List<PreparedStatement> lstPreparedStmtBinded = new ArrayList<PreparedStatement>();
             int counter = 0;
@@ -379,10 +416,15 @@ public class TestUtils {
         }
     }
     
+    /**
+     * method which bind INSERT request content of list of preparedStatement parameter
+     * @param numberOfRequest
+     * @param lstPrepStmt
+     * @return
+     * @throws SQLException
+     */
     public static List<PreparedStatement> bindInsertRequest(int numberOfRequest, List<PreparedStatement> lstPrepStmt) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
             List<PreparedStatement> lstPreparedStmt = lstPrepStmt;
             List<PreparedStatement> lstPreparedStmtBinded = new ArrayList<PreparedStatement>();
             int counter = 0;
@@ -409,10 +451,16 @@ public class TestUtils {
         }
     }
     
+    /**
+     * method which bind UPDATE request content of list of preparedStatement parameter
+     * @param numberOfRequest
+     * @param lstPrepStmt
+     * @param lstId
+     * @return
+     * @throws SQLException
+     */
     public static List<PreparedStatement> bindUpdateRequest(int numberOfRequest, List<PreparedStatement> lstPrepStmt, List<String> lstId) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
                 List<PreparedStatement> lstPreparedStmtBinded = new ArrayList<PreparedStatement>();
                 int counter = 0;
                 while(counter < numberOfRequest){
@@ -433,10 +481,15 @@ public class TestUtils {
             }
         }
     
+    /**
+     * method which generate SELECT request already binded for patient's Id in parameter
+     * @param numberOfRequest
+     * @param idToSelect
+     * @return
+     * @throws SQLException
+     */
     public static List<PreparedStatement> generateSelectBindRequest(int numberOfRequest, String idToSelect) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
             List<PreparedStatement> lstPreparedStmt = generateSelectPreparedStatementRequest(numberOfRequest);
             List<PreparedStatement> lstPreparedStmtBinded = new ArrayList<PreparedStatement>();
             int counter = 0;
@@ -452,10 +505,14 @@ public class TestUtils {
         }
     }
     
+    /**
+     * method which generate INSERT request already binded for table patient. Field's value are generated randomly
+     * @param numberOfRequest
+     * @return
+     * @throws SQLException
+     */
     public static List<PreparedStatement> generateInsertBindRequest(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
             List<PreparedStatement> lstPreparedStmt = generateInsertPreparedStatementRequest(numberOfRequest);
             List<PreparedStatement> lstPreparedStmtBinded = new ArrayList<PreparedStatement>();
             int counter = 0;
@@ -482,10 +539,14 @@ public class TestUtils {
         }
     }
     
+    /**
+     * method which generate UPDATE request already binded for table patient. Field's value are generated randomly
+     * @param numberOfRequest
+     * @return
+     * @throws SQLException
+     */
     public static List<PreparedStatement> generateUpdateBindRequest(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
             List<PreparedStatement> lstPreparedStmt = generateUpdatePreparedStatementRequest(numberOfRequest);
             List<PreparedStatement> lstPreparedStmtBinded = new ArrayList<PreparedStatement>();
             int counter = 0;
@@ -506,10 +567,14 @@ public class TestUtils {
         }
     }
     
+    /**
+     * method which generate DELETE request already binded for table patient. Field's value are generated randomly
+     * @param numberOfRequest
+     * @return
+     * @throws SQLException
+     */
     public static List<PreparedStatement> generateDeleteBetweenBindRequest(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = createStatement(con);){
             List<PreparedStatement> lstPreparedStmt = generateDeletePreparedStatementRequest(numberOfRequest);
             List<PreparedStatement> lstPreparedStmtBinded = new ArrayList<PreparedStatement>();
             int counter = 0;
@@ -527,39 +592,6 @@ public class TestUtils {
                 counter = counter + 1; //increment counter
             }
             return lstPreparedStmtBinded;
-        }
-    }
-    
-    public static Map<String, List<PreparedStatement>> test(int numberOfRequest) throws SQLException, IOException, PropertyVetoException, NamingException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
-                ResultSet.HOLD_CURSORS_OVER_COMMIT);){
-            Map<String, List<PreparedStatement>> myMap = new HashMap<String, List<PreparedStatement>>();
-            List<PreparedStatement> lstPreparedStmt = new ArrayList<PreparedStatement>();
-            String request = "INSERT INTO PATIENT VALUES (?, ?, ?, ?, 'M', 'OTHER')";
-            myMap.put(request, null);
-            int counter = 0;
-            String rqstSelect = "SELECT * FROM patient ORDER BY pat_id"; //initialize SELECT request
-            ResultSet resRequest = stmt.executeQuery(rqstSelect); //execute SELECT
-            String newId = createNewIdByIncrement(resRequest); //initialize first new id
-            while(counter < numberOfRequest){
-                String newName = generateRandomString(); //generate random new name
-                String newLast = generateRandomString(); //generate random new last name
-                String newLast2 = generateRandomString(); //generate random new last name 2
-                PreparedStatement prep = con.prepareStatement(request, ResultSet.TYPE_SCROLL_INSENSITIVE,
-                        ResultSet.CONCUR_READ_ONLY,
-                        ResultSet.HOLD_CURSORS_OVER_COMMIT);
-                prep.setString(1, newId);
-                prep.setString(2, newName);
-                prep.setString(3, newLast);
-                prep.setString(4, newLast2);
-                lstPreparedStmt.add(prep);
-                counter = counter + 1; //increment counter
-                int newIdAsInt = Integer.parseInt(newId) + 1; //increment id
-                newId = concatenationZeroIntAsString(newIdAsInt, 8);
-            }
-            myMap.put(request, lstPreparedStmt);
-            return myMap;
         }
     }
     
