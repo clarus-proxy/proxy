@@ -332,10 +332,10 @@ public class SessionHealth {
             ResultSet res = prep.executeQuery();
             Assert.assertNotNull("Result's request is empty", res);
             // test on first row
-            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000047", TestUtils.getFirstOrLastFieldValueString(res, 10, "first"));
+            Assert.assertEquals("Discharge's id is not the good one" , "00000000000000000785", TestUtils.getFirstOrLastFieldValueString(res, 10, "first"));
             Assert.assertEquals("Discharge's serv is not the good one" , "GIN", TestUtils.getFirstOrLastFieldValueString(res, 12, "first"));
-            Assert.assertEquals("Discharge's day is not the good one" , 19, TestUtils.getFirstOrLastFieldValueInt(res, 15, "first"));
-            Assert.assertEquals("Discharge's adm is not the good one" , "2015-06-14", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 13, "first")));
+            Assert.assertEquals("Discharge's day is not the good one" , 21, TestUtils.getFirstOrLastFieldValueInt(res, 15, "first"));
+            Assert.assertEquals("Discharge's adm is not the good one" , "2015-02-10", TestUtils.convertDateToString(TestUtils.getFirstOrLastFieldValueDate(res, 13, "first")));
             // test on last row
             Assert.assertEquals("Patient's id is not the good one" , "00017675", TestUtils.getFirstOrLastFieldValueString(res, 1, "last"));
             Assert.assertEquals("Patient's name is not the good one" , "MARIA", TestUtils.getFirstOrLastFieldValueString(res, 2, "last"));
