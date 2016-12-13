@@ -1,19 +1,27 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql;
 
+import java.lang.reflect.Array;
 import java.net.InetAddress;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Arrays;
 
+import org.apache.commons.lang3.StringUtils;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.ExpectedException;
+import org.postgresql.util.PSQLException;
 
 import eu.clarussecure.proxy.spi.Mode;
 import eu.clarussecure.proxy.spi.Operation;
 import eu.clarussecure.proxy.spi.protocol.ProtocolServiceNoop;
+import io.netty.util.internal.StringUtil;
 
 
 public class SessionHealth {
@@ -42,6 +50,38 @@ public class SessionHealth {
         pgsqlProtocol.stop();
     }
     
+    /*
+     * 
+     */
+    
+    @Test
+    public void maxConnectionHandle() throws SQLException{
+        int maxConnection = TestUtils.getMaxNumberConnectionSimultaneous();
+        Assert.assertEquals("Number of connection supported is not 101", 101, maxConnection);
+    }
+    
+    @Rule
+    public final ExpectedException exception = ExpectedException.none();
+    
+    /**
+     * this test process successfully with JVM parameters : -Xms2048M -Xmx5120M
+     * Currently it is not possible to proceed beyond 2^29 (String length)
+     * @throws SQLException
+     */
+    @Test
+    public void testRequestMaxLength() throws SQLException{
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = con.createStatement();){
+            String requestSQL = "SELECT * FROM patient LIMIT 1";
+            int power = 29;
+            double limit = Math.pow(2, power);
+            stmt.execute(StringUtils.leftPad(requestSQL, (int) limit, ' '));
+        }
+        catch(Exception e){
+            exception.expect(PSQLException.class);
+            e.printStackTrace();
+        }
+    }
+        
     /**********
      * SELECT - SIMPLE QUERIES - TEST
      **********/

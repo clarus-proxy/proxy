@@ -23,10 +23,6 @@ import eu.clarussecure.proxy.spi.protocol.ProtocolServiceNoop;
  * @author Mehdi.BENANIBA
  *
  */
-/**
- * @author Mehdi.BENANIBA
- *
- */
 public class Scenarii {
 
     PgsqlProtocol pgsqlProtocol = null;
@@ -267,6 +263,7 @@ public class Scenarii {
             int rowAfter = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
             Assert.assertNotNull("Request's result is empty", rowAfter);
             Assert.assertEquals("Insert result's request unsuccesfull", rowBefore + numberOfRequest, rowAfter);
+            TestUtils.closeAll(stmt, con);
         }
     }
     
@@ -288,6 +285,7 @@ public class Scenarii {
             int rowAfter = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
             Assert.assertNotNull("Request's result is empty", rowAfter);
             Assert.assertEquals("Insert result's request unsuccesfull", rowBefore + numberOfRequest, rowAfter);
+            TestUtils.closeAll(stmt, con);
         }
     }
     
@@ -390,6 +388,7 @@ public class Scenarii {
             stmt.execute(request);
             int rowAfter = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
             Assert.assertEquals("Number of row after delete shall be equals to "+(rowBefore - numberOfRequest), (rowBefore - numberOfRequest), rowAfter);
+            TestUtils.closeAll(stmt, con);
         }
     }
     
@@ -484,6 +483,7 @@ public class Scenarii {
             stmt.execute(String.valueOf(requestDeleteBinded));
             int rowEnd = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
             Assert.assertEquals("Table patient shall contains "+(rowAfterInsert - numberOfRequest)+" rows", (rowAfterInsert - numberOfRequest), rowEnd);
+            TestUtils.closeAll(stmt, con);
         }
     }
     
@@ -580,7 +580,7 @@ public class Scenarii {
             stmt.execute(reqDelete);
             int rowEnd = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
             Assert.assertEquals("Table patient shall contains "+(rowAfter + numberOfRequest - (numberOfRequest*2))+" rows", (rowAfter + numberOfRequest - (numberOfRequest*2)), rowEnd);
-            stmt.close();
+            TestUtils.closeAll(stmt, con);
         }
     }
     
@@ -595,9 +595,9 @@ public class Scenarii {
         String request = String.valueOf(prepStmt);
         int index = request.indexOf("pat_id") + 10;
         String id = request.substring(index, index + 8); 
-        Statement statement = TestUtils.createStatement(con);
+        Statement stmt = TestUtils.createStatement(con);
         String req = "SELECT * FROM patient WHERE pat_id = '"+id+"'";
-        ResultSet res = statement.executeQuery(req);
+        ResultSet res = stmt.executeQuery(req);
         Assert.assertNotEquals("Row update unsuccesfull", String.valueOf(res), requestBefore);
     }
     
@@ -613,9 +613,9 @@ public class Scenarii {
         String request = String.valueOf(prepStmt);
         int index = request.indexOf("pat_id") + 10;
         String id = request.substring(index, index + 8); 
-        Statement statement = TestUtils.createStatement(con);
+        Statement stmt = TestUtils.createStatement(con);
         String req = "SELECT * FROM patient WHERE pat_id = '"+id+"'";
-        ResultSet res = statement.executeQuery(req);
+        ResultSet res = stmt.executeQuery(req);
         return String.valueOf(res);
     }
     

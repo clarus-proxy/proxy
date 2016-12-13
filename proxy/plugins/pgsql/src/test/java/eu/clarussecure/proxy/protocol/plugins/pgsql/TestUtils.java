@@ -1,7 +1,5 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql;
 
-import java.beans.PropertyVetoException;
-import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -13,25 +11,11 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
-import java.util.ListIterator;
-import java.util.Map;
 import java.util.Properties;
-import java.util.Random;
 
-import javax.naming.Context;
-import javax.naming.InitialContext;
-import javax.naming.NamingException;
+import org.junit.Assert;
 
-/**
- * @author Mehdi.BENANIBA
- *
- */
-/**
- * @author Mehdi.BENANIBA
- *
- */
 /**
  * @author Mehdi.BENANIBA
  *
@@ -42,7 +26,7 @@ public class TestUtils {
     }
     
     /**
-     * method which assure connection to database
+     * method which assure connection to health database
      * @return
      * @throws SQLException
      */
@@ -53,6 +37,55 @@ public class TestUtils {
         return DriverManager.getConnection(
                 "jdbc:postgresql://localhost:5432/ehealth",
                 connectionProps);
+    }
+    
+    /**
+     * method which close statement and connection enter as parameter
+     * @param stmt
+     * @param connection
+     * @throws SQLException
+     */
+    public static void closeAll(Statement stmt, Connection connection) throws SQLException{
+        stmt.close();
+        connection.close();
+    }
+    
+    /**
+     * method which return number of simultaneous connection
+     * @return
+     * @throws SQLException
+     */
+    public static int getNumberOfConnection() throws SQLException{
+        int numberOfConnection = 0;
+        try(Connection con = getHealthConnection(); Statement stmt = createStatement(con);){
+            String request = "SELECT count(*) FROM pg_catalog.pg_stat_activity";
+            ResultSet res = stmt.executeQuery(request);
+            res.first();
+            numberOfConnection = res.getInt(1);
+        }
+        return numberOfConnection;
+    }
+    
+    /**
+     * method which check how many connection simultaneous could be handle
+     * @return
+     * @throws SQLException
+     */
+    public static int getMaxNumberConnectionSimultaneous() throws SQLException{
+        int numberOfConnection = getNumberOfConnection();
+        Assert.assertNotNull(numberOfConnection);
+        List<Connection> lstCon = new ArrayList<Connection>();
+        try{
+            while(true){
+                Connection con = TestUtils.getHealthConnection();
+                lstCon.add(con);
+            }
+        }catch(Exception e){
+            
+        }finally{
+            numberOfConnection = numberOfConnection + lstCon.size();
+        }
+        return numberOfConnection;
     }
     
     /**
