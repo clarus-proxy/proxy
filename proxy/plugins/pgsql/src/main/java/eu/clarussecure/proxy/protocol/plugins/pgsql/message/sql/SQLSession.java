@@ -4,8 +4,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
 import eu.clarussecure.dataoperations.Promise;
@@ -84,6 +86,34 @@ public class SQLSession {
     private Map<CString, ExtendedQueryStatus<ParseStep>> parseStepStatuses;
     private Map<CString, ExtendedQueryStatus<BindStep>> bindStepStatuses;
     private Map<CString, DescribeStep> describeSteps;
+    
+    /*
+     * 
+     */
+    // Users to save. Use of Set to avoid duplicate value.
+    private Map<CString, CString> credentials;
+
+    public Map<CString, CString> getCredentials() {
+        if (credentials == null) {
+            credentials = Collections.synchronizedMap(new HashMap<>());
+        }
+        return credentials;
+    }
+
+    public void setCredentials(Map<CString, CString> credentials) {
+        this.credentials = credentials;
+    }
+
+    public void addCredentialsUser(CString user) {
+        credentials.put(user, null);
+    }
+    
+    public void addCredentialsPassword(CString user, CString password) {
+        credentials.put(user, password);
+    }
+    /*
+     * 
+     */
 
     public CString getDatabaseName() {
         return databaseName;

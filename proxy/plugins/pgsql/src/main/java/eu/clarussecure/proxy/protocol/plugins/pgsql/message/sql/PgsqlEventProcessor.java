@@ -71,6 +71,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         SQLSession sqlSession = getSession(ctx);
         sqlSession.setDatabaseName((CString) databaseName.clone());
         CString userName = getProtocolService(ctx).newUserIdentification(parameters.get(CString.valueOf(USER_KEY)));
+        // Add user to session.
+        sqlSession.addCredentialsUser(userName);
         return userName;
     }
 

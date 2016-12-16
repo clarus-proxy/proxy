@@ -10,32 +10,49 @@ import org.slf4j.LoggerFactory;
 import eu.clarussecure.proxy.spi.CString;
 import io.netty.channel.ChannelHandlerContext;
 
-public class AuthenticationHandler extends PgsqlMessageHandler<PgsqlStartupMessage> {
+public class AuthenticationHandler extends PgsqlMessageHandler<PgsqlAuthenticationMessage> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AuthenticationHandler.class);
 
     public AuthenticationHandler() {
-        super(PgsqlStartupMessage.class);
+        super(PgsqlStartupMessage.class, PgsqlAuthenticationCleartextPasswordMessage.class, PgsqlAuthenticationOkMessage.class, PgsqlPasswordMessage.class);
     }
 
     @Override
-    protected PgsqlStartupMessage process(ChannelHandlerContext ctx, PgsqlStartupMessage msg) throws IOException {
-        LOGGER.debug("User id: {}, database: {}", msg.getParameters().get(CString.valueOf("user")), msg.getParameters().get(CString.valueOf("database")));
-        PgsqlStartupMessage newMsg = new PgsqlStartupMessage(msg.getProtocolVersion(), msg.getParameters());
-        CString userIdentificate = getEventProcessor(ctx).processAuthentication(ctx, msg.getParameters());
-        CString userMsg = msg.getParameters().get(CString.valueOf("user"));
-        if(!userIdentificate.equals(userMsg)){
-        	Map<CString, CString> newMsgParameters = new HashMap<CString, CString>(msg.getParameters());
-        	newMsgParameters.forEach((k, v) -> {
-        		k.retain();
-        		if (!k.equals(CString.valueOf("user"))) {
-        			v.retain();
-        		}
-        	});
-        	newMsgParameters.put(CString.valueOf("user"), userIdentificate);
-        	newMsg.setParameters(newMsgParameters); 
+    protected PgsqlAuthenticationMessage process(ChannelHandlerContext ctx, PgsqlAuthenticationMessage msg) throws IOException {
+        if (msg instanceof PgsqlStartupMessage) {
+            PgsqlStartupMessage msgStartup = (PgsqlStartupMessage) msg;
+            LOGGER.debug("User id: {}, database: {}", msgStartup.getParameters().get(CString.valueOf("user")), msgStartup.getParameters().get(CString.valueOf("database")));
+            PgsqlStartupMessage newMsg = msgStartup; 
+            CString userIdentificate = getEventProcessor(ctx).processAuthentication(ctx, msgStartup.getParameters());
+            CString userMsg = msgStartup.getParameters().get(CString.valueOf("user"));
+            if(!userIdentificate.equals(userMsg)){
+                newMsg = new PgsqlStartupMessage(msgStartup.getProtocolVersion(), msgStartup.getParameters());
+                Map<CString, CString> newMsgParameters = new HashMap<CString, CString>(msgStartup.getParameters());
+                newMsgParameters.forEach((k, v) -> {
+                    k.retain();
+                    if (!k.equals(CString.valueOf("user"))) {
+                        v.retain();
+                    }
+                });
+                newMsgParameters.put(CString.valueOf("user"), userIdentificate);
+                newMsg.setParameters(newMsgParameters); 
+            }
+            return newMsg;
         }
-        return newMsg;
+        else if (msg instanceof PgsqlAuthenticationCleartextPasswordMessage) {
+            // TODO
+            return null;
+        }
+        else if (msg instanceof PgsqlAuthenticationOkMessage) {
+            // TODO
+            return null;
+        }
+        else if (msg instanceof PgsqlPasswordMessage) {
+            // TODO
+            return null;
+        }
+        return null;
     }
 
 }
