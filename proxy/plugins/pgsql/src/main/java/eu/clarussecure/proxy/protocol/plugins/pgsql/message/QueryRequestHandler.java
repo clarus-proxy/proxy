@@ -17,7 +17,6 @@ import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.Query;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLSession.QueryResponseType;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLStatement;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SimpleSQLStatement;
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.writer.PgsqlMessageWriter;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.DefaultLastPgsqlRawContent;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.PgsqlRawContent;
 import eu.clarussecure.proxy.spi.CString;
@@ -515,32 +514,6 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
         PgsqlReadyForQueryMessage msg = new PgsqlReadyForQueryMessage(trxStatus);
         // Send response
         sendResponse(ctx, msg);
-    }
-
-    private <M extends PgsqlQueryResponseMessage> void sendResponse(ChannelHandlerContext ctx, M msg) throws IOException {
-        // Resolve writer
-        PgsqlMessageWriter<M> writer = getWriter(ctx, msg.getClass());
-        // Allocate buffer
-        ByteBuf buffer = writer.allocate(msg);
-        // Encode
-        buffer = writer.write(msg, buffer);
-        // Build message
-        PgsqlRawContent content = new DefaultLastPgsqlRawContent(buffer);
-        // Send message
-        ctx.channel().writeAndFlush(content);
-    }
-
-    private <M extends PgsqlQueryRequestMessage> void sendRequest(ChannelHandlerContext ctx, M msg) throws IOException {
-        // Resolve writer
-        PgsqlMessageWriter<M> writer = getWriter(ctx, msg.getClass());
-        // Allocate buffer
-        ByteBuf buffer = writer.allocate(msg);
-        // Encode
-        buffer = writer.write(msg, buffer);
-        // Build message
-        PgsqlRawContent content = new DefaultLastPgsqlRawContent(buffer);
-        // Send message
-        getPsqlSession(ctx).getServerSideChannel().writeAndFlush(content);
     }
 
 }

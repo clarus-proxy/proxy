@@ -117,9 +117,7 @@ public class QueryResponseHandler extends PgsqlMessageHandler<PgsqlQueryResponse
         LOGGER.debug("{}:", prefix);
         if (!process(ctx, processor)) {
             newMsg = null;
-            if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace("{} dropped", prefix);
-            }
+            LOGGER.trace("{} dropped", prefix);
         }
         return newMsg;
     }
@@ -152,9 +150,7 @@ public class QueryResponseHandler extends PgsqlMessageHandler<PgsqlQueryResponse
         if (newDetails != details) {
             if (newDetails == null) {
                 newMsg = null;
-                if (LOGGER.isTraceEnabled()) {
-                    LOGGER.trace("{} dropped", prefix);
-                }
+                LOGGER.trace("{} dropped", prefix);
             } else {
                 newMsg = builder.apply(newDetails);
                 if (LOGGER.isTraceEnabled()) {

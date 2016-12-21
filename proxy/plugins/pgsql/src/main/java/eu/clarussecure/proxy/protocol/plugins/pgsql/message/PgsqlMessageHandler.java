@@ -17,7 +17,9 @@ import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.EventProcessor;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLSession;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.writer.PgsqlMessageWriter;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.DefaultFullPgsqlRawMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.DefaultLastPgsqlRawContent;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.FullPgsqlRawMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.PgsqlRawContent;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.PgsqlRawMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.codec.MutablePgsqlRawMessage;
 import eu.clarussecure.proxy.spi.buffer.MutableByteBufInputStream;
@@ -31,12 +33,6 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
     private static final Logger LOGGER = LoggerFactory.getLogger(PgsqlMessageHandler.class);
 
     protected final Map<Byte, Class<? extends T>> msgTypes;
-
-//    protected final int[] types;
-
-//    protected PgsqlMessageHandler(int... types) {
-//        this.types = types;
-//    }
 
     @SafeVarargs
     protected PgsqlMessageHandler(Class<? extends T>... msgTypes) {
@@ -64,6 +60,7 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
 
     @Override
     protected void decode(ChannelHandlerContext ctx, PgsqlRawMessage rawMsg, List<Object> out) throws Exception {
+        // decode message
         if (isStreamingSupported(rawMsg.getType()) && rawMsg instanceof MutablePgsqlRawMessage && !((MutablePgsqlRawMessage) rawMsg).isComplete()) {
             LOGGER.trace("Decoding raw message in streaming mode: {}...", rawMsg);
             decodeStream(ctx, rawMsg);
@@ -119,7 +116,10 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
         // Resolve parser
         PgsqlMessageParser<T> parser = getParser(ctx, msgType);
         // Parse content
-        return parser.parse(content);
+        content.markReaderIndex();
+        T msg = parser.parse(content);
+        content.resetReaderIndex();
+        return msg;
     }
 
     protected T process(ChannelHandlerContext ctx, T msg) throws IOException {
@@ -208,5 +208,31 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
 
     protected EventProcessor getEventProcessor(ChannelHandlerContext ctx) {
         return getPsqlSession(ctx).getEventProcessor();
+    }
+
+    protected <M extends PgsqlMessage> void sendResponse(ChannelHandlerContext ctx, M msg) throws IOException {
+        // Resolve writer
+        PgsqlMessageWriter<M> writer = getWriter(ctx, msg.getClass());
+        // Allocate buffer
+        ByteBuf buffer = writer.allocate(msg);
+        // Encode
+        buffer = writer.write(msg, buffer);
+        // Build message
+        PgsqlRawContent content = new DefaultLastPgsqlRawContent(buffer);
+        // Send message
+        ctx.channel().writeAndFlush(content);
+    }
+
+    protected <M extends PgsqlMessage> void sendRequest(ChannelHandlerContext ctx, M msg) throws IOException {
+        // Resolve writer
+        PgsqlMessageWriter<M> writer = getWriter(ctx, msg.getClass());
+        // Allocate buffer
+        ByteBuf buffer = writer.allocate(msg);
+        // Encode
+        buffer = writer.write(msg, buffer);
+        // Build message
+        PgsqlRawContent content = new DefaultLastPgsqlRawContent(buffer);
+        // Send message
+        getPsqlSession(ctx).getServerSideChannel().writeAndFlush(content);
     }
 }

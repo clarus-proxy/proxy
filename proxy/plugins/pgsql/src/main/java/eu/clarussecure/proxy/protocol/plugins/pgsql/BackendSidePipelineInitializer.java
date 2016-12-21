@@ -15,9 +15,11 @@ import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlPortalSuspended
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlReadyForQueryMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlRowDescriptionMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.QueryResponseHandler;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.SessionInitializationResponseHandler;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.codec.PgsqlRawPartAggregator;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.codec.PgsqlRawPartCodec;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.forwarder.PgsqlResponseForwarder;
+import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
 import eu.clarussecure.proxy.spi.protocol.Configuration;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
@@ -43,9 +45,10 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
     @Override
     protected void initChannel(Channel ch) throws Exception {
         Configuration configuration = ch.attr(PgsqlConstants.CONFIGURATION_KEY).get();
+        PgsqlSession session = (PgsqlSession) ch.attr(TCPConstants.SESSION_KEY).get();
+        PgsqlRawPartCodec clientSideCodec = (PgsqlRawPartCodec) session.getClientSideChannel().pipeline().get("PgsqlPartCodec");
         ChannelPipeline pipeline = ch.pipeline();
-        pipeline.addLast("PgsqlPartCodec", new PgsqlRawPartCodec(false, configuration.getFramePartMaxLength()));
-        EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
+        pipeline.addLast("PgsqlPartCodec", new PgsqlRawPartCodec(false, configuration.getFramePartMaxLength(), clientSideCodec));
         if (MESSAGE_PROCESSING_ACTIVATED) {
             pipeline.addLast("PgsqlPartAggregator", new PgsqlRawPartAggregator(
                     PgsqlParseCompleteMessage.TYPE, PgsqlBindCompleteMessage.TYPE,
@@ -54,6 +57,12 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
                     PgsqlCommandCompleteMessage.TYPE, PgsqlEmptyQueryMessage.TYPE, PgsqlPortalSuspendedMessage.TYPE,
                     PgsqlErrorMessage.TYPE, PgsqlCloseCompleteMessage.TYPE, PgsqlReadyForQueryMessage.TYPE,
                     PgsqlNoticeMessage.TYPE));
+        }
+        EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
+        // Session initialization consists of dealing with optional initialization of SSL encryption: a specific SSL handler will be added as first handler in the pipeline if necessary
+        // The session initialization handler will be removed while dealing with the startup message (by the SessionInitializationRequestHandler running on the frontend side). 
+        pipeline.addLast(parserGroup, "SessionInitializationResponseHandler", new SessionInitializationResponseHandler());
+        if (MESSAGE_PROCESSING_ACTIVATED) {
             if (QUERY_PROCESSING_ACTIVATED) {
                 pipeline.addLast(parserGroup, "QueryResultHandler", new QueryResponseHandler());
             }

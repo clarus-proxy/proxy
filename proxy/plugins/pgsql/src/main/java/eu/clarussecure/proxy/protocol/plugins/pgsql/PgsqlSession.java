@@ -4,6 +4,7 @@ import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.EventProcessor;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.NoopEventProcessor;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.PgsqlEventProcessor;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLSession;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.ssl.SessionInitializer;
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPSession;
 
 public class PgsqlSession extends TCPSession {
@@ -14,9 +15,18 @@ public class PgsqlSession extends TCPSession {
         EVENT_PROCESSING_ACTIVATED = Boolean.TRUE.toString().equalsIgnoreCase(eventProcessing) || "1".equalsIgnoreCase(eventProcessing) || "yes".equalsIgnoreCase(eventProcessing) || "on".equalsIgnoreCase(eventProcessing);
     }
 
+    private SessionInitializer sessionInitializer;
+
     private SQLSession sqlSession;
     
     private EventProcessor eventProcessor;
+
+    public SessionInitializer getSessionInitializer() {
+        if (sessionInitializer == null) {
+            sessionInitializer = new SessionInitializer();
+        }
+        return sessionInitializer;
+    }
 
     public SQLSession getSqlSession() {
         if (sqlSession == null) {
@@ -30,9 +40,5 @@ public class PgsqlSession extends TCPSession {
             eventProcessor = EVENT_PROCESSING_ACTIVATED ? new PgsqlEventProcessor() : new NoopEventProcessor();
         }
         return eventProcessor;
-    }
-
-    public void setEventProcessor(EventProcessor commandProcessor) {
-        this.eventProcessor = commandProcessor;
     }
 }

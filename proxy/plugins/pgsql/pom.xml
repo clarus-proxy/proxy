@@ -24,16 +24,10 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>eu.clarussecure</groupId>
-      <artifactId>proxy-plugin-tcp</artifactId>
-      <version>1.0-SNAPSHOT</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
-      <groupId>eu.clarussecure</groupId>
-      <artifactId>proxy-common</artifactId>
-      <version>1.0-SNAPSHOT</version>
-      <scope>compile</scope>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
+      <version>3.0</version>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>ch.qos.logback</groupId>
@@ -60,17 +54,23 @@
       <scope>compile</scope>
     </dependency>
     <dependency>
+      <groupId>eu.clarussecure</groupId>
+      <artifactId>proxy-common</artifactId>
+      <version>1.0-SNAPSHOT</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>eu.clarussecure</groupId>
+      <artifactId>proxy-plugin-tcp</artifactId>
+      <version>1.0-SNAPSHOT</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
       <groupId>postgresql</groupId>
       <artifactId>postgresql</artifactId>
       <version>9.1-901-1.jdbc4</version>
       <scope>test</scope>
     </dependency>
-    <!-- https://mvnrepository.com/artifact/org.apache.commons/commons-lang3 -->
-	<dependency>
-	    <groupId>org.apache.commons</groupId>
-	    <artifactId>commons-lang3</artifactId>
-	    <version>3.0</version>
-	</dependency>
   </dependencies>
   <organization>
     <name>The CLARUS Consortium</name>
