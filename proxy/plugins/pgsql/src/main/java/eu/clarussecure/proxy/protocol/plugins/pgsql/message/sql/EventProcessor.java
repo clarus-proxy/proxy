@@ -1,6 +1,7 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql;
 
 import java.io.IOException;
+import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Map;
 
@@ -11,7 +12,11 @@ import io.netty.channel.ChannelHandlerContext;
 
 public interface EventProcessor {
 
-    CString processAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException;
+    CString processUserAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException;
+
+    int processAuthenticationParameters(ChannelHandlerContext ctx, int authenticationType, ByteBuf specificField) throws IOException;
+
+    CString processAuthentication(ChannelHandlerContext ctx, CString password) throws IOException, NoSuchAlgorithmException;
 
     QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException;
 

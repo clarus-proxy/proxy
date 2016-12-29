@@ -3,6 +3,8 @@ package eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql;
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -11,6 +13,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import javax.xml.bind.DatatypeConverter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,18 +68,73 @@ public class PgsqlEventProcessor implements EventProcessor {
 
     public static final String USER_KEY = "user";
     public static final String DATABASE_KEY = "database";
-
+    
+    private final static int AUTHENTICATION_CLEARTEXT_PASSWORD = 3;
+    private final static int AUTHENTICATION_MD5_PASSWORD = 5;
+    
     @Override
-    public CString processAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
+    public CString processUserAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
         CString databaseName = parameters.get(CString.valueOf(DATABASE_KEY));
         SQLSession sqlSession = getSession(ctx);
         sqlSession.setDatabaseName((CString) databaseName.clone());
         CString userName = getProtocolService(ctx).newUserIdentification(parameters.get(CString.valueOf(USER_KEY)));
         // Add user to session.
-        sqlSession.addCredentialsUser(userName);
+        sqlSession.setUser(userName);
         return userName;
     }
 
+    @Override
+    public int processAuthenticationParameters(ChannelHandlerContext ctx, int authenticationType, ByteBuf authenticationParam) throws IOException {
+        int newAuthenticationType = authenticationType;
+        SQLSession sqlSession = getSession(ctx);
+        
+        // Add authentication parameters to session.
+        // Add authentication type to session.
+        sqlSession.setAuthenticationParam(authenticationParam);
+        sqlSession.setAuthenticationType(authenticationType);
+        
+        // Case where authentication type is MD5, modify type to Cleartext.
+        if (AUTHENTICATION_MD5_PASSWORD == authenticationType) {
+            newAuthenticationType = AUTHENTICATION_CLEARTEXT_PASSWORD;
+        }
+        return newAuthenticationType;
+    }
+
+    @Override
+    public CString processAuthentication(ChannelHandlerContext ctx, CString passwordClear) throws IOException, NoSuchAlgorithmException {
+        SQLSession sqlSession = getSession(ctx);
+        CString userName = sqlSession.getUser();
+        CString password = passwordClear;
+        
+        // Handle case where MD5 password is needed.
+        if (AUTHENTICATION_MD5_PASSWORD == sqlSession.getAuthenticationType()) {
+            ByteBuf authenticationParam = sqlSession.getAuthenticationParam();
+            if (authenticationParam != null) {
+                // Retrieve salt from authentication parameters.
+                byte[] salt = new byte[authenticationParam.readableBytes()];
+                authenticationParam.readBytes(salt);
+                
+                // Create MD5 digester.
+                MessageDigest digest = MessageDigest.getInstance("MD5");
+                
+                // Generate MD5 hash for password + user name. 
+                digest.update((password.toString() + userName.toString()).getBytes());
+                String pwdUsrEnc = DatatypeConverter.printHexBinary(digest.digest()).toLowerCase();
+                
+                // Generate MD5 hash for hashed password + user name & salt.
+                // Finally, add "md5" at the newly hashed password.
+                digest.update(pwdUsrEnc.getBytes());
+                digest.update(salt);
+                String passwordEncrypted = "md5" + DatatypeConverter.printHexBinary(digest.digest()).toLowerCase();
+                
+                // MD5 password is equivalent to SQL concat('md5', md5(concat(md5(concat(password, username)), random-salt)))
+                password = CString.valueOf(passwordEncrypted);
+            }
+        }
+        CString[] userCredentials = getProtocolService(ctx).userAuthentication(userName, password);
+        return userCredentials[1];
+    }
+    
     @Override
     public QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException {
         LOGGER.debug("SQL statement: {}", sqlStatement);

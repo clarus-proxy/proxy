@@ -12,10 +12,20 @@ import io.netty.channel.ChannelHandlerContext;
 public class NoopEventProcessor implements EventProcessor {
 
     @Override
-    public CString processAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
+    public CString processUserAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
 		return null;
     }
 
+    @Override
+    public int processAuthenticationParameters(ChannelHandlerContext ctx, int authenticationType, ByteBuf specificField) throws IOException {
+        return authenticationType;
+    }
+
+    @Override
+    public CString processAuthentication(ChannelHandlerContext ctx, CString password) throws IOException {
+        return null;
+    }
+    
     @Override
     public QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException {
         return new QueriesTransferMode<>(sqlStatement, TransferMode.FORWARD);

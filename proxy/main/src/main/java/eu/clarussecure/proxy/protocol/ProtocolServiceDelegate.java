@@ -22,6 +22,11 @@ public class ProtocolServiceDelegate implements ProtocolService {
     }
 
     @Override
+    public CString[] userAuthentication(CString user, CString password){
+        return new CString[] {user, password};
+    }
+
+    @Override
     public CString newUserIdentification(CString user) {
         return user;
     }

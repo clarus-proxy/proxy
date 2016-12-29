@@ -1,6 +1,7 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql.message;
 
 import java.io.IOException;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -122,7 +123,7 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
         return parser.parse(content);
     }
 
-    protected T process(ChannelHandlerContext ctx, T msg) throws IOException {
+    protected T process(ChannelHandlerContext ctx, T msg) throws IOException, NoSuchAlgorithmException {
         throw new UnsupportedOperationException(String.format("Unsupported processing of %s message", msg.getClass().getSimpleName()));
     }
 

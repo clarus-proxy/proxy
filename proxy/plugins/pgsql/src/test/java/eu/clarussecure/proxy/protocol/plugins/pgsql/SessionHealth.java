@@ -1,13 +1,11 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql;
 
-import java.lang.reflect.Array;
 import java.net.InetAddress;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.Arrays;
 
 import org.apache.commons.lang3.StringUtils;
 import org.junit.After;
@@ -21,7 +19,6 @@ import org.postgresql.util.PSQLException;
 import eu.clarussecure.proxy.spi.Mode;
 import eu.clarussecure.proxy.spi.Operation;
 import eu.clarussecure.proxy.spi.protocol.ProtocolServiceNoop;
-import io.netty.util.internal.StringUtil;
 
 
 public class SessionHealth {
@@ -50,18 +47,18 @@ public class SessionHealth {
         pgsqlProtocol.stop();
     }
     
+    @Rule
+    public final ExpectedException exception = ExpectedException.none();
+    
     /*
      * 
      */
-    
     @Test
     public void maxConnectionHandle() throws SQLException{
         int maxConnection = TestUtils.getMaxNumberConnectionSimultaneous();
         Assert.assertEquals("Number of connection supported is not 101", 101, maxConnection);
     }
     
-    @Rule
-    public final ExpectedException exception = ExpectedException.none();
     
     /**
      * this test process successfully with JVM parameters : -Xms2048M -Xmx5120M
