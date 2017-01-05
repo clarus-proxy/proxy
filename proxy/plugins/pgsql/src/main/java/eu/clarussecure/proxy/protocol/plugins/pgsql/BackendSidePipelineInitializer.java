@@ -50,6 +50,7 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
         PgsqlRawPartCodec clientSideCodec = (PgsqlRawPartCodec) session.getClientSideChannel().pipeline().get("PgsqlPartCodec");
         ChannelPipeline pipeline = ch.pipeline();
         pipeline.addLast("PgsqlPartCodec", new PgsqlRawPartCodec(false, configuration.getFramePartMaxLength(), clientSideCodec));
+        EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
         if (MESSAGE_PROCESSING_ACTIVATED) {
             pipeline.addLast("PgsqlPartAggregator", new PgsqlRawPartAggregator(
                     PgsqlParseCompleteMessage.TYPE, PgsqlBindCompleteMessage.TYPE,
@@ -60,7 +61,6 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
                     PgsqlNoticeMessage.TYPE));
                     pipeline.addLast(parserGroup, "PgsqlAuthenticationHandler", new AuthenticationHandler());
         }
-        EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
         // Session initialization consists of dealing with optional initialization of SSL encryption: a specific SSL handler will be added as first handler in the pipeline if necessary
         // The session initialization handler will be removed while dealing with the startup message (by the SessionInitializationRequestHandler running on the frontend side). 
         pipeline.addLast(parserGroup, "SessionInitializationResponseHandler", new SessionInitializationResponseHandler());
