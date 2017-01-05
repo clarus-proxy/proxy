@@ -12,6 +12,7 @@ import eu.clarussecure.dataoperations.Promise;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlRowDescriptionMessage;
 import eu.clarussecure.proxy.spi.CString;
 import eu.clarussecure.proxy.spi.Operation;
+import io.netty.buffer.ByteBuf;
 
 public class SQLSession {
     public static class ExtendedQueryStatus<Q extends ExtendedQuery> {
@@ -61,18 +62,11 @@ public class SQLSession {
     }
 
     public enum QueryResponseType {
-        PARSE_COMPLETE,
-        BIND_COMPLETE,
-        PARAMETER_DESCRIPTION,
-        ROW_DESCRIPTION_AND_ROW_DATA,
-        NO_DATA,
-        COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR,
-        CLOSE_COMPLETE,
-        READY_FOR_QUERY
+        PARSE_COMPLETE, BIND_COMPLETE, PARAMETER_DESCRIPTION, ROW_DESCRIPTION_AND_ROW_DATA, NO_DATA, COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR, CLOSE_COMPLETE, READY_FOR_QUERY
     }
 
     private CString databaseName;
-    private byte transactionStatus = (byte)'I';
+    private byte transactionStatus = (byte) 'I';
     private Map<Byte, CString> transactionErrorDetails;
     private boolean inDatasetCreation;
     private Operation currentOperation;
@@ -84,6 +78,50 @@ public class SQLSession {
     private Map<CString, ExtendedQueryStatus<ParseStep>> parseStepStatuses;
     private Map<CString, ExtendedQueryStatus<BindStep>> bindStepStatuses;
     private Map<CString, DescribeStep> describeSteps;
+
+    /*
+     * 
+     */
+    // Users to save. Use of Set to avoid duplicate value.
+    private CString user;
+    private ByteBuf authenticationParam;
+    private int authenticationType;
+    
+    public CString getUser() {
+        return user;
+    }
+
+    public void setUser(CString user) {
+        if (this.user != null) {
+            // Release internal buffer of user name
+            this.user.release();
+        }
+        user.retain();
+        this.user = user;
+    }
+
+    public ByteBuf getAuthenticationParam() {
+        return authenticationParam;
+    }
+
+    public void setAuthenticationParam(ByteBuf authenticationParam) {
+        if (this.authenticationParam != null) {
+            // Release internal buffer.
+            this.authenticationParam.release();
+        }
+        this.authenticationParam = authenticationParam.retainedDuplicate();
+    }
+
+    public int getAuthenticationType() {
+        return authenticationType;
+    }
+
+    public void setAuthenticationType(int authenticationType) {
+        this.authenticationType = authenticationType;
+    }
+    /*
+     * 
+     */
 
     public CString getDatabaseName() {
         return databaseName;
@@ -212,7 +250,7 @@ public class SQLSession {
 
     public void resetRowDescription() {
         if (rowDescription != null) {
-            synchronized(rowDescription) {
+            synchronized (rowDescription) {
                 for (PgsqlRowDescriptionMessage.Field field : rowDescription) {
                     if (field.getName().release()) {
                         field.setName(null);
@@ -275,7 +313,8 @@ public class SQLSession {
         ExtendedQueryStatus<ParseStep> parseStepStatus = new ExtendedQueryStatus<>(parseStep, operation, toProcess);
         // Retain internal buffers of parse step status
         parseStepStatus.retain();
-        ExtendedQueryStatus<ParseStep> previousParseStepStatus = getParseStepStatuses().put(parseStep.getName(), parseStepStatus);
+        ExtendedQueryStatus<ParseStep> previousParseStepStatus = getParseStepStatuses().put(parseStep.getName(),
+                parseStepStatus);
         if (previousParseStepStatus != null) {
             // Release internal buffers of parse step status
             previousParseStepStatus.release();
@@ -287,10 +326,15 @@ public class SQLSession {
         // Remove describe if exist
         removeDescribeStep((byte) 'S', name);
         // Remove create portals if exist
-        getBindStepStatuses().values().stream()                 // iterate over bind step status
-            .map(ExtendedQueryStatus<BindStep>::getQuery)       // retrieve bind step
-            .filter(q -> name.equals(q.getPreparedStatement())) // filter on prepared statement name
-            .forEach(q -> removeBindStep(q.getName()));         // remove the bind step
+        getBindStepStatuses().values().stream() // iterate over bind step status
+                .map(ExtendedQueryStatus<BindStep>::getQuery) // retrieve bind
+                                                              // step
+                .filter(q -> name.equals(q.getPreparedStatement())) // filter on
+                                                                    // prepared
+                                                                    // statement
+                                                                    // name
+                .forEach(q -> removeBindStep(q.getName())); // remove the bind
+                                                            // step
         // Remove parse step status
         ExtendedQueryStatus<ParseStep> parseStepStatus = getParseStepStatuses().remove(name);
         if (parseStepStatus != null) {
@@ -301,7 +345,7 @@ public class SQLSession {
 
     public void resetParseSteps() {
         if (parseStepStatuses != null) {
-            synchronized(parseStepStatuses) {
+            synchronized (parseStepStatuses) {
                 for (ExtendedQueryStatus<ParseStep> parseStepStatus : parseStepStatuses.values()) {
                     // Release internal buffers of parse step
                     parseStepStatus.getQuery().release();
@@ -330,7 +374,8 @@ public class SQLSession {
         ExtendedQueryStatus<BindStep> bindStepStatus = new ExtendedQueryStatus<>(bindStep, operation, toProcess);
         // Retain internal buffers of bind step status
         bindStepStatus.retain();
-        ExtendedQueryStatus<BindStep> previousBindStepStatus = getBindStepStatuses().put(bindStep.getName(), bindStepStatus);
+        ExtendedQueryStatus<BindStep> previousBindStepStatus = getBindStepStatuses().put(bindStep.getName(),
+                bindStepStatus);
         if (previousBindStepStatus != null) {
             // Release internal buffers of bind step status
             previousBindStepStatus.release();
@@ -351,7 +396,7 @@ public class SQLSession {
 
     public void resetBindSteps() {
         if (bindStepStatuses != null) {
-            synchronized(bindStepStatuses) {
+            synchronized (bindStepStatuses) {
                 for (ExtendedQueryStatus<BindStep> bindStepStatus : bindStepStatuses.values()) {
                     // Release internal buffers of bind step status
                     bindStepStatus.release();
@@ -399,7 +444,7 @@ public class SQLSession {
 
     public void resetDescribeSteps() {
         if (describeSteps != null) {
-            synchronized(describeSteps) {
+            synchronized (describeSteps) {
                 for (DescribeStep describeSteps : describeSteps.values()) {
                     // Release internal buffers of describe step
                     describeSteps.release();
@@ -428,7 +473,7 @@ public class SQLSession {
 
     public void reset() {
         setDatabaseName(null);
-        setTransactionStatus((byte)'I');
+        setTransactionStatus((byte) 'I');
         setInDatasetCreation(false);
         setTransferMode(null);
         resetCurrentCommand();

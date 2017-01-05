@@ -6,7 +6,7 @@ import java.util.Objects;
 import eu.clarussecure.proxy.spi.CString;
 import io.netty.util.internal.StringUtil;
 
-public class PgsqlStartupMessage implements PgsqlSessionInitializationRequestMessage {
+public class PgsqlStartupMessage implements PgsqlSessionInitializationRequestMessage, PgsqlAuthenticationMessage {
 
     public static final byte TYPE = (byte) 0;
     public static final int HEADER_SIZE = Integer.BYTES;

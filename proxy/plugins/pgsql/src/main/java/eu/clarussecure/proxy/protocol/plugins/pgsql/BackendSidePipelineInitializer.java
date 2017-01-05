@@ -1,5 +1,6 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql;
 
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.AuthenticationHandler;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlBindCompleteMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlCloseCompleteMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlCommandCompleteMessage;
@@ -57,6 +58,7 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
                     PgsqlCommandCompleteMessage.TYPE, PgsqlEmptyQueryMessage.TYPE, PgsqlPortalSuspendedMessage.TYPE,
                     PgsqlErrorMessage.TYPE, PgsqlCloseCompleteMessage.TYPE, PgsqlReadyForQueryMessage.TYPE,
                     PgsqlNoticeMessage.TYPE));
+                    pipeline.addLast(parserGroup, "PgsqlAuthenticationHandler", new AuthenticationHandler());
         }
         EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
         // Session initialization consists of dealing with optional initialization of SSL encryption: a specific SSL handler will be added as first handler in the pipeline if necessary
