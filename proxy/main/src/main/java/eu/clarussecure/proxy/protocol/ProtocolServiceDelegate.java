@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import eu.clarussecure.dataoperations.Promise;
 import eu.clarussecure.proxy.spi.CString;
 import eu.clarussecure.proxy.spi.DataOperation;
+import eu.clarussecure.proxy.spi.MetadataOperation;
 import eu.clarussecure.proxy.spi.StringUtilities;
 import eu.clarussecure.proxy.spi.protection.ProtectionModule;
 import eu.clarussecure.proxy.spi.protocol.ProtocolService;
@@ -25,7 +26,24 @@ public class ProtocolServiceDelegate implements ProtocolService {
     public CString newUserIdentification(CString user) {
         return user;
     }
-	
+
+    @Override
+    public MetadataOperation newMetadataOperation(MetadataOperation metadataOperation) {
+        Objects.requireNonNull(metadataOperation);
+        String[] attributeNames = metadataOperation.getDataIds().stream().map(CString::toString).toArray(String[]::new);
+        String[][] mapping = protectionModule.getDataOperation().head(attributeNames);
+        if (mapping != null) {
+            metadataOperation.getMetadata().clear();
+            for (int i = 0; i < mapping.length; i ++) {
+                CString attributeName = CString.valueOf(mapping[i][0]);
+                List<CString> protectedAttributeNames = Arrays.stream(mapping[i], 1, mapping[i].length).map(CString::valueOf).collect(Collectors.toList());
+                metadataOperation.addDataId(attributeName, protectedAttributeNames);
+            }
+            metadataOperation.setModified(true);
+        }
+        return metadataOperation;
+    }
+
     @Override
     public List<DataOperation> newDataOperation(DataOperation dataOperation) {
         Objects.requireNonNull(dataOperation);
@@ -90,6 +108,5 @@ public class ProtocolServiceDelegate implements ProtocolService {
         }
         return Collections.singletonList(dataOperation);
     }
-
 
 }

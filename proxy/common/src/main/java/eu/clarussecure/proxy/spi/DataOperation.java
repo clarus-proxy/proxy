@@ -5,14 +5,13 @@ import java.util.List;
 
 import eu.clarussecure.dataoperations.Promise;
 
-public class DataOperation {
+public class DataOperation extends ModuleOperation {
     private int requestId;
     private Operation operation;
     private List<CString> dataIds;
     private List<CString> parameterIds;
     private List<List<CString>> dataValues;
     private List<CString> parameterValues;
-    private boolean modified;
     private Promise promise;
 
     public int getRequestId() {
@@ -31,6 +30,7 @@ public class DataOperation {
         this.operation = operation;
     }
 
+    @Override
     public List<CString> getDataIds() {
         if (dataIds == null) {
             dataIds = new ArrayList<>();
@@ -38,12 +38,19 @@ public class DataOperation {
         return dataIds;
     }
 
+    @Override
     public void setDataIds(List<CString> dataIds) {
         this.dataIds = dataIds;
     }
 
+    @Override
     public void addDataId(CString dataId) {
         getDataIds().add(dataId);
+    }
+
+    @Override
+    public void removeDataId(CString dataId) {
+        getDataIds().remove(dataId);
     }
 
     public List<CString> getParameterIds() {
@@ -89,14 +96,6 @@ public class DataOperation {
 
     public void addParameterValue(CString parameterValue) {
         getParameterValues().add(parameterValue);
-    }
-
-    public boolean isModified() {
-        return modified;
-    }
-
-    public void setModified(boolean modified) {
-        this.modified = modified;
     }
 
     public Promise getPromise() {

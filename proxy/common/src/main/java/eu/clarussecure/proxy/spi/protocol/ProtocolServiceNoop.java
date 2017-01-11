@@ -6,8 +6,15 @@ import java.util.Objects;
 
 import eu.clarussecure.proxy.spi.CString;
 import eu.clarussecure.proxy.spi.DataOperation;
+import eu.clarussecure.proxy.spi.MetadataOperation;
 
 public class ProtocolServiceNoop implements ProtocolService {
+
+    @Override
+    public MetadataOperation newMetadataOperation(MetadataOperation metadataOperation) {
+        Objects.requireNonNull(metadataOperation);
+        return metadataOperation;
+    }
 
     @Override
     public List<DataOperation> newDataOperation(DataOperation dataOperation) {

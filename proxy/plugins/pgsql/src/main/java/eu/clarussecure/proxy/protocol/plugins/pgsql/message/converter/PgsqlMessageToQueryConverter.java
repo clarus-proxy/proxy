@@ -101,7 +101,7 @@ public class PgsqlMessageToQueryConverter {
     }
 
     public static ParseStep from(PgsqlParseMessage msg) {
-        return new ParseStep(msg.getPreparedStatement(), msg.getQuery(), msg.getParameterTypes());
+        return new ParseStep(msg.getPreparedStatement(), msg.getQuery(), false, null, msg.getParameterTypes());
     }
 
     public static PgsqlParseMessage to(ParseStep query) {

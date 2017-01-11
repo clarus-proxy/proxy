@@ -19,9 +19,9 @@ public class TCPClient<CI extends ChannelInitializer<Channel>, S extends TCPSess
     protected static final Logger LOGGER = LoggerFactory.getLogger(TCPClient.class);
 
     private final ChannelHandlerContext ctx;
-    
+
     private final Class<CI> channelInitializerType;
-    
+
     private final Class<S> sessionType;
 
     public TCPClient(ChannelHandlerContext ctx, Class<CI> channelInitializerType, Class<S> sessionType) {

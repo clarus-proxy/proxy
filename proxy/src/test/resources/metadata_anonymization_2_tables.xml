@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<schema>
+    <data>
+        <attribute name="c1" attribute_type="non_confidential" data_type="categoric"/>
+        <attribute name="a/c2" attribute_type="non_confidential" data_type="categoric"/>
+        <attribute name="b/c3" attribute_type="non_confidential" data_type="categoric"/>
+        <attribute name="postgres/a/c4" attribute_type="non_confidential" data_type="categoric"/>
+        <attribute name="postgres/b/c5" attribute_type="non_confidential" data_type="categoric"/>
+    </data>
+    <protection module="anonymization">
+        <attribute_types>
+            <attribute_type type="non_confidential" protection="null"/>
+        </attribute_types>
+    </protection>
+    <protocol plugin="PostgreSQL"/>
+</schema>

@@ -10,6 +10,7 @@ import eu.clarussecure.proxy.spi.protocol.ProtocolServiceNoop;
 public class StartPgsqlServerProxy implements Callable<Void> {
 
 
+    @Override
     public Void call() throws Exception {
         System.setProperty("pgsql.sql.force.processing", "true");
         PgsqlProtocol pgsqlProtocol = new PgsqlProtocol();

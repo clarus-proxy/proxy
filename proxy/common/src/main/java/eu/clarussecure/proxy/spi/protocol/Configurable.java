@@ -36,7 +36,7 @@ public interface Configurable {
     int getNbSessionThreads();
 
     void setNbSessionThreads(int nThreads);
-    
+
     int getNbParserThreads();
 
     void setNbParserThreads(int nThreads);
@@ -52,7 +52,7 @@ public interface Configurable {
     void setProcessingMode(boolean wholeDataset, Operation operation, Mode mode);
 
     Set<String> getComputationCommands();
-    
+
     void setComputationCommands(Set<String> commands);
 
     ProtocolService getProtocolService();

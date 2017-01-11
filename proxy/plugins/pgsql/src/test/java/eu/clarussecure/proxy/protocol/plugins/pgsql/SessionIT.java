@@ -3,11 +3,9 @@ package eu.clarussecure.proxy.protocol.plugins.pgsql;
 import java.net.InetAddress;
 import java.sql.Connection;
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Statement;
 
 import org.junit.After;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -46,5 +44,5 @@ public class SessionIT {
             test1Session();
         }
     }
-    
+
 }

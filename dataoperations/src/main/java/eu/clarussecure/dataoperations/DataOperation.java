@@ -4,6 +4,12 @@ package eu.clarussecure.dataoperations;
  * CLARUS Data Operation module interface.
  */
 public interface DataOperation {
+    /** Outbound HEAD operation.
+     * @param attributeNames names of the attributes, as given in the security policy for the current dataset.
+     * @return an Promise object with a reference to the call and original parameters.
+     */
+    public String[][] head(String[] attributeNames);
+
     /** Outbound GET operation.
      * @param attributeNames names of the attributes, as given in the security policy for the current dataset.
      * @param criteria conditions of the get call, in the same order as the attributeNames.

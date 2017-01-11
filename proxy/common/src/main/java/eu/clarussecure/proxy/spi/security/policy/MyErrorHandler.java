@@ -7,7 +7,7 @@ import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
 
 public class MyErrorHandler implements ErrorHandler {
-     
+
     private PrintWriter out;
 
     MyErrorHandler(PrintWriter out) {
@@ -25,15 +25,18 @@ public class MyErrorHandler implements ErrorHandler {
         return info;
     }
 
+    @Override
     public void warning(SAXParseException spe) throws SAXException {
         out.println("Warning: " + getParseExceptionInfo(spe));
     }
-        
+
+    @Override
     public void error(SAXParseException spe) throws SAXException {
         String message = "Error: " + getParseExceptionInfo(spe);
         throw new SAXException(message);
     }
 
+    @Override
     public void fatalError(SAXParseException spe) throws SAXException {
         String message = "Fatal Error: " + getParseExceptionInfo(spe);
         throw new SAXException(message);

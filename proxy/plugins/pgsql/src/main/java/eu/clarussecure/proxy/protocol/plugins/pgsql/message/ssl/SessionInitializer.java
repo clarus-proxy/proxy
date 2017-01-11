@@ -187,7 +187,7 @@ public class SessionInitializer {
     private void addSSLHandlerOnFrontendSide(ChannelHandlerContext ctx) throws IOException {
         Future<Channel> handshakeFuture = sslSessionInitializer.addSSLHandlerOnClientSide(ctx, getPsqlSession(ctx).getClientSideChannel().pipeline());
         handshakeFuture.addListener(new GenericFutureListener<Future<? super Channel>>() {
-   
+
                 @Override
                 public void operationComplete(Future<? super Channel> future) throws Exception {
                     sessionEncryptedOnFrontendSide = true;

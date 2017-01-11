@@ -16,7 +16,7 @@ public class PgsqlParameterDescriptionMessageParser implements PgsqlMessageParse
         // Read parameter types
         List<Long> parameterTypeOIDs = new ArrayList<>(nbParameters);
         while (nbParameters > 0) {
-            long parameterTypeOID = (long) content.readInt() & 0xffffffffl;
+            long parameterTypeOID = content.readInt() & 0xffffffffl;
             parameterTypeOIDs.add(parameterTypeOID);
             --nbParameters;
         }

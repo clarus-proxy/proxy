@@ -37,6 +37,7 @@ public class PgsqlRawPartDecoder extends ByteToMessageDecoder {
             expectedHeaderSize = Integer.BYTES;
         }
 
+        @Override
         public byte getType(ByteBuf in) {
             // message type is either StartupMessage or SSLRequest
             // read message length from message header
@@ -53,11 +54,13 @@ public class PgsqlRawPartDecoder extends ByteToMessageDecoder {
             return type;
         }
 
+        @Override
         public int getLength(ByteBuf in) {
             // read message length from message header
             return length;
         }
 
+        @Override
         public void postProcessing(byte type) {
             if (type == PgsqlStartupMessage.TYPE) {
                 parser = new MsgHeaderParserImpl();
@@ -74,16 +77,19 @@ public class PgsqlRawPartDecoder extends ByteToMessageDecoder {
             expectedHeaderSize = 0;
         }
 
+        @Override
         public byte getType(ByteBuf in) {
             // message is SSLResponse
-            return PgsqlSSLResponseMessage.TYPE; 
-        }        
+            return PgsqlSSLResponseMessage.TYPE;
+        }
 
+        @Override
         public int getLength(ByteBuf in) {
             // message is SSLResponse
             return PgsqlSSLResponseMessage.LENGTH;
         }
 
+        @Override
         public void postProcessing(byte type) {
             if (type == PgsqlSSLResponseMessage.TYPE) {
                 parser = new MsgHeaderParserImpl();
@@ -97,16 +103,19 @@ public class PgsqlRawPartDecoder extends ByteToMessageDecoder {
             expectedHeaderSize = expectedTypeSize + Integer.BYTES;
         }
 
+        @Override
         public byte getType(ByteBuf in) {
             // read message type from message header
             return in.readByte();
         }
 
+        @Override
         public int getLength(ByteBuf in) {
             // read message length from message header
             return in.readInt();
         }
 
+        @Override
         public void postProcessing(byte type) {
         }
     }

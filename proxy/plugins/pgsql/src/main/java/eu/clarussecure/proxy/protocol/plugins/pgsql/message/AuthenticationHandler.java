@@ -24,16 +24,16 @@ public class AuthenticationHandler extends PgsqlMessageHandler<PgsqlStartupMessa
         PgsqlStartupMessage newMsg = new PgsqlStartupMessage(msg.getProtocolVersion(), msg.getParameters());
         CString userIdentificate = getEventProcessor(ctx).processAuthentication(ctx, msg.getParameters());
         CString userMsg = msg.getParameters().get(CString.valueOf("user"));
-        if(!userIdentificate.equals(userMsg)){
-        	Map<CString, CString> newMsgParameters = new HashMap<CString, CString>(msg.getParameters());
-        	newMsgParameters.forEach((k, v) -> {
-        		k.retain();
-        		if (!k.equals(CString.valueOf("user"))) {
-        			v.retain();
-        		}
-        	});
-        	newMsgParameters.put(CString.valueOf("user"), userIdentificate);
-        	newMsg.setParameters(newMsgParameters); 
+        if (!userIdentificate.equals(userMsg)) {
+            Map<CString, CString> newMsgParameters = new HashMap<CString, CString>(msg.getParameters());
+            newMsgParameters.forEach((k, v) -> {
+                k.retain();
+                if (!k.equals(CString.valueOf("user"))) {
+                    v.retain();
+                }
+            });
+            newMsgParameters.put(CString.valueOf("user"), userIdentificate);
+            newMsg.setParameters(newMsgParameters);
         }
         return newMsg;
     }

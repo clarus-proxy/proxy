@@ -14,7 +14,7 @@ import java.util.stream.Stream;
 public interface Capabilities {
 
     Set<Operation> getSupportedCRUDOperations(boolean wholeDataset);
-    
+
     Set<Mode> getSupportedProcessingModes(boolean wholeDataset, Operation operation);
 
     public static Map<Operation, Set<Mode>> toMap(Enum<?>[]... rawOperations) {

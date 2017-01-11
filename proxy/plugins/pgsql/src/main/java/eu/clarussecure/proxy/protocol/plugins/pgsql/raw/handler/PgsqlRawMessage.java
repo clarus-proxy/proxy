@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 
 public interface PgsqlRawMessage extends PgsqlRawHeader, PgsqlRawContent {
 
+    @Override
     ByteBuf getContent();
 
 }

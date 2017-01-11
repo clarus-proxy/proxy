@@ -75,7 +75,7 @@ public class SQLSession {
     private byte transactionStatus = (byte)'I';
     private Map<Byte, CString> transactionErrorDetails;
     private boolean inDatasetCreation;
-    private Operation currentOperation;
+    private Operation currentCommandOperation;
     private Promise promise;
     private TransferMode transferMode;
     private List<Query> bufferedQueries;
@@ -140,12 +140,12 @@ public class SQLSession {
         this.inDatasetCreation = inDatasetCreation;
     }
 
-    public Operation getCurrentOperation() {
-        return currentOperation;
+    public Operation getCurrentCommandOperation() {
+        return currentCommandOperation;
     }
 
-    public void setCurrentOperation(Operation operation) {
-        this.currentOperation = operation;
+    public void setCurrentCommandOperation(Operation operation) {
+        this.currentCommandOperation = operation;
     }
 
     public Promise getPromise() {
@@ -258,6 +258,10 @@ public class SQLSession {
 
     public QueryResponseType removeLastQueryResponseToIgnore() {
         return getQueryResponsesToIgnore().pollLast();
+    }
+
+    public boolean isProcessingQuery() {
+        return getCurrentCommandOperation() != null || !getBufferedQueries().isEmpty();
     }
 
     public Map<CString, ExtendedQueryStatus<ParseStep>> getParseStepStatuses() {
@@ -414,14 +418,14 @@ public class SQLSession {
         return getDescribeSteps().get(key);
     }
 
-    public void resetCurrentOperation() {
-        setCurrentOperation(null);
+    public void resetCurrentCommand() {
+        setCurrentCommandOperation(null);
         setPromise(null);
         resetRowDescription();
     }
 
-    public void resetCurrentCommand() {
-        resetCurrentOperation();
+    public void resetCurrentQueries() {
+        resetCurrentCommand();
         resetBufferedQueries();
         resetQueryResponsesToIgnore();
     }
@@ -431,7 +435,7 @@ public class SQLSession {
         setTransactionStatus((byte)'I');
         setInDatasetCreation(false);
         setTransferMode(null);
-        resetCurrentCommand();
+        resetCurrentQueries();
     }
 
 }

@@ -16,11 +16,11 @@ public class ProtocolLoader {
         }
         return INSTANCE;
     }
- 
+
     private ProtocolLoader() {
         loader = ServiceLoader.load(Protocol.class);
     }
- 
+
     public Protocol getProtocol(String protocolName) {
         Iterator<Protocol> protocolProviders = loader.iterator();
         while (protocolProviders.hasNext()) {

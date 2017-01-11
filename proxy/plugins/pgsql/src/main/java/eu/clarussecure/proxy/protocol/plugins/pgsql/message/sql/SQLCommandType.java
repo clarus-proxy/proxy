@@ -6,6 +6,8 @@ public enum SQLCommandType {
     ROLLBACK("ROLLBACK"),
     CREATE_TABLE("CREATE TABLE"),
     ADD_GEOMETRY_COLUMN("SELECT AddGeometryColumn"),
+    CLARUS_METADATA("SELECT " + PgsqlEventProcessor.FUNCTION_METADATA),
+    CLARUS_PROTECTED("SELECT " + PgsqlEventProcessor.FUNCTION_PROTECTED),
     INSERT("INSERT"),
     UPDATE("UPDATE"),
     DELETE("DELETE"),

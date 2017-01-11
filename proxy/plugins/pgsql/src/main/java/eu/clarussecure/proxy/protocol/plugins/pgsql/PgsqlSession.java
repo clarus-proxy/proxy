@@ -18,7 +18,7 @@ public class PgsqlSession extends TCPSession {
     private SessionInitializer sessionInitializer;
 
     private SQLSession sqlSession;
-    
+
     private EventProcessor eventProcessor;
 
     public SessionInitializer getSessionInitializer() {

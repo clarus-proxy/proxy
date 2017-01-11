@@ -24,7 +24,7 @@ public class TestUtils {
 
     private TestUtils(){
     }
-    
+
     /**
      * method which assure connection to health database
      * @return
@@ -38,7 +38,7 @@ public class TestUtils {
                 "jdbc:postgresql://localhost:5432/ehealth",
                 connectionProps);
     }
-    
+
     /**
      * method which close statement and connection enter as parameter
      * @param stmt
@@ -49,7 +49,7 @@ public class TestUtils {
         stmt.close();
         connection.close();
     }
-    
+
     /**
      * method which return number of simultaneous connection
      * @return
@@ -65,7 +65,7 @@ public class TestUtils {
         }
         return numberOfConnection;
     }
-    
+
     /**
      * method which check how many connection simultaneous could be handle
      * @return
@@ -81,13 +81,13 @@ public class TestUtils {
                 lstCon.add(con);
             }
         }catch(Exception e){
-            
+
         }finally{
             numberOfConnection = numberOfConnection + lstCon.size();
         }
         return numberOfConnection;
     }
-    
+
     /**
      * method which allow to retrieve patient's id as string when request is processed
      * @param number
@@ -105,7 +105,7 @@ public class TestUtils {
             }
             return idrow;
         }
-    
+
     /**
      * method which allow to retrieve field's value (String) from request result. Specify column is necessary
      * @param res
@@ -117,17 +117,17 @@ public class TestUtils {
     public static String getFirstOrLastFieldValueString(ResultSet res, int column, String rowPosition) throws SQLException{
         String fieldValue = null;
         switch (rowPosition){
-        case "first" : 
+        case "first" :
             res.first();
             break;
-        case "last" : 
+        case "last" :
             res.last();
             break;
         }
         fieldValue = res.getString(column);
         return fieldValue;
     }
-    
+
     /**
      * method which allow to retrieve field's value (int) from request result. Specify column is necessary
      * @param res
@@ -139,17 +139,17 @@ public class TestUtils {
     public static int getFirstOrLastFieldValueInt(ResultSet res, int column, String rowPosition) throws SQLException{
         int fieldValue = 0;
         switch (rowPosition){
-        case "first" : 
+        case "first" :
             res.first();
             break;
-        case "last" : 
+        case "last" :
             res.last();
             break;
         }
         fieldValue = Integer.parseInt(res.getString(column));
         return fieldValue;
     }
-    
+
     /**
      * method which allow to retrieve field's value (Date) from request result. Specify column is necessary
      * @param res
@@ -161,17 +161,17 @@ public class TestUtils {
     public static Date getFirstOrLastFieldValueDate(ResultSet res, int column, String rowPosition) throws SQLException{
         Date fieldValue = null;
         switch (rowPosition){
-        case "first" : 
+        case "first" :
             res.first();
             break;
-        case "last" : 
+        case "last" :
             res.last();
             break;
         }
         fieldValue = res.getDate(column);
         return fieldValue;
     }
-    
+
     /**
      * method which return number of cursor's row
      * @param res
@@ -183,7 +183,7 @@ public class TestUtils {
         int rowNumber = res.getRow();
         return rowNumber;
     }
-    
+
     /**
      * method which create a new patient's Id by incrementing the last one
      * @param res
@@ -194,12 +194,12 @@ public class TestUtils {
         res.last();
         String idStringValue = getFirstOrLastFieldValueString(res, 1, "last");
         int idNewIntValue = Integer.parseInt(idStringValue) + 1;
-        String newIdIncremented = concatenationZeroIntAsString(idNewIntValue, 8);       
+        String newIdIncremented = concatenationZeroIntAsString(idNewIntValue, 8);
         return newIdIncremented;
     }
-    
+
     /**
-     * method which generate random String upper case as long as (int) parameter 
+     * method which generate random String upper case as long as (int) parameter
      * @param length
      * @return
      */
@@ -210,13 +210,13 @@ public class TestUtils {
         int length = generateRandomInt(5, 10);
         while(counter < length)
         {
-           int i = (int)Math.floor(Math.random() * 26); 
+           int i = (int)Math.floor(Math.random() * 26);
            pass += chars.charAt(i);
            counter = counter + 1;
         }
         return pass;
     }
-    
+
     /**
      * method which generate a random (int) variable between min/max parameter
      * @param min
@@ -227,7 +227,7 @@ public class TestUtils {
         int integer = (int) ((max-min)*Math.random()) + min;
         return integer;
     }
-    
+
     /**
      * method which allow to convert a Date to String
      * @param date
@@ -235,10 +235,10 @@ public class TestUtils {
      */
     public static String convertDateToString(Date date){
         DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
-        String dateString = dateFormat.format(date); 
+        String dateString = dateFormat.format(date);
         return dateString;
     }
-    
+
     /**
      * method which allow to instantiate a new Date from a String value
      * @param stringDate
@@ -251,20 +251,20 @@ public class TestUtils {
         java.sql.Date date = new java.sql.Date(parsed.getTime());
         return date;
     }
-    
+
     /**
-     * method which create a new Statement which could be scrolled 
+     * method which create a new Statement which could be scrolled
      * @param con
      * @return
      * @throws SQLException
      */
     public static Statement createStatement(Connection con) throws SQLException{
-        Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, 
-                ResultSet.CONCUR_READ_ONLY, 
+        Statement stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE,
+                ResultSet.CONCUR_READ_ONLY,
                 ResultSet.HOLD_CURSORS_OVER_COMMIT);
         return stmt;
     }
-    
+
     /**
      * method which returns number of row of table define in parameter
      * @param stmt
@@ -279,7 +279,7 @@ public class TestUtils {
         int row = getRowCount(resCheck);
         return row;
     }
-    
+
     public static List<String> generateInsertRequest(int numberOfRequest) throws SQLException{
         try(Connection con = getHealthConnection(); Statement stmt = createStatement(con);){
             List<String> tabRequest = new ArrayList<String>();
@@ -302,7 +302,7 @@ public class TestUtils {
             return tabRequest;
         }
     }
-    
+
     /**
      * method which generate INSERT request (ready to insert) with X row values
      * @param numberOfRequest
@@ -334,7 +334,7 @@ public class TestUtils {
             return request;
         }
     }
-    
+
     /**
      * method which generate a list of X prepared statement containing INSERT request for PATIENT table
      * @param numberOfRequest
@@ -356,8 +356,8 @@ public class TestUtils {
             return lstPreparedStmt;
         }
     }
-    
-    
+
+
     /**
      * method which generate a list of X prepared statement containing SELECT request for PATIENT table
      * @param numberOfRequest
@@ -379,7 +379,7 @@ public class TestUtils {
             return lstPreparedStmt;
         }
     }
-    
+
     /**
      * method which generate a list of X prepared statement containing UPDATE request for PATIENT table
      * @param numberOfRequest
@@ -401,7 +401,7 @@ public class TestUtils {
             return lstPreparedStmt;
         }
     }
-    
+
     /**
      * method which bind SELECT request content of preparedStatement parameter
      * @param numberOfRequest
@@ -414,7 +414,7 @@ public class TestUtils {
         prepStmt.setString(1, idToSelect);
         return prepStmt;
         }
-    
+
     /**
      * method which bind INSERT request content of list of preparedStatement parameter
      * @param numberOfRequest
@@ -449,7 +449,7 @@ public class TestUtils {
             return lstPreparedStmtBinded;
         }
     }
-    
+
     /**
      * method which bind UPDATE request content of list of preparedStatement parameter
      * @param numberOfRequest
@@ -479,7 +479,7 @@ public class TestUtils {
             return lstPreparedStmtBinded;
             }
         }
-    
+
     /**
      * method which generate INSERT request already binded for table patient. Field's value are generated randomly
      * @param numberOfRequest
@@ -513,7 +513,7 @@ public class TestUtils {
             return lstPreparedStmtBinded;
         }
     }
-    
+
     /**
      * method which generate SELECT request already binded for patient's Id in parameter
      * @param numberOfRequest
@@ -537,7 +537,7 @@ public class TestUtils {
             return lstPreparedStmtBinded;
         }
     }
-    
+
     /**
      * method which generate UPDATE request already binded for table patient. Field's value are generated randomly
      * @param numberOfRequest
@@ -565,7 +565,7 @@ public class TestUtils {
             return lstPreparedStmtBinded;
         }
     }
-    
+
     /**
      * method which generate a prepared statement containing DELETE (BETWEEN operator) request for PATIENT table
      * @param numberOfRequest
@@ -581,7 +581,7 @@ public class TestUtils {
             return prep;
         }
     }
-    
+
     /**
      * method which generate DELETE request already binded for table patient. Field's value are generated randomly
      * @param numberOfRequest
@@ -594,5 +594,5 @@ public class TestUtils {
         prepDeleteBinded.setString(2, id2);
         return prepDeleteBinded;
     }
-    
+
 }

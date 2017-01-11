@@ -23,7 +23,7 @@ public class PgsqlParseMessageParser implements PgsqlMessageParser<PgsqlParseMes
         List<Long> parameterTypes = new ArrayList<>(nbParameterTypes);
         while (nbParameterTypes > 0) {
             // Read parameter type
-            long typeOID = (long) content.readInt() & 0xffffffffl;
+            long typeOID = content.readInt() & 0xffffffffl;
             parameterTypes.add(typeOID);
             --nbParameterTypes;
         }

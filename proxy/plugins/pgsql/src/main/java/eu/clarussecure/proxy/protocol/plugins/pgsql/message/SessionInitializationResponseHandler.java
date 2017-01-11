@@ -24,7 +24,7 @@ public class SessionInitializationResponseHandler extends PgsqlMessageHandler<Pg
             byte code = ((PgsqlSSLResponseMessage) msg).getCode();
             LOGGER.debug("SSL response: {}", code);
             SessionMessageTransferMode<Byte, Void> transferMode = getSessionInitializer(ctx).processSSLResponse(ctx, ((PgsqlSSLResponseMessage) msg).getCode());
-            
+
             switch (transferMode.getTransferMode()) {
             case FORWARD:
                 // Forward the message

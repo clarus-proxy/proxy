@@ -20,8 +20,11 @@ public class PgsqlRowDescriptionMessage extends PgsqlDetailedQueryResponseMessag
         private int typeModifier;
         private short format;
 
+        public Field(CString name) {
+            this(name, 0, (short) 0, 0l, (short) 0, 0, (short) 0);
+        }
+
         public Field(CString name, int tableOID, short columnNumber, long typeID, short typeSize, int typeModifier, short format) {
-            super();
             this.name = name;
             this.tableOID = tableOID;
             this.columnNumber = columnNumber;
