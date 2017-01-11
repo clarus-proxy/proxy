@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlSession;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlRowDescriptionMessage.Field;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.converter.PgsqlMessageToQueryConverter;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.CommandResults;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.QueriesTransferMode;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.Query;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLSession.QueryResponseType;
@@ -109,13 +110,13 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                     PgsqlMessageToQueryConverter::to);
         }
         case PgsqlParseMessage.TYPE: {
-            return this.<PgsqlParseMessage, SQLStatement, CString> process(ctx, (PgsqlParseMessage) msg, "Parse",
+            return this.<PgsqlParseMessage, SQLStatement, CommandResults> process(ctx, (PgsqlParseMessage) msg, "Parse",
                     // Build SQL statement from Parse message
                     PgsqlMessageToQueryConverter::from,
                     // Process SQL statement
                     sqlStatement -> getEventProcessor(ctx).processStatement(ctx, sqlStatement),
-                    // Send response to client (only if necessary)
-                    nil -> sendParseCompleteResponse(ctx),
+                    // Send responses to client (only if necessary)
+                    responses -> sendCommandResults(ctx, responses),
                     // Build Parse message from SQL statement (only if SQL statement is modified)
                     PgsqlMessageToQueryConverter::to);
         }
@@ -125,8 +126,8 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                     PgsqlMessageToQueryConverter::from,
                     // Process bind step
                     bindStep -> getEventProcessor(ctx).processBindStep(ctx, bindStep),
-                    // Send response to client (only if necessary)
-                    nil -> sendBindCompleteResponse(ctx),
+                    // Send responses to client (only if necessary)
+                    responses -> sendCommandResults(ctx, responses),
                     // Build Bind message from bind step
                     PgsqlMessageToQueryConverter::to);
         }
@@ -137,7 +138,7 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                     // Process describe step
                     describeStep -> getEventProcessor(ctx).processDescribeStep(ctx, describeStep),
                     // Send responses to client (only if necessary)
-                    r -> sendDescribeCompleteResponses(ctx, r),
+                    responses -> sendCommandResults(ctx, responses),
                     // Build Describe message from describe step
                     PgsqlMessageToQueryConverter::to);
         }
@@ -147,8 +148,8 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                     PgsqlMessageToQueryConverter::from,
                     // Process execute step
                     executeStep -> getEventProcessor(ctx).processExecuteStep(ctx, executeStep),
-                    // Send response to client (only if necessary)
-                    r -> sendCommandCompleteResponse(ctx, r),
+                    // Send responses to client (only if necessary)
+                    responses -> sendCommandResults(ctx, responses),
                     // Build Execute message from execute step
                     PgsqlMessageToQueryConverter::to);
         }
@@ -158,8 +159,8 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                     PgsqlMessageToQueryConverter::from,
                     // Process close step
                     closeStep -> getEventProcessor(ctx).processCloseStep(ctx, closeStep),
-                    // Send response to client (only if necessary)
-                    nil -> sendCloseCompleteResponse(ctx),
+                    // Send responses to client (only if necessary)
+                    responses -> sendCommandResults(ctx, responses),
                     // Build Close message from close step
                     PgsqlMessageToQueryConverter::to);
         }
@@ -335,11 +336,11 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
 
     private CString process(ChannelHandlerContext ctx, CString sqlCommand, boolean last) throws IOException {
         SQLStatement sqlStatement = new SimpleSQLStatement(sqlCommand);
-        QueriesTransferMode<SQLStatement, CString> transferMode = getEventProcessor(ctx).processStatement(ctx, sqlStatement);
+        QueriesTransferMode<SQLStatement, CommandResults> transferMode = getEventProcessor(ctx).processStatement(ctx, sqlStatement);
         SQLStatement newSQLStatement = process(ctx, transferMode,
-                response -> {
-                    if (response != null) {
-                        sendCommandCompleteResponse(ctx, response);
+                responses -> {
+                    if (responses != null) {
+                        sendCommandResults(ctx, responses);
                         if (last) {
                             sendReadyForQueryResponse(ctx, (byte) 'T');
                         }
@@ -433,6 +434,36 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
         }
     }
 
+    private void sendCommandResults(ChannelHandlerContext ctx, CommandResults commandResults) throws IOException {
+        if (commandResults.isParseCompleteRequired()) {
+            sendParseCompleteResponse(ctx);
+        }
+        if (commandResults.isBindCompleteRequired()) {
+            sendBindCompleteResponse(ctx);
+        }
+        if (commandResults.getParameterDescription() != null) {
+            sendParameterDescriptionResponse(ctx, commandResults.getParameterDescription());
+        }
+        if (commandResults.getRowDescription() != null) {
+            if (commandResults.getRowDescription().isEmpty()) {
+                sendNoDataResponse(ctx);
+            } else {
+                sendRowDescriptionResponse(ctx, commandResults.getRowDescription());
+            }
+        }
+        if (commandResults.getRows() != null) {
+            for (List<ByteBuf> row : commandResults.getRows()) {
+                sendDataRowResponse(ctx, row);
+            }
+        }
+        if (commandResults.getCompleteTag() != null) {
+            sendCommandCompleteResponse(ctx, commandResults.getCompleteTag());
+        }
+        if (commandResults.isCloseCompleteRequired()) {
+            sendCloseCompleteResponse(ctx);
+        }
+    }
+
     private void sendParseCompleteResponse(ChannelHandlerContext ctx) throws IOException {
         // Build parse complete message
         PgsqlParseCompleteMessage msg = new PgsqlParseCompleteMessage();
@@ -447,26 +478,6 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
         sendResponse(ctx, msg);
     }
 
-    @SuppressWarnings("unchecked")
-    private void sendDescribeCompleteResponses(ChannelHandlerContext ctx, List<?>[] responses) throws IOException {
-        List<Long> parameterTypes = null;
-        List<Field> rowDescription = null;
-        if (responses.length == 1) {
-            rowDescription = (List<Field>) responses[0];
-        } else if (responses.length == 2) {
-            parameterTypes = (List<Long>) responses[0];
-            rowDescription = (List<Field>) responses[1];
-        }
-        if (parameterTypes != null) {
-            sendParameterDescriptionResponse(ctx, parameterTypes);
-        }
-        if (rowDescription != null) {
-            sendRowDescriptionResponse(ctx, rowDescription);
-        } else {
-            sendNoDataResponse(ctx);
-        }
-    }
-
     private void sendParameterDescriptionResponse(ChannelHandlerContext ctx, List<Long> parameterTypes) throws IOException {
         // Build parameter description message
         PgsqlParameterDescriptionMessage msg = new PgsqlParameterDescriptionMessage(parameterTypes);
@@ -477,6 +488,13 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
     private void sendRowDescriptionResponse(ChannelHandlerContext ctx, List<Field> rowDescription) throws IOException {
         // Build row description message
         PgsqlRowDescriptionMessage msg = new PgsqlRowDescriptionMessage(rowDescription);
+        // Send response
+        sendResponse(ctx, msg);
+    }
+
+    private void sendDataRowResponse(ChannelHandlerContext ctx, List<ByteBuf> row) throws IOException {
+        // Build data row message
+        PgsqlDataRowMessage msg = new PgsqlDataRowMessage(row);
         // Send response
         sendResponse(ctx, msg);
     }

@@ -15,11 +15,11 @@ public class ProtectionModuleLoader {
         }
         return INSTANCE;
     }
- 
+
     private ProtectionModuleLoader() {
         loader = ServiceLoader.load(ProtectionModule.class);
     }
- 
+
     public ProtectionModule getProtectionModule(String protectionModuleName) {
         Iterator<ProtectionModule> protectionModuleProviders = loader.iterator();
         while (protectionModuleProviders.hasNext()) {

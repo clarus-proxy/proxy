@@ -34,6 +34,7 @@ public class Scenarii {
 
     @Before
     public void startProxy() throws Exception {
+        System.setProperty("pgsql.sql.force.processing", "true");
         pgsqlProtocol = new PgsqlProtocol();
         pgsqlProtocol.getConfiguration().setServerAddress(InetAddress.getByName("10.15.0.89"));
         pgsqlProtocol.getConfiguration().setProcessingMode(true, Operation.CREATE, Mode.AS_IT_IS);
@@ -53,181 +54,181 @@ public class Scenarii {
     public void stopProxy() {
         pgsqlProtocol.stop();
     }
-    
+
     /*
      * TEST EXECUTE - LOOP ON X EXECUTE INSERT REQUEST
      */
-    
+
     @Test
     public void executeInsertRow5() throws SQLException{
         insertParametredRequestLoop(insertRequestNumber5);
         deleteRowInserted(insertRequestNumber5);
     }
-    
+
     @Test
     public void executeInsertRow10() throws SQLException{
         insertParametredRequestLoop(insertRequestNumber10);
         deleteRowInserted(insertRequestNumber10);
     }
-    
+
     @Test
     public void executeInsertRow25() throws SQLException{
         insertParametredRequestLoop(insertRequestNumber25);
         deleteRowInserted(insertRequestNumber25);
     }
-    
+
     @Test
     public void executeInsertRow50() throws SQLException{
         insertParametredRequestLoop(insertRequestNumber50);
         deleteRowInserted(insertRequestNumber50);
     }
-    
+
     @Test
     public void executeInsertRow100() throws SQLException{
         insertParametredRequestLoop(insertRequestNumber100);
         deleteRowInserted(insertRequestNumber100);
     }
-    
+
     /*
      * TEST EXECUTE - EXECUTE ONE INSERT REQUEST WITH X VALUES SET
      */
-    
+
     @Test
     public void executeInsertAllRow5() throws SQLException{
         insertParametredRequestOneShot(insertRequestNumber5);
         deleteRowInserted(insertRequestNumber5);
     }
-    
+
     @Test
     public void executeInsertAllRow10() throws SQLException{
         insertParametredRequestOneShot(insertRequestNumber10);
         deleteRowInserted(insertRequestNumber10);
     }
-    
+
     @Test
     public void executeInsertAllRow25() throws SQLException{
         insertParametredRequestOneShot(insertRequestNumber25);
         deleteRowInserted(insertRequestNumber25);
     }
-    
+
     @Test
     public void executeInsertAllRow50() throws SQLException{
         insertParametredRequestOneShot(insertRequestNumber50);
         deleteRowInserted(insertRequestNumber50);
     }
-    
+
     @Test
     public void executeInsertAllRow100() throws SQLException{
         insertParametredRequestOneShot(insertRequestNumber100);
         deleteRowInserted(insertRequestNumber100);
     }
-    
+
     /*
      * TEST PARSE - GENERATE X PREPARED STATEMENT (INSERT REQUEST)
      */
-    
+
     @Test
     public void parseInsertRow5() throws SQLException{
         parseInsertRequestRow(insertRequestNumber5);
     }
-    
+
     @Test
     public void parseInsertRow10() throws SQLException{
         parseInsertRequestRow(insertRequestNumber10);
     }
-    
+
     @Test
     public void parseInsertRow25() throws SQLException{
         parseInsertRequestRow(insertRequestNumber25);
     }
-    
+
     @Test
     public void parseInsertRow50() throws SQLException{
         parseInsertRequestRow(insertRequestNumber50);
     }
-    
+
     @Test
     public void parseInsertRow100() throws SQLException{
         parseInsertRequestRow(insertRequestNumber100);
     }
-    
+
     /*
      * TEST BIND - BIND VALUES OF X PREPARED STATEMENT (INSERT REQUEST)
      */
-    
+
     @Test
     public void bindInsertRow5() throws SQLException{
         bindInsertRequestRow(insertRequestNumber5);
     }
-    
+
     @Test
     public void bindInsertRow10() throws SQLException{
         bindInsertRequestRow(insertRequestNumber10);
     }
-    
+
     @Test
     public void bindInsertRow25() throws SQLException{
         bindInsertRequestRow(insertRequestNumber25);
     }
-    
+
     @Test
     public void bindInsertRow50() throws SQLException{
         bindInsertRequestRow(insertRequestNumber50);
     }
-    
+
     @Test
     public void bindInsertRow100() throws SQLException{
         bindInsertRequestRow(insertRequestNumber100);
     }
-    
+
     /*
      * TEST SCENARION - LOGIC PARSE/BINDE/EXECUTE
      */
-    
+
     @Test
     public void parseBindExecuteLogicScenario5() throws SQLException{
         parseBindExecuteLogicScenario(insertRequestNumber5);
     }
-    
+
     @Test
     public void parseBindExecuteLogicScenario10() throws SQLException{
         parseBindExecuteLogicScenario(insertRequestNumber10);
     }
-    
+
     @Test
     public void parseBindExecuteLogicScenario25() throws SQLException{
         parseBindExecuteLogicScenario(insertRequestNumber25);
     }
-    
+
 //    @Test
 //    public void parseBindExecuteLogicScenario50() throws SQLException{
 //        parseBindExecuteLogicScenario(insertRequestNumber50);
 //    }
-//    
+//
 //    @Test
 //    public void parseBindExecuteLogicScenario100() throws SQLException{
 //        parseBindExecuteLogicScenario(insertRequestNumber100);
 //    }
-    
+
     /*
      * TEST SCENARIO - RANDOM PARSE/BIND/EXECUTE
      */
-    
+
     @Test
     public void parseBindExecuteRandomScenario5() throws SQLException{
         parseBindExecuteRandomScenario(insertRequestNumber5);
     }
-    
+
     @Test
     public void parseBindExecuteRandomScenario10() throws SQLException{
         parseBindExecuteRandomScenario(insertRequestNumber10);
     }
-    
+
     @Test
     public void parseBindExecuteRandomScenario25() throws SQLException{
         parseBindExecuteRandomScenario(insertRequestNumber25);
     }
-    
+
 //    @Test
 //    public void parseBindExecuteRandomScenario50() throws SQLException{
 //        parseBindExecuteRandomScenario(insertRequestNumber50);
@@ -237,11 +238,11 @@ public class Scenarii {
 //    public void parseBindExecuteRandomScenario100() throws SQLException{
 //        parseBindExecuteRandomScenario(insertRequestNumber100);
 //    }
-    
+
     /*
      * SCENARII METHOD'S TEST
      */
-    
+
     /**
      * method which insert row in patient value. this insert process over and over until number of request insert equals (int) method's parameter.
      * Moreover, this insert's success is check by some test.
@@ -266,7 +267,7 @@ public class Scenarii {
             TestUtils.closeAll(stmt, con);
         }
     }
-    
+
     /**
      * method which insert row in patient value. Number of row is equals (int) method's parameter.
      * Moreover, this insert's success is check by some test.
@@ -274,7 +275,7 @@ public class Scenarii {
      * @throws SQLException
      */
     private void insertParametredRequestOneShot(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = TestUtils.createStatement(con);){    
+        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = TestUtils.createStatement(con);){
             // check number of row before insert
             int rowBefore = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
             Assert.assertNotNull("Request's result is empty", rowBefore);
@@ -288,7 +289,7 @@ public class Scenarii {
             TestUtils.closeAll(stmt, con);
         }
     }
-    
+
     /**
      * method which parse INSERT request.
      * Moreover, this parse success is check by some test.
@@ -302,7 +303,7 @@ public class Scenarii {
             Assert.assertEquals("Number of Statement should be equals to number of request parameter", numberOfRequest, lstPrepStmt.size());
         }
     }
-    
+
     /**
      * method which checks if parse methods processed successfully
      * Moreover, this parse success is check by some test .
@@ -316,7 +317,7 @@ public class Scenarii {
             Assert.assertEquals("Number of Statement should be equals to number of request parameter", numberOfRequest, lstPrepStmt.size());
         }
     }
-    
+
     /**
      * method which bind INSERT request.
      * Moreover, this binding success is check by some test
@@ -346,7 +347,7 @@ public class Scenarii {
             }
         }
     }
-    
+
     /**
      * method which checks if bind methods processed successfully
      * @param numberOfRequest
@@ -375,7 +376,7 @@ public class Scenarii {
             }
         }
     }
-    
+
     /**
      * method which delete row and check if it processed well
      * @param numberOfRequest
@@ -391,7 +392,7 @@ public class Scenarii {
             TestUtils.closeAll(stmt, con);
         }
     }
-    
+
     /**
      * method which process a scenario :
      * - Parse X INSERT request
@@ -399,7 +400,7 @@ public class Scenarii {
      * - Execute X INSERT request
      * - Parse X SELECT request
      * - Bind X SELECT request
-     * - Execute X SELECT request 
+     * - Execute X SELECT request
      * - Parse X UPDATE request
      * - Bind X UPDATE request
      * - Execute X UPDATE request
@@ -486,7 +487,7 @@ public class Scenarii {
             TestUtils.closeAll(stmt, con);
         }
     }
-    
+
     /**
      * method which process a scenario :
      * - INSERT X row in table patient
@@ -500,7 +501,7 @@ public class Scenarii {
      * - Parse and bind a DELETE request which delete all previous row inserted
      * - Execute DELETE request
      * All these actions take a test
-     * 
+     *
      * @param numberOfRequest
      * @throws SQLException
      */
@@ -583,7 +584,7 @@ public class Scenarii {
             TestUtils.closeAll(stmt, con);
         }
     }
-    
+
     /**
      * method which checks if UPDATE request process successfully
      * @param con
@@ -594,14 +595,14 @@ public class Scenarii {
     private void updateRequestTestSuccesfull(Connection con, PreparedStatement prepStmt, String requestBefore) throws SQLException{
         String request = String.valueOf(prepStmt);
         int index = request.indexOf("pat_id") + 10;
-        String id = request.substring(index, index + 8); 
+        String id = request.substring(index, index + 8);
         Statement stmt = TestUtils.createStatement(con);
         String req = "SELECT * FROM patient WHERE pat_id = '"+id+"'";
         ResultSet res = stmt.executeQuery(req);
         Assert.assertNotEquals("Row update unsuccesfull", String.valueOf(res), requestBefore);
     }
-    
-    
+
+
     /**
      * method which return value of Id's patient in order to check if UPDATE request process successfully
      * @param con
@@ -612,12 +613,11 @@ public class Scenarii {
     private String getRowBeforeUpdate(Connection con, PreparedStatement prepStmt) throws SQLException{
         String request = String.valueOf(prepStmt);
         int index = request.indexOf("pat_id") + 10;
-        String id = request.substring(index, index + 8); 
+        String id = request.substring(index, index + 8);
         Statement stmt = TestUtils.createStatement(con);
         String req = "SELECT * FROM patient WHERE pat_id = '"+id+"'";
         ResultSet res = stmt.executeQuery(req);
         return String.valueOf(res);
     }
-    
+
 }
- 

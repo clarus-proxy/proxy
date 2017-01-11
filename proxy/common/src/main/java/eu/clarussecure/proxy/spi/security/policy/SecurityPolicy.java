@@ -127,14 +127,14 @@ public class SecurityPolicy {
             System.err.println("Error: Search node not of element type");
             System.exit(22);
         }
-    
+
         if (! node.hasChildNodes()) return null;
-    
+
         NodeList list = node.getChildNodes();
         for (int i=0; i < list.getLength(); i++) {
             Node subnode = list.item(i);
             if (subnode.getNodeType() == Node.ELEMENT_NODE) {
-               if (subnode.getNodeName().equals(name)) 
+               if (subnode.getNodeName().equals(name))
                    return subnode;
             }
         }
@@ -160,15 +160,15 @@ public class SecurityPolicy {
             System.err.println("Error: Search node not of element type");
             System.exit(22);
         }
-    
+
         if (! node.hasChildNodes()) return null;
-    
+
         NodeList list = node.getChildNodes();
         List<Node> nodes = new ArrayList<>();
         for (int i=0; i < list.getLength(); i++) {
             Node subnode = list.item(i);
             if (subnode.getNodeType() == Node.ELEMENT_NODE) {
-               if (subnode.getNodeName().equals(name)) 
+               if (subnode.getNodeName().equals(name))
                    nodes.add(subnode);
             }
         }

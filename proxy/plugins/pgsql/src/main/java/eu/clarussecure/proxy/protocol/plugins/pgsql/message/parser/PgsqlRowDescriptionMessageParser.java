@@ -21,7 +21,7 @@ public class PgsqlRowDescriptionMessageParser implements PgsqlMessageParser<Pgsq
             CString name = PgsqlUtilities.getCString(content);
             int tableOID = content.readInt();
             short columnNumber = content.readShort();
-            long typeOID = (long) content.readInt() & 0xffffffffl;
+            long typeOID = content.readInt() & 0xffffffffl;
             short typeSize = content.readShort();
             int typeModifier = content.readInt();
             short format = content.readShort();

@@ -1,14 +1,21 @@
 package eu.clarussecure.dataoperations.anonymization;
 
+import org.w3c.dom.Document;
+
 import eu.clarussecure.dataoperations.DataOperation;
 import eu.clarussecure.dataoperations.Operation;
 import eu.clarussecure.dataoperations.Promise;
-import org.w3c.dom.Document;
 
 public class AnonymizeModule implements DataOperation {
 
 	public AnonymizeModule(Document document){
 		Functions.readProperties(document);
+	}
+
+	@Override
+	public String[][] head(String[] attributeNames) {
+                //TODO: not yet implemented
+                return null;
 	}
 
 	@Override

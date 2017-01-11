@@ -99,6 +99,14 @@ public class CString implements CharSequence, Cloneable {
         return buffer != null;
     }
 
+    public ByteBuf getByteBuf(int maxCapacity) {
+        ByteBuf bytebuf = getByteBuf();
+        if (bytebuf != null && bytebuf.capacity() > maxCapacity) {
+            bytebuf = bytebuf.slice(0, maxCapacity);
+        }
+        return bytebuf;
+    }
+
     public ByteBuf getByteBuf() {
         if (buffer == null && str != null) {
             buffer = ByteBufUtil.encodeString(UnpooledByteBufAllocator.DEFAULT, CharBuffer.wrap(str), StandardCharsets.ISO_8859_1, 1);
@@ -153,6 +161,29 @@ public class CString implements CharSequence, Cloneable {
         return new CString(subBuffer, subCs, end - start);
     }
 
+    public int indexOf(int ch) {
+        return indexOf(ch, 0);
+    }
+
+    public int indexOf(int ch, int fromIndex) {
+        final int max = length();
+        if (fromIndex < 0) {
+            fromIndex = 0;
+        } else if (fromIndex >= max) {
+            // Note: fromIndex might be near -1>>>1.
+            return -1;
+        }
+
+        // handle most cases here (ch is a BMP code point or a
+        // negative value (invalid code point))
+        for (int i = fromIndex; i < max; i++) {
+            if (charAt(i) == ch) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     public int indexOf(CharSequence target) {
         return indexOf(target, 0);
     }
@@ -199,6 +230,130 @@ public class CString implements CharSequence, Cloneable {
         return -1;
     }
 
+    public int lastIndexOf(int ch) {
+        return lastIndexOf(ch, length() - 1);
+    }
+
+    public int lastIndexOf(int ch, int fromIndex) {
+        int i = Math.min(fromIndex, length() - 1);
+        for (; i >= 0; i--) {
+            if (charAt(i) == ch) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    public int lastIndexOf(CharSequence target) {
+        return lastIndexOf(target, 0);
+    }
+
+    public int lastIndexOf(CharSequence target, int fromIndex) {
+        return lastIndexOf(this, 0, this.length(), target, 0, target.length(), fromIndex);
+    }
+
+    static int lastIndexOf(CString source, int sourceOffset, int sourceCount,
+            CharSequence target, int targetOffset, int targetCount, int fromIndex) {
+        /*
+         * Check arguments; return immediately where possible. For
+         * consistency, don't check for null str.
+         */
+        int rightIndex = sourceCount - targetCount;
+        if (fromIndex < 0) {
+            return -1;
+        }
+        if (fromIndex > rightIndex) {
+            fromIndex = rightIndex;
+        }
+        /* Empty string always matches. */
+        if (targetCount == 0) {
+            return fromIndex;
+        }
+
+        int strLastIndex = targetOffset + targetCount - 1;
+        char strLastChar = target.charAt(strLastIndex);
+        int min = sourceOffset + targetCount - 1;
+        int i = min + fromIndex;
+
+    startSearchForLastChar:
+        while (true) {
+            while (i >= min && source.charAt(i) != strLastChar) {
+                i--;
+            }
+            if (i < min) {
+                return -1;
+            }
+            int j = i - 1;
+            int start = j - (targetCount - 1);
+            int k = strLastIndex - 1;
+
+            while (j > start) {
+                if (source.charAt(j--) != target.charAt(k--)) {
+                    i--;
+                    continue startSearchForLastChar;
+                }
+            }
+            return start - sourceOffset + 1;
+        }
+    }
+
+    public CString replace(char oldChar, char newChar) {
+        CString cs = this;
+        if (oldChar != newChar) {
+            int from = 0;
+            for (int i = 0; i < length(); i++) {
+                if (charAt(i) == oldChar) {
+                    if (cs == this) {
+                        cs = this.substring(from, i);
+                    } else {
+                        cs.append(this.substring(from, i));
+                    }
+                    cs.append(newChar);
+                    from = i + 1;
+                }
+            }
+            if (from < length()) {
+                if (cs != this) {
+                    cs.append(this.substring(from, length()));
+                }
+            }
+        }
+        return cs;
+    }
+
+    public CString replace(CharSequence target, CharSequence replacement) {
+        CString cs = this;
+        if (target != replacement) {
+            int from = 0;
+            for (int i = 0; i < length() - target.length(); i++) {
+                if (substring(i, target.length()).equals(target)) {
+                    if (cs == this) {
+                        cs = this.substring(from, i);
+                    } else {
+                        cs.append(this.substring(from, i));
+                    }
+                    cs.append(replacement);
+                    from = i + replacement.length();
+                    i += replacement.length() - 1;
+                }
+            }
+            if (from < length()) {
+                if (cs != this) {
+                    cs.append(this.substring(from, length()));
+                }
+            }
+        }
+        return cs;
+    }
+
+    public CString append(char c) {
+        return append(new char[] { c });
+    }
+
+    public CString append(char[] array) {
+        return append(CharBuffer.wrap(array));
+    }
+
     public CString append(CharSequence other) {
         return append(other, other.length());
     }
@@ -210,7 +365,7 @@ public class CString implements CharSequence, Cloneable {
         if (buffer != null) {
             // Append other to this internal buffer
             ensureBufferCapacity(other, length);
-            // Remove zero byte terminator (if any) 
+            // Remove zero byte terminator (if any)
             if (buffer.writerIndex() > 0 && buffer.getByte(buffer.writerIndex() - 1) == 0) {
                 buffer.writerIndex(buffer.writerIndex() - 1);
             }
@@ -249,10 +404,10 @@ public class CString implements CharSequence, Cloneable {
 
     private void ensureBufferCapacity(CharSequence other, int length) {
         // For CompositeByteBuf only: because this internal buffer is composed of multiple buffer (including other's internal buffer),
-        // the zero byte terminator must be removed (to avoid having a 0 byte in the middle of the buffer).  
+        // the zero byte terminator must be removed (to avoid having a 0 byte in the middle of the buffer).
         if (buffer instanceof CompositeByteBuf && buffer.writerIndex() > 0 && buffer.getByte(buffer.writerIndex() - 1) == 0) {
             // Netty memory leak: calling capacity(new capacity) remove the last component if not used, but don't release the buffer
-            // Workaround: test the capacity of the last component: if 1 -> explicitly remove it, if > 1 -> call capacity(new capacity) 
+            // Workaround: test the capacity of the last component: if 1 -> explicitly remove it, if > 1 -> call capacity(new capacity)
             int index = ((CompositeByteBuf)buffer).toComponentIndex(strLen);
             ByteBuf last = ((CompositeByteBuf)buffer).internalComponent(index);
             if (last.capacity() == 1) {
@@ -286,7 +441,7 @@ public class CString implements CharSequence, Cloneable {
     private void copy(ByteBuf src, int length) {
         if (buffer instanceof CompositeByteBuf && ((CompositeByteBuf)buffer).numComponents() < ((CompositeByteBuf)buffer).maxNumComponents() - 1) {
             // For CompositeByteBuf only: because this internal buffer is composed of multiple buffer (including other's internal buffer),
-            // we simply add the other's internal buffer (no copy).  
+            // we simply add the other's internal buffer (no copy).
             ((CompositeByteBuf)buffer).addComponent(true, /*src.readSlice(length)*/src.slice(0, length));
             // Add an additional buffer for the zero byte terminator
             ((CompositeByteBuf)buffer).capacity(strLen + length + 1);
@@ -321,7 +476,7 @@ public class CString implements CharSequence, Cloneable {
                 ByteBuf byteBuf = null;
                 if (buffer instanceof CompositeByteBuf) {
                     // ByteBufUtil.encodeString() calls ByteBuf.internalNioBuffer() method, but CompositeByteBuf don't support it
-                    // -> determinate if there is one (and only one) component that can be used as the destination buffer 
+                    // -> determinate if there is one (and only one) component that can be used as the destination buffer
                     List<ByteBuf> byteBufs = ((CompositeByteBuf)buffer).decompose(buffer.writerIndex(), length);
                     if (byteBufs.size() == 1) {
                         // One component to store 'length' bytes at 'buffer.writerIndex()' index
@@ -379,7 +534,7 @@ public class CString implements CharSequence, Cloneable {
                 h = str.hashCode();
             } else if (buffer != null) {
                 for (int i = 0; i < strLen; i++) {
-                    h = 31 * h + ((int) buffer.getByte(i) & 0xFF);
+                    h = 31 * h + (buffer.getByte(i) & 0xFF);
                 }
             }
             hash = h;
@@ -413,7 +568,7 @@ public class CString implements CharSequence, Cloneable {
     /**
      * Compares this {@code CString} to a {@code CharSequence}, ignoring case
      * considerations.  Two are considered equal ignoring case if they
-     * are of the same length and corresponding characters in the two 
+     * are of the same length and corresponding characters in the two
      * are equal ignoring case.
      *
      * <p> Two characters {@code c1} and {@code c2} are considered the same

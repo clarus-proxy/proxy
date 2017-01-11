@@ -1,1 +1,4 @@
-"BEGIN;\r".matches("^\\s*BEGIN[\\s\r\n]*.*")
+java.util.regex.Matcher m = java.util.regex.Pattern.compile("([^/]*/)(public\\.)?([^/\\.]*/[^/]*)").matcher("postgres/public.a/c3");
+if (m.matches()) {
+    System.out.println(m.group(0) + " -> " + m.replaceAll(m.group(2) == null ? "$1public.$3" : "$1$3"));
+}

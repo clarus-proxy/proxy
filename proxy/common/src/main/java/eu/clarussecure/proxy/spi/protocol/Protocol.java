@@ -11,4 +11,8 @@ public interface Protocol {
     void sync();
 
     void stop();
+
+    default String[] adaptDataIds(String[] dataIds) {
+        return dataIds;
+    }
 }

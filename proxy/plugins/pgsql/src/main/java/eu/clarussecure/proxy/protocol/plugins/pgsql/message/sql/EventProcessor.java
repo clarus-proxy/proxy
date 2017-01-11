@@ -18,15 +18,15 @@ public interface EventProcessor {
 
     CString processAuthentication(ChannelHandlerContext ctx, CString password) throws IOException, NoSuchAlgorithmException;
 
-    QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException;
+    QueriesTransferMode<SQLStatement, CommandResults> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException;
 
-    QueriesTransferMode<BindStep, Void> processBindStep(ChannelHandlerContext ctx, BindStep bindStep) throws IOException;
+    QueriesTransferMode<BindStep, CommandResults> processBindStep(ChannelHandlerContext ctx, BindStep bindStep) throws IOException;
 
-    QueriesTransferMode<DescribeStep, List<?>[]> processDescribeStep(ChannelHandlerContext ctx, DescribeStep describeStep) throws IOException;
+    QueriesTransferMode<DescribeStep, CommandResults> processDescribeStep(ChannelHandlerContext ctx, DescribeStep describeStep) throws IOException;
 
-    QueriesTransferMode<ExecuteStep, CString> processExecuteStep(ChannelHandlerContext ctx, ExecuteStep executeStep) throws IOException;
+    QueriesTransferMode<ExecuteStep, CommandResults> processExecuteStep(ChannelHandlerContext ctx, ExecuteStep executeStep) throws IOException;
 
-    QueriesTransferMode<CloseStep, Void> processCloseStep(ChannelHandlerContext ctx, CloseStep closeStep) throws IOException;
+    QueriesTransferMode<CloseStep, CommandResults> processCloseStep(ChannelHandlerContext ctx, CloseStep closeStep) throws IOException;
 
     QueriesTransferMode<SynchronizeStep, Byte> processSynchronizeStep(ChannelHandlerContext ctx, SynchronizeStep synchronizeStep) throws IOException;
 

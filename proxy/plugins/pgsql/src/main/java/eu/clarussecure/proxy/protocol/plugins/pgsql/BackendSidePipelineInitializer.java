@@ -62,7 +62,7 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
                     pipeline.addLast(parserGroup, "PgsqlAuthenticationHandler", new AuthenticationHandler());
         }
         // Session initialization consists of dealing with optional initialization of SSL encryption: a specific SSL handler will be added as first handler in the pipeline if necessary
-        // The session initialization handler will be removed while dealing with the startup message (by the SessionInitializationRequestHandler running on the frontend side). 
+        // The session initialization handler will be removed while dealing with the startup message (by the SessionInitializationRequestHandler running on the frontend side).
         pipeline.addLast(parserGroup, "SessionInitializationResponseHandler", new SessionInitializationResponseHandler());
         if (MESSAGE_PROCESSING_ACTIVATED) {
             if (QUERY_PROCESSING_ACTIVATED) {

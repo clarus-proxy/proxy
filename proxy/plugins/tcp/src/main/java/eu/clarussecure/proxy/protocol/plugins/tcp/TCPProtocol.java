@@ -23,6 +23,7 @@ public class TCPProtocol extends ProtocolExecutor {
         return Helper.CONFIGURATION;
     }
 
+    @Override
     protected TCPServer<? extends ChannelInitializer<Channel>> buildServer() {
         return new TCPServer<>(getConfiguration(), ClientSidePipelineInitializer.class);
     }

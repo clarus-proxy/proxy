@@ -17,7 +17,7 @@ import eu.clarussecure.proxy.spi.protocol.ProtocolService;
 public abstract class Configuration implements Configurable {
 
     public static final int DEFAULT_NB_OF_LISTEN_THREADS = 1;
-    
+
     public static final int DEFAULT_NB_OF_SESSION_THREADS = Runtime.getRuntime().availableProcessors();
 
     public static final int DEFAULT_NB_OF_PARSER_THREADS = 0;
@@ -53,7 +53,7 @@ public abstract class Configuration implements Configurable {
     public int getListenPort() {
         return listenPort != 0 ? listenPort : getDefaultListenPort();
     }
-    
+
     @Override
     public void setListenPort(int listenPort) {
         this.listenPort = listenPort;

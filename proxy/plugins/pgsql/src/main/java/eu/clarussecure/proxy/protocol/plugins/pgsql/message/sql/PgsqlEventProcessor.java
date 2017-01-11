@@ -12,7 +12,13 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.xml.bind.DatatypeConverter;
 
@@ -26,7 +32,9 @@ import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLSession.Exten
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLSession.QueryResponseType;
 import eu.clarussecure.proxy.spi.CString;
 import eu.clarussecure.proxy.spi.DataOperation;
+import eu.clarussecure.proxy.spi.MetadataOperation;
 import eu.clarussecure.proxy.spi.Mode;
+import eu.clarussecure.proxy.spi.ModuleOperation;
 import eu.clarussecure.proxy.spi.Operation;
 import eu.clarussecure.proxy.spi.StringUtilities;
 import eu.clarussecure.proxy.spi.protection.DefaultPromise;
@@ -44,12 +52,16 @@ import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.expression.operators.relational.MultiExpressionList;
 import net.sf.jsqlparser.parser.CCJSqlParser;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import net.sf.jsqlparser.parser.ParseException;
 import net.sf.jsqlparser.parser.TokenMgrError;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.delete.Delete;
 import net.sf.jsqlparser.statement.insert.Insert;
+import net.sf.jsqlparser.statement.select.AllColumns;
+import net.sf.jsqlparser.statement.select.AllTableColumns;
+import net.sf.jsqlparser.statement.select.Join;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
 import net.sf.jsqlparser.statement.select.SelectExpressionItem;
@@ -72,6 +84,9 @@ public class PgsqlEventProcessor implements EventProcessor {
     private final static int AUTHENTICATION_CLEARTEXT_PASSWORD = 3;
     private final static int AUTHENTICATION_MD5_PASSWORD = 5;
     
+    public static final String FUNCTION_METADATA = "CLARUS_METADATA";
+    public static final String FUNCTION_PROTECTED = "CLARUS_PROTECTED";
+
     @Override
     public CString processUserAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
         CString databaseName = parameters.get(CString.valueOf(DATABASE_KEY));
@@ -136,20 +151,34 @@ public class PgsqlEventProcessor implements EventProcessor {
     }
     
     @Override
-    public QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException {
+    public QueriesTransferMode<SQLStatement, CommandResults> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException {
         LOGGER.debug("SQL statement: {}", sqlStatement);
         TransferMode transferMode = TransferMode.FORWARD;
         List<Query> newQueries = Collections.singletonList(sqlStatement);
-        CString response = null;
+        CommandResults response = null;
         Map<Byte, CString> errorDetails = null;
         boolean toProcess = false;
         Operation operation = null;
         SQLSession session = getSession(ctx);
-        session.setCurrentOperation(operation);
+        session.setCurrentCommandOperation(operation);
         SQLCommandType type = SimpleSQLParserUtil.parse(sqlStatement.getSQL());
         if (type != null) {
+            CString completeTag = null;
             CString error = null;
             switch (type) {
+            case CLARUS_METADATA: {
+                if (session.isProcessingQuery()) {
+                    transferMode = TransferMode.ERROR;
+                    error = CString.valueOf(String.format("%s is not supported while processing one or several queries", type.getPattern()));
+                } else {
+                    toProcess = true;
+                }
+                break;
+            }
+            case CLARUS_PROTECTED: {
+                toProcess = true;
+                break;
+            }
             case START_TRANSACTION: {
                 toProcess = isSQLStatementToProcess(null);
                 if (sqlStatement instanceof SimpleQuery && session.getTransactionStatus() != (byte)'E') {
@@ -190,9 +219,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                                 retrieveWholeDataset ? "Dataset" : "Record"));
                     } else if (processingMode == Mode.ORCHESTRATION) {
                         // TODO orchestration mode. Meanwhile, same as AS_IT_IS mode
-                        session.setCurrentOperation(operation);
+                        session.setCurrentCommandOperation(operation);
                     } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.BUFFERING || processingMode == Mode.STREAMING) {
-                        session.setCurrentOperation(operation);
+                        session.setCurrentCommandOperation(operation);
                     }
                 }
                 break;
@@ -211,7 +240,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                         if (inDatasetCreation) {
                             transferMode = TransferMode.FORGET;
                             if (sqlStatement instanceof SimpleQuery) {
-                                response = CString.valueOf("INSERT 0 1");
+                                completeTag = CString.valueOf("INSERT 0 1");
                             }
                         } else {
                             // Should not occur
@@ -223,7 +252,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                         transferMode = TransferMode.ERROR;
                         error = CString.valueOf("Orchestration processing mode not supported for dataset or record creation by this CLARUS proxy");
                     } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.STREAMING) {
-                        session.setCurrentOperation(operation);
+                        session.setCurrentCommandOperation(operation);
                     }
                 }
                 break;
@@ -262,7 +291,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                         if (inDatasetModification) {
                             transferMode = TransferMode.FORGET;
                             if (sqlStatement instanceof SimpleQuery) {
-                                response = CString.valueOf("UPDATE 0 1");
+                                completeTag = CString.valueOf("UPDATE 0 1");
                             }
                         } else {
                             // Should not occur
@@ -274,7 +303,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                         transferMode = TransferMode.ERROR;
                         error = CString.valueOf("Orchestration processing mode not supported for dataset or record modification by this CLARUS proxy");
                     } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.STREAMING) {
-                        session.setCurrentOperation(operation);
+                        session.setCurrentCommandOperation(operation);
                     }
                 }
                 break;
@@ -294,7 +323,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                         if (deleteWholeDataset) {
                             transferMode = TransferMode.FORGET;
                             if (sqlStatement instanceof SimpleQuery) {
-                                response = CString.valueOf("DELETE 0 1");
+                                completeTag = CString.valueOf("DELETE 0 1");
                             }
                         } else {
                             // Should not occur
@@ -306,13 +335,16 @@ public class PgsqlEventProcessor implements EventProcessor {
                         transferMode = TransferMode.ERROR;
                         error = CString.valueOf("Orchestration processing mode not supported for dataset or record delete by this CLARUS proxy");
                     } else {
-                        session.setCurrentOperation(operation);
+                        session.setCurrentCommandOperation(operation);
                     }
                 }
                 break;
             }
             default:
                 break;
+            }
+            if (completeTag != null) {
+                response = new CommandResults(completeTag);
             }
             if (error != null) {
                 errorDetails = new LinkedHashMap<>();
@@ -324,14 +356,35 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (transferMode == TransferMode.FORWARD) {
             if (sqlStatement instanceof SimpleQuery) {
                 // Process simple query immediately
-                newQueries = buildNewQueries(ctx, (SimpleSQLStatement) sqlStatement, toProcess);
+                Result<List<Query>, CommandResults, CString> result = buildNewQueries(ctx, (SimpleSQLStatement) sqlStatement, toProcess);
+                if (result.isQuery()) {
+                    // Retrieve modified (or unmodified) queries to forward
+                    newQueries = result.query();
+                } else if (result.isResponse()) {
+                    // Forget the query and reply immediately
+                    transferMode = TransferMode.FORGET;
+                    newQueries = null;
+                    response = result.response();
+                } else if (result.isError()) {
+                    transferMode = TransferMode.ERROR;
+                    errorDetails = new LinkedHashMap<>();
+                    errorDetails.put((byte) 'S', CString.valueOf("FATAL"));
+                    errorDetails.put((byte) 'M', result.error());
+                    if (session.getTransactionStatus() == (byte)'T') {
+                        session.setTransactionErrorDetails(errorDetails);
+                    }
+                    session.resetCurrentCommand();
+                    newQueries = null;
+                }
             } else {
                 // Track parse step (for bind, describe and close steps)
                 session.addParseStep((ParseStep) sqlStatement, operation, toProcess);
                 // Postpone processing of extended query
                 transferMode = TransferMode.FORGET;
                 newQueries = null;
-                session.addLastQueryResponseToIgnore(QueryResponseType.PARSE_COMPLETE);
+                response = new CommandResults();
+                response.setParseCompleteRequired(true);
+//                session.addLastQueryResponseToIgnore(QueryResponseType.PARSE_COMPLETE);
             }
         } else if (transferMode == TransferMode.FORGET) {
             // Buffer sql statement
@@ -342,6 +395,7 @@ public class PgsqlEventProcessor implements EventProcessor {
             if (!(sqlStatement instanceof SimpleQuery)) {
                 // Track parse step (for bind, describe and close steps)
                 session.addParseStep((ParseStep) sqlStatement, operation, toProcess);
+                response.setParseCompleteRequired(true);
             }
             newQueries = null;
         } else if (transferMode == TransferMode.ERROR) {
@@ -351,7 +405,7 @@ public class PgsqlEventProcessor implements EventProcessor {
             session.resetCurrentCommand();
             newQueries = null;
         }
-        QueriesTransferMode<SQLStatement, CString> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
+        QueriesTransferMode<SQLStatement, CommandResults> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
         LOGGER.debug("SQL statement processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
         return mode;
     }
@@ -360,11 +414,25 @@ public class PgsqlEventProcessor implements EventProcessor {
         return FORCE_SQL_PROCESSING || processingMode != Mode.AS_IT_IS;
     }
 
-    private List<Query> buildNewQueries(ChannelHandlerContext ctx, SimpleSQLStatement sqlStatement, boolean toProcess) throws IOException {
+    private Result<List<Query>, CommandResults, CString> buildNewQueries(ChannelHandlerContext ctx, SimpleSQLStatement sqlStatement, boolean toProcess) throws IOException {
+        SimpleSQLStatement newSQLStatement = null;
+        if (toProcess) {
+            Result<SimpleSQLStatement, CommandResults, CString> result = processSimpleSQLStatement(ctx, sqlStatement);
+            if (result.isQuery()) {
+                newSQLStatement = result.query();
+            } else if (result.isResponse()) {
+                return Result.response(result.response());
+            } else if (result.isError()) {
+                return Result.error(result.error());
+            }
+        } else {
+            newSQLStatement = sqlStatement;
+        }
         List<Query> newQueries = processBufferedQueries(ctx);
-        SimpleSQLStatement newSQLStatement = toProcess ? processSimpleSQLStatement(ctx, sqlStatement) : sqlStatement;
         if (newQueries.isEmpty()) {
-            newQueries = Collections.singletonList(newSQLStatement);
+            if (newSQLStatement != null) {
+                newQueries = Collections.singletonList(newSQLStatement);
+            }
         } else {
             // Compute new SQL statement size (if buffered queries are all simple)
             boolean allSimple = true;
@@ -378,12 +446,16 @@ public class PgsqlEventProcessor implements EventProcessor {
                 }
             }
             if (allSimple) {
-                newSize += newSQLStatement.getSQL().length();
+                if (newSQLStatement != null) {
+                    newSize += newSQLStatement.getSQL().length();
+                }
                 CString newSQL = CString.valueOf(new StringBuilder(newSize));
                 for (Query newQuery : newQueries) {
                     newSQL.append(((SQLStatement) newQuery).getSQL());
                 }
-                newSQL.append(newSQLStatement.getSQL());
+                if (newSQLStatement != null) {
+                    newSQL.append(newSQLStatement.getSQL());
+                }
                 newSQLStatement = new SimpleSQLStatement(newSQL);
                 newQueries = Collections.singletonList(newSQLStatement);
                 // Remove expected response messages
@@ -393,14 +465,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                     session.removeFirstQueryResponseToIgnore();
                     nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
                 }
-            } else {
+            } else if (newSQLStatement != null) {
                 newQueries.add(newSQLStatement);
             }
         }
-        return newQueries;
+        return Result.query(newQueries);
     }
 
-    private List<Query> processBufferedQueries(ChannelHandlerContext ctx) {
+    private List<Query> processBufferedQueries(ChannelHandlerContext ctx) throws IOException {
         DataOperation dataOperation = null;
         SQLSession session = getSession(ctx);
         List<Statement> allStatements = new ArrayList<>(session.getBufferedQueries().size());
@@ -435,7 +507,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                     // Parse SQL statement
                     stmt = parseSQL(ctx, parseStep.getSQL());
                     // Save row for this SQL statement
-                    optionalRow = Integer.valueOf(row); // Row incremented during bind step 
+                    optionalRow = Integer.valueOf(row); // Row incremented during bind step
                     // Track index of this parse step (necessary for bind step)
                     lastParseStepIndexes.put(parseStep.getName(), index);
                     // Increment parse step counter
@@ -450,7 +522,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                         int lastParseStepIndex = lastParseStepIndexes.get(bindStep.getPreparedStatement());
                         // Retrieve parse step from buffered queries
                         parseStep = (ParseStep) session.getBufferedQueries().get(lastParseStepIndex);
-                        // SQL statement was already parsed 
+                        // SQL statement was already parsed
                         stmt = allStatements.get(lastParseStepIndex);
                     } else {
                         // Parse step was done long time ago (and is tracked by session)
@@ -511,11 +583,24 @@ public class PgsqlEventProcessor implements EventProcessor {
             allParameterValues.add(parameterValues);
             rows.add(optionalRow);
             if (extract) {
+                // Extract module operation
+                ModuleOperation moduleOperation = null;
                 // Extract data operation
-                if (stmt instanceof Insert) {
-                    dataOperation = extractInsertOperation(ctx, (Insert)stmt, parameterValues, dataOperation);
-                } else if (stmt instanceof Select) {
-                    dataOperation = extractSelectOperation(ctx, (Select)stmt, parameterValues, dataOperation);
+                try {
+                    if (stmt instanceof Insert) {
+                        moduleOperation = extractInsertOperation(ctx, (Insert)stmt, parameterValues, dataOperation);
+                    } else if (stmt instanceof Select) {
+                        moduleOperation = extractSelectOperation(ctx, (Select)stmt, parameterValues);
+                    }
+                } catch (ParseException e) {
+                    // Should not occur (unsupported metadata in buffered queries)
+                    throw new IOException(String.format("%s is unsupported in buffered queries", FUNCTION_METADATA), e);
+                }
+                if (moduleOperation instanceof DataOperation) {
+                    dataOperation = (DataOperation) moduleOperation;
+                } else {
+                    // Should not occur (unsupported metadata in buffered queries)
+                    throw new IOException(String.format("%s is unsupported in buffered queries", FUNCTION_METADATA));
                 }
             }
             index ++;
@@ -564,7 +649,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                                 ParseStep parseStep = (ParseStep)query;
                                 String newSQL = stmt.toString();
                                 newSQL = StringUtilities.addIrrelevantCharacters(newSQL, parseStep.getSQL(), " \t\r\n;");
-                                newQuery = new ParseStep(parseStep.getName(), CString.valueOf(newSQL), parseStep.getParameterTypes());
+                                newQuery = new ParseStep(parseStep.getName(), CString.valueOf(newSQL), parseStep.isMetadata(), parseStep.getColumns(), parseStep.getParameterTypes());
                             } else if (query instanceof BindStep) {
                                 BindStep bindStep = (BindStep)query;
                                 List<ByteBuf> parameterBinaryValues = parameterValues.stream()
@@ -588,25 +673,106 @@ public class PgsqlEventProcessor implements EventProcessor {
         return newQueries;
     }
 
-    private SimpleSQLStatement processSimpleSQLStatement(ChannelHandlerContext ctx, SimpleSQLStatement sqlStatement) {
+    private static class Result<Q, R, E> {
+        private final Optional<Q> query;
+        private final Optional<R> response;
+        private final Optional<E> error;
+
+        public static <Q, R, E> Result<Q, R, E> query(Q query) {
+            return new Result<>(Optional.ofNullable(query), null, null);
+        }
+
+        public static <Q, R, E> Result<Q, R, E> response(R response) {
+            return new Result<>(null, Optional.ofNullable(response), null);
+        }
+
+        public static <Q, R, E> Result<Q, R, E> error(E error) {
+            return new Result<>(null, null, Optional.ofNullable(error));
+        }
+
+        private Result(Optional<Q> query, Optional<R> response, Optional<E> error) {
+            this.query = query;
+            this.response = response;
+            this.error = error;
+        }
+
+        public Q query() {
+            return query == null ? null : query.orElse(null);
+        }
+
+        public R response() {
+            return response == null ? null : response.orElse(null);
+        }
+
+        public E error() {
+            return error == null ? null : error.orElse(null);
+        }
+
+        public boolean isQuery() {
+            return query != null;
+        }
+
+        public boolean isResponse() {
+            return response != null;
+        }
+
+        public boolean isError() {
+            return error != null;
+        }
+    }
+
+    private Result<SimpleSQLStatement, CommandResults, CString> processSimpleSQLStatement(ChannelHandlerContext ctx, SimpleSQLStatement sqlStatement) {
         // Parse SQL statement
         Statement stmt = parseSQL(ctx, sqlStatement.getSQL());
         if (stmt == null) {
-            return sqlStatement;
+            return Result.query(sqlStatement);
         }
-        // Extract data operation
-        DataOperation dataOperation = null;
-        if (stmt instanceof Insert) {
-            dataOperation = extractInsertOperation(ctx, (Insert)stmt, null, null);
-        } else if (stmt instanceof Select) {
-            dataOperation = extractSelectOperation(ctx, (Select)stmt, null, null);
-        } else if (stmt instanceof Update) {
-            // TODO Update
-        } else if (stmt instanceof Delete) {
-            // TODO Delete
+        // Extract module operation
+        ModuleOperation moduleOperation = null;
+        try {
+            if (stmt instanceof Insert) {
+                moduleOperation = extractInsertOperation(ctx, (Insert)stmt, null, null);
+            } else if (stmt instanceof Select) {
+                moduleOperation = extractSelectOperation(ctx, (Select)stmt, null);
+            } else if (stmt instanceof Update) {
+                // TODO Update
+            } else if (stmt instanceof Delete) {
+                // TODO Delete
+            }
+        } catch (ParseException e) {
+            return Result.error(CString.valueOf(e.getMessage()));
         }
-        // Process data operation
-        if (dataOperation != null) {
+        Result<SimpleSQLStatement, CommandResults, CString> result = null;
+        if (moduleOperation instanceof MetadataOperation) {
+            // Process metadata operation
+            MetadataOperation metadataOperation = (MetadataOperation) moduleOperation;
+            metadataOperation = newMetaDataOperation(ctx, metadataOperation);
+            // Forget SQL statement, reply directly to the frontend
+            CommandResults commandResults = new CommandResults();
+            // Build row description
+            List<PgsqlRowDescriptionMessage.Field> description = Stream.of("column_name", "protected_column_name").map(CString::valueOf).map(PgsqlRowDescriptionMessage.Field::new).collect(Collectors.toList());
+            commandResults.setRowDescription(description);
+            if (metadataOperation.isModified()) {
+                Map<CString, List<CString>> metadata = metadataOperation.getMetadata();
+                // Verify all data ids refer to the same dataset (prefix is the same for all data ids)
+                Set<CString> prefixes = metadata.keySet().stream().map(id -> id.substring(0, id.lastIndexOf('/'))).collect(Collectors.toSet());
+                boolean multipleDatasets = prefixes.size() > 1 || prefixes.stream().findFirst().get().equals("*");
+                if (!multipleDatasets) {
+                    // Prefix is the same for all data ids -> remove prefix
+                    metadata = metadata.entrySet().stream().collect(Collectors.toMap(e -> e.getKey().substring(e.getKey().lastIndexOf('/') + 1), Map.Entry::getValue));
+                }
+                // Build rows
+                List<List<ByteBuf>> rows = buildRows(metadata, -1);
+                commandResults.setRows(rows);
+                // Build complete tag
+                commandResults.setCompleteTag(CString.valueOf("SELECT " + rows.size()));
+            } else {
+                commandResults.setCompleteTag(CString.valueOf("SELECT 0"));
+            }
+            result = Result.response(commandResults);
+        } else if (moduleOperation instanceof DataOperation) {
+            // Process data operation
+            DataOperation dataOperation = (DataOperation) moduleOperation;
             List<DataOperation> newDataOperations = getProtocolService(ctx).newDataOperation(dataOperation);
             dataOperation = newDataOperations.get(0);
             if (dataOperation.isModified()) {
@@ -625,14 +791,36 @@ public class PgsqlEventProcessor implements EventProcessor {
                 sqlStatement = new SimpleSQLStatement(CString.valueOf(newSQL));
             }
             SQLSession session = getSession(ctx);
-            if (session.getCurrentOperation() == Operation.READ) {
+            if (session.getCurrentCommandOperation() == Operation.READ) {
                 session.setPromise(dataOperation.getPromise());
             }
+            result = Result.query(sqlStatement);
+        } else {
+            result = Result.query(sqlStatement);
         }
-        return sqlStatement;
+        return result;
     }
 
-    private DataOperation extractInsertOperation(ChannelHandlerContext ctx, Insert stmt, List<ParameterValue> parameterValues, DataOperation dataOperation) {
+    private MetadataOperation newMetaDataOperation(ChannelHandlerContext ctx, MetadataOperation metadataOperation) {
+        MetadataOperation result = getProtocolService(ctx).newMetadataOperation(metadataOperation);
+        // Remove any duplicate data id (the data ids that refer to the public schema)
+        Pattern publicDataIdPattern = Pattern.compile("([^/]*/)(public\\.)([^/\\.]*/[^/]*)");
+        List<CString> dataIds = result.getDataIds();
+        dataIds.stream()
+            .filter(id -> {
+                Matcher m = publicDataIdPattern.matcher(id.toString());
+                if (m.matches()) {
+                    String target = m.replaceAll("$1$3");
+                    return dataIds.stream().map(CString::toString).anyMatch(Predicate.isEqual(target));
+                } else {
+                    return false;
+                }
+            })
+            .forEach(id -> result.removeDataId(id));
+        return result;
+    }
+
+    private DataOperation extractInsertOperation(ChannelHandlerContext ctx, Insert stmt, List<ParameterValue> parameterValues, DataOperation dataOperation) throws ParseException {
         if (dataOperation == null) {
             dataOperation = new DataOperation();
             dataOperation.setOperation(Operation.CREATE);
@@ -658,8 +846,10 @@ public class PgsqlEventProcessor implements EventProcessor {
             // Extract data ids
             List<CString> dataIds;
             if (stmt.getColumns() == null) {
-                // TODO retrieve column names
                 dataIds = Collections.emptyList();
+                MetadataOperation metadataOperation = new MetadataOperation();
+                metadataOperation.addDataId(CString.valueOf(datasetId + "*"));
+                dataIds = newMetaDataOperation(ctx, metadataOperation).getDataIds();
             } else {
                 dataIds = stmt.getColumns().stream()
                     .map(Column::getColumnName)     // get column name
@@ -671,30 +861,35 @@ public class PgsqlEventProcessor implements EventProcessor {
             dataOperation.setDataIds(dataIds);
         }
         // Extract data values
-        List<CString> dataValues = null;
+        List<ExpressionList> rows = null;
         if (stmt.getItemsList() instanceof ExpressionList) {
-            dataValues = ((ExpressionList) stmt.getItemsList()).getExpressions().stream()
-                    .map(exp -> (exp instanceof NullValue) ? null : exp.toString())     // transform to string
-                    .map(CString::valueOf)                                              // transform to CString
-                    .collect(Collectors.toList());                                      // build a list
+            rows = Collections.singletonList((ExpressionList) stmt.getItemsList());
+        } else if (stmt.getItemsList() instanceof MultiExpressionList) {
+            rows = ((MultiExpressionList) stmt.getItemsList()).getExprList();
         }
         // TODO more complex insert statement
-//        else if (stmt.getItemsList() instanceof MultiExpressionList) {
-//        } else if (stmt.getItemsList() instanceof SubSelect) {
-//        }
-        if (parameterValues != null) {
-            // Replace parameter id by parameter value
-            dataValues.replaceAll(value -> {                                            // replace each data value ...
-                if (value != null && value.charAt(0) == '$') {                          // if value is a parameter id ($<index>)
-                    int idx = Integer.parseInt(value.substring(1).toString()) - 1;      // get the parameter index
-                    ParameterValue parameterValue = parameterValues.get(idx);           // get the parameter value
-                    value = convertToText(parameterValue.getType(),                     // convert parameter value to string
-                                parameterValue.getFormat(), parameterValue.getValue());
-                }
-                return value;
-            });
+//      } else if (stmt.getItemsList() instanceof SubSelect) {
+//      }
+        if (rows != null) {
+            for (ExpressionList row : rows) {
+                List<CString> dataValues = row.getExpressions().stream()
+                        .map(exp -> exp instanceof NullValue ? null : exp.toString())   // transform to string
+                        .map(CString::valueOf)                                          // transform to CString
+                        .map(value -> {
+                            if (parameterValues != null) {
+                                if (value != null && value.charAt(0) == '$') {                          // if value is a parameter id ($<index>)
+                                    int idx = Integer.parseInt(value.substring(1).toString()) - 1;      // get the parameter index
+                                    ParameterValue parameterValue = parameterValues.get(idx);           // get the parameter value
+                                    value = convertToText(parameterValue.getType(),                     // convert parameter value to string
+                                                parameterValue.getFormat(), parameterValue.getValue());
+                                }
+                            }
+                            return value;
+                        })
+                        .collect(Collectors.toList());                                  // build a list
+                    dataOperation.addDataValues(dataValues);
+            }
         }
-        dataOperation.addDataValues(dataValues);
         return dataOperation;
     }
 
@@ -729,52 +924,92 @@ public class PgsqlEventProcessor implements EventProcessor {
         }
     }
 
-    private DataOperation extractSelectOperation(ChannelHandlerContext ctx, Select stmt, List<ParameterValue> parameterValues, DataOperation dataOperation) {
-        if (dataOperation == null) {
-            dataOperation = new DataOperation();
-            dataOperation.setOperation(Operation.READ);
-            if (!(stmt.getSelectBody() instanceof PlainSelect)) {
-                return null;
-            }
-            // Extract dataset id
-            String datasetId;
-            PlainSelect select = (PlainSelect) stmt.getSelectBody();
-            if (select.getFromItem() instanceof Table) {
-                StringBuilder sb = new StringBuilder();
-                Table table = (Table) select.getFromItem();
-                if (table.getDatabase() != null) {
-                    String databaseName = StringUtilities.unquote(table.getDatabase().getDatabaseName());
-                    if (databaseName != null && !databaseName.isEmpty()) {
-                        sb.append(databaseName).append('/');
+    private ModuleOperation extractSelectOperation(ChannelHandlerContext ctx, Select stmt, List<ParameterValue> parameterValues) throws ParseException {
+        if (!(stmt.getSelectBody() instanceof PlainSelect)) {
+            return null;
+        }
+        // Extract dataset id
+        PlainSelect select = (PlainSelect) stmt.getSelectBody();
+        int capacity = (select.getFromItem() instanceof Table ? 1 : 0) + (select.getJoins() != null ? select.getJoins().size() : 0);
+        List<String> schemaIds = new ArrayList<>(capacity);
+        List<String> datasetIds = new ArrayList<>(capacity);
+        if (select.getFromItem() instanceof Table) {
+            Table table = (Table) select.getFromItem();
+            String schemaId = getShemaId(ctx, table);
+            schemaIds.add(schemaId);
+            String datasetId = getDatasetId(ctx, table, schemaId);
+            datasetIds.add(datasetId);
+            if (select.getJoins() != null) {
+                for (Join join : select.getJoins()) {
+                    if (join.getRightItem() instanceof Table) {
+                        table = (Table) join.getRightItem();
+                        schemaId = getShemaId(ctx, table);
+                        schemaIds.add(schemaId);
+                        datasetId = getDatasetId(ctx, table, schemaId);
+                        datasetIds.add(datasetId);
                     }
                 }
-                SQLSession session = getSession(ctx);
-                if (sb.length() == 0 && session.getDatabaseName() != null) {
-                    sb.append(session.getDatabaseName()).append('/');
-                }
-                String schemaName = StringUtilities.unquote(table.getSchemaName());
-                if (schemaName != null) {
-                    sb.append(schemaName).append('.');
-                }
-                String tableName = StringUtilities.unquote(table.getName());
-                sb.append(tableName).append('/');
-                datasetId = sb.toString();
-            } else {
-                datasetId = "";
             }
-            // Extract data ids
-            for (SelectItem selectItem : select.getSelectItems()) {
-                if (selectItem instanceof SelectExpressionItem) {
-                    SelectExpressionItem selectExpressionItem = (SelectExpressionItem)selectItem;
-                    if (selectExpressionItem.getExpression() instanceof Function) {
-                        dataOperation.addDataId(CString.valueOf(datasetId + ((Function)selectExpressionItem.getExpression()).getName()));
+        } else {
+            schemaIds.add("");
+            datasetIds.add("");
+        }
+        // Extract data ids
+        List<CString> dataIds = new ArrayList<>();
+        boolean metadata = false;
+        for (SelectItem selectItem : select.getSelectItems()) {
+            if (selectItem instanceof SelectExpressionItem) {
+                SelectExpressionItem selectExpressionItem = (SelectExpressionItem)selectItem;
+                if (selectExpressionItem.getExpression() instanceof Function) {
+                    Function function = (Function) selectExpressionItem.getExpression();
+                    if (FUNCTION_METADATA.equalsIgnoreCase(function.getName())) {
+                        metadata = true;
+                        if (function.isAllColumns()) {
+                            MetadataOperation metadataOperation = new MetadataOperation();
+                            datasetIds.forEach(id -> metadataOperation.addDataId(CString.valueOf(id + "*")));
+                            dataIds = newMetaDataOperation(ctx, metadataOperation).getDataIds();
+                        } else if (function.getParameters() != null && function.getParameters().getExpressions() != null && !function.getParameters().getExpressions().isEmpty()) {
+                            for (Expression parameter : function.getParameters().getExpressions()) {
+                                if (parameter instanceof Column) {
+                                    Column column = (Column) parameter;
+                                    if (column.getTable() != null && column.getTable().getName() != null) {
+                                        dataIds.addAll(schemaIds.stream().map(id -> CString.valueOf(id + column.getTable().getName() + "/" + column.getColumnName())).collect(Collectors.toList()));
+                                    } else {
+                                        dataIds.addAll(datasetIds.stream().map(id -> CString.valueOf(id + column.getColumnName())).collect(Collectors.toList()));
+                                    }
+                                }
+                            }
+                        } else {
+                            // Error: expected at least one parameter (* or column name)
+                            throw new ParseException(FUNCTION_METADATA + " function requires at least one parameter (* or column name(s))");
+                        }
+                        break;
                     } else {
-                        dataOperation.addDataId(CString.valueOf(datasetId + StringUtilities.unquote(selectExpressionItem.getExpression().toString())));
+                        dataIds.add(CString.valueOf(function.getName()));
                     }
                 } else {
-                    // TODO All columns (*)
+                    String unquote = StringUtilities.unquote(selectExpressionItem.getExpression().toString());
+                    dataIds.addAll(datasetIds.stream().map(id -> CString.valueOf(id + unquote)).collect(Collectors.toList()));
                 }
+            } else if (selectItem instanceof AllColumns || selectItem instanceof AllTableColumns) {
+                MetadataOperation metadataOperation = new MetadataOperation();
+                if (selectItem instanceof AllColumns) {
+                    datasetIds.forEach(id -> metadataOperation.addDataId(CString.valueOf(id + ((AllColumns)selectItem).toString())));
+                } else /* if (selectItem instanceof AllTableColumns) */ {
+                    schemaIds.forEach(id -> metadataOperation.addDataId(CString.valueOf(id + ((AllTableColumns)selectItem).toString().replace('.', '/'))));
+                }
+                dataIds = newMetaDataOperation(ctx, metadataOperation).getDataIds();
             }
+        }
+        ModuleOperation moduleOperation;
+        if (metadata) {
+            MetadataOperation metadataOperation = new MetadataOperation();
+            metadataOperation.setDataIds(dataIds);
+            moduleOperation = metadataOperation;
+        } else {
+            DataOperation dataOperation = new DataOperation();
+            dataOperation.setOperation(Operation.READ);
+            dataOperation.setDataIds(dataIds);
             // Extract parameter ids and values (functions)
             for (SelectItem selectItem : select.getSelectItems()) {
                 if (selectItem instanceof SelectExpressionItem && ((SelectExpressionItem)selectItem).getExpression() instanceof Function) {
@@ -787,8 +1022,37 @@ public class PgsqlEventProcessor implements EventProcessor {
                 }
             }
             // TODO Extract parameter ids and values (clause where)
+            moduleOperation = dataOperation;
         }
-        return dataOperation;
+        return moduleOperation;
+    }
+
+    private String getShemaId(ChannelHandlerContext ctx, Table table) {
+        StringBuilder sb = new StringBuilder();
+        if (table.getDatabase() != null) {
+            String databaseName = StringUtilities.unquote(table.getDatabase().getDatabaseName());
+            if (databaseName != null && !databaseName.isEmpty()) {
+                sb.append(databaseName).append('/');
+            }
+        }
+        SQLSession session = getSession(ctx);
+        if (sb.length() == 0 && session.getDatabaseName() != null) {
+            sb.append(session.getDatabaseName()).append('/');
+        }
+        String schemaName = StringUtilities.unquote(table.getSchemaName());
+        if (schemaName != null) {
+            sb.append(schemaName).append('.');
+        }
+        String schemaId = sb.toString();
+        return schemaId;
+    }
+
+    private String getDatasetId(ChannelHandlerContext ctx, Table table, String schemaId) {
+        StringBuilder sb = new StringBuilder(schemaId);
+        String tableName = StringUtilities.unquote(table.getName());
+        sb.append(tableName).append('/');
+        String datasetId = sb.toString();
+        return datasetId;
     }
 
     private void modifySelectStatement(ChannelHandlerContext ctx, Select stmt, List<ParameterValue> parameterValues, DataOperation dataOperation, int row) {
@@ -813,7 +1077,7 @@ public class PgsqlEventProcessor implements EventProcessor {
     }
 
     @Override
-    public QueriesTransferMode<BindStep, Void> processBindStep(ChannelHandlerContext ctx, BindStep bindStep) throws IOException {
+    public QueriesTransferMode<BindStep, CommandResults> processBindStep(ChannelHandlerContext ctx, BindStep bindStep) throws IOException {
         LOGGER.debug("Bind step: {}", bindStep);
         SQLSession session = getSession(ctx);
         ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(bindStep.getPreparedStatement());
@@ -822,7 +1086,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         }
         TransferMode transferMode = TransferMode.FORWARD;
         List<Query> newQueries = Collections.singletonList(bindStep);
-        Void response = null;
+        CommandResults response = null;
         Map<Byte, CString> errorDetails = null;
         // Track bind step (for describe, execute and close steps)
         ExtendedQueryStatus<BindStep> bindStepStatus = session.addBindStep(bindStep, parseStepStatus.getOperation(), parseStepStatus.isToProcess());
@@ -929,12 +1193,48 @@ public class PgsqlEventProcessor implements EventProcessor {
         }
         session.setTransferMode(transferMode);
         if (transferMode == TransferMode.FORWARD) {
-            newQueries = buildNewQueries(ctx, parseStepStatus, bindStepStatus);
+            Result<List<Query>,CommandResults,CString> result = buildNewQueries(ctx, parseStepStatus, bindStepStatus);
+            if (result.isQuery()) {
+                // Retrieve modified (or unmodified) queries to forward
+                newQueries = result.query();
+                for (Query query : newQueries) {
+                    if (query instanceof ParseStep) {
+                        // Parse is forwarded before bind -> response must be ignored
+                        session.addLastQueryResponseToIgnore(QueryResponseType.PARSE_COMPLETE);
+                    } else if (query instanceof DescribeStep &&  ((DescribeStep)query).getCode() == 'S') {
+                        // Describe is forwarded before bind -> response must be ignored
+                        session.addLastQueryResponseToIgnore(QueryResponseType.PARAMETER_DESCRIPTION);
+                        if (parseStepStatus.getOperation() == Operation.READ) {
+                            session.addLastQueryResponseToIgnore(QueryResponseType.ROW_DESCRIPTION_AND_ROW_DATA);
+                        } else {
+                            session.addLastQueryResponseToIgnore(QueryResponseType.NO_DATA);
+                        }
+                    }
+                }
+            } else if (result.isResponse()) {
+                // Forget the query and reply immediately
+                transferMode = TransferMode.FORGET;
+                response = result.response();
+                newQueries = null;
+            } else if (result.isError()) {
+                transferMode = TransferMode.ERROR;
+                errorDetails = new LinkedHashMap<>();
+                errorDetails.put((byte) 'S', CString.valueOf("FATAL"));
+                errorDetails.put((byte) 'M', result.error());
+                if (session.getTransactionStatus() == (byte)'T') {
+                    session.setTransactionErrorDetails(errorDetails);
+                }
+                session.resetCurrentCommand();
+                newQueries = null;
+            }
         } else if (transferMode == TransferMode.FORGET) {
             // Buffer extended query
             errorDetails = bufferQuery(ctx, bindStep);
             if (errorDetails != null) {
                 transferMode = TransferMode.ERROR;
+            } else {
+                response = new CommandResults();
+                response.setBindCompleteRequired(true);
             }
             newQueries = null;
         } else if (transferMode == TransferMode.ERROR) {
@@ -944,18 +1244,18 @@ public class PgsqlEventProcessor implements EventProcessor {
             session.resetCurrentCommand();
             newQueries = null;
         }
-        QueriesTransferMode<BindStep, Void> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
+        QueriesTransferMode<BindStep, CommandResults> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
         LOGGER.debug("Bind step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
         return mode;
     }
 
     @Override
-    public QueriesTransferMode<DescribeStep, List<?>[]> processDescribeStep(ChannelHandlerContext ctx, DescribeStep describeStep) throws IOException {
+    public QueriesTransferMode<DescribeStep, CommandResults> processDescribeStep(ChannelHandlerContext ctx, DescribeStep describeStep) throws IOException {
         LOGGER.debug("Describe step: {}", describeStep);
         SQLSession session = getSession(ctx);
         TransferMode transferMode = session.getTransferMode();
         List<Query> newQueries = Collections.singletonList(describeStep);
-        List<?>[] response = null;
+        CommandResults response = null;
         Map<Byte, CString> errorDetails = null;
         if (transferMode == TransferMode.FORWARD) {
             if (describeStep.getCode() == 'S') {
@@ -963,28 +1263,19 @@ public class PgsqlEventProcessor implements EventProcessor {
                 session.addDescribeStep(describeStep);
                 transferMode = TransferMode.FORGET;
                 newQueries = null;
-                ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(describeStep.getName());
-                session.addLastQueryResponseToIgnore(QueryResponseType.PARAMETER_DESCRIPTION);
-                if (parseStepStatus.getOperation() == Operation.READ) {
-                    session.addLastQueryResponseToIgnore(QueryResponseType.ROW_DESCRIPTION_AND_ROW_DATA);
+            } else if (describeStep.getCode() == 'P') {
+                ExtendedQueryStatus<BindStep> bindStepStatus = session.getBindStepStatus(describeStep.getName());
+                BindStep bindStep = bindStepStatus.getQuery();
+                ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(bindStep.getPreparedStatement());
+                ParseStep parseStep = parseStepStatus.getQuery();
+                if (parseStep.isMetadata()) {
+                    transferMode = TransferMode.FORGET;
+                    newQueries = null;
                 } else {
-                    session.addLastQueryResponseToIgnore(QueryResponseType.NO_DATA);
+                    // nothing to do, just forward query
                 }
-            } else {
-                // nothing to do, just forward query
             }
         } else if (transferMode == TransferMode.FORGET) {
-            // TODO parse SQL statement to extract selected columns (to row description)
-            List<PgsqlRowDescriptionMessage.Field> rowDescription = null;       // null means no data
-            List<Long> parameterTypes = null;
-            if (describeStep.getCode() == 'S') {
-                ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(describeStep.getName());
-                // TODO parse SQL statement to extract exact list of parameter
-                parameterTypes = new ArrayList<Long>(parseStepStatus.getQuery().getParameterTypes());
-                response = new List<?>[] { parameterTypes, rowDescription };
-            } else {
-                response = new List<?>[] { rowDescription };
-            }
             // Buffer extended query
             errorDetails = bufferQuery(ctx, describeStep);
             if (errorDetails != null) {
@@ -996,36 +1287,101 @@ public class PgsqlEventProcessor implements EventProcessor {
             session.resetCurrentCommand();
             newQueries = null;
         }
-        QueriesTransferMode<DescribeStep, List<?>[]> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
+        if (transferMode == TransferMode.FORGET) {
+            // Build response
+            response = new CommandResults();
+            ParseStep parseStep = null;
+            if (describeStep.getCode() == 'S') {
+                ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(describeStep.getName());
+                parseStep = parseStepStatus.getQuery();
+                // TODO parse SQL statement to extract exact list of parameter
+                List<Long> parameterTypes = new ArrayList<Long>(parseStep.getParameterTypes());
+                response.setParameterDescription(parameterTypes);
+            } else if (describeStep.getCode() == 'P') {
+                ExtendedQueryStatus<BindStep> bindStepStatus = session.getBindStepStatus(describeStep.getName());
+                BindStep bindStep = bindStepStatus.getQuery();
+                ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(bindStep.getPreparedStatement());
+                parseStep = parseStepStatus.getQuery();
+            }
+            // Build row description
+            List<PgsqlRowDescriptionMessage.Field> rowDescription;
+            if (parseStep != null && parseStep.getColumns() != null) {
+                if (parseStep.isMetadata()) {
+                    rowDescription = Stream.of("column_name", "protected_column_name").map(CString::valueOf).map(PgsqlRowDescriptionMessage.Field::new).peek(f -> f.setTypeOID(705)).peek(f -> f.setTypeSize((short)-2)).peek(f -> f.setTypeModifier(-1)).collect(Collectors.toList());
+                } else {
+                    rowDescription = parseStep.getColumns().stream().map(PgsqlRowDescriptionMessage.Field::new).collect(Collectors.toList());
+                }
+            } else {
+                // TODO parse SQL statement to extract selected columns (to row description)
+                rowDescription = Collections.emptyList();   // empty list means no data
+            }
+            response.setRowDescription(rowDescription);
+        }
+        QueriesTransferMode<DescribeStep, CommandResults> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
         LOGGER.debug("Describe step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
         return mode;
     }
 
     @Override
-    public QueriesTransferMode<ExecuteStep, CString> processExecuteStep(ChannelHandlerContext ctx, ExecuteStep executeStep) throws IOException {
+    public QueriesTransferMode<ExecuteStep, CommandResults> processExecuteStep(ChannelHandlerContext ctx, ExecuteStep executeStep) throws IOException {
         LOGGER.debug("Execute step: {}", executeStep);
         SQLSession session = getSession(ctx);
         TransferMode transferMode = session.getTransferMode();
         List<Query> newQueries = Collections.singletonList(executeStep);
-        CString response = null;
+        CommandResults response = null;
         Map<Byte, CString> errorDetails = null;
         if (transferMode == TransferMode.FORWARD) {
-            // nothing to do, just forward query
+            ExtendedQueryStatus<BindStep> bindStepStatus = session.getBindStepStatus(executeStep.getPortal());
+            BindStep bindStep = bindStepStatus.getQuery();
+            ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(bindStep.getPreparedStatement());
+            ParseStep parseStep = parseStepStatus.getQuery();
+            if (parseStep.isMetadata()) {
+                transferMode = TransferMode.FORGET;
+                // Process metadata operation
+                MetadataOperation metadataOperation = new MetadataOperation();
+                metadataOperation.setDataIds(parseStep.getColumns());
+                metadataOperation = newMetaDataOperation(ctx, metadataOperation);
+                // Forget SQL statement, reply directly to the frontend
+                response = new CommandResults();
+                if (metadataOperation.isModified()) {
+                    Map<CString, List<CString>> metadata = metadataOperation.getMetadata();
+                    // Verify all data ids refer to the same dataset (prefix is the same for all data ids)
+                    Set<CString> prefixes = metadata.keySet().stream().map(id -> id.substring(0, id.lastIndexOf('/'))).collect(Collectors.toSet());
+                    boolean multipleDatasets = prefixes.size() > 1 || prefixes.stream().findFirst().get().equals("*");
+                    if (!multipleDatasets) {
+                        // Prefix is the same for all data ids -> remove prefix
+                        metadata = metadata.entrySet().stream().collect(Collectors.toMap(e -> e.getKey().substring(e.getKey().lastIndexOf('/') + 1), Map.Entry::getValue));
+                    }
+                    // Build rows
+                    List<List<ByteBuf>> rows = buildRows(metadata, executeStep.getMaxRows());
+                    response.setRows(rows);
+                    // Build complete tag
+                    response.setCompleteTag(CString.valueOf("SELECT " + rows.size()));
+                } else {
+                    // Build complete tag
+                    response.setCompleteTag(CString.valueOf("SELECT 0"));
+                }
+                newQueries = null;
+            } else {
+                // nothing to do, just forward query
+            }
         } else if (transferMode == TransferMode.FORGET) {
-            ExtendedQueryStatus<BindStep> bindStepStatus = session.getBindStepStatus(executeStep.getPortal()); 
+            ExtendedQueryStatus<BindStep> bindStepStatus = session.getBindStepStatus(executeStep.getPortal());
             Operation operation = bindStepStatus.getOperation();
             if (operation != null) {
+                response = new CommandResults();
                 switch (operation) {
                 case READ:
+                    response.setCompleteTag(CString.valueOf("SELECT 0"));
                     break;
                 case CREATE:
-                    response = CString.valueOf("INSERT 0 1");
+                    response.setCompleteTag(CString.valueOf("INSERT 0 1"));
                     break;
                 case UPDATE:
-                    response = CString.valueOf("UPDATE 0 1");
+                    response.setCompleteTag(CString.valueOf("UPDATE 0 1"));
                     break;
                 case DELETE:
-                    response = CString.valueOf("DELETE 0 1");
+                    response.setCompleteTag(CString.valueOf("DELETE 0 1"));
                     break;
                 default:
                     break;
@@ -1042,21 +1398,46 @@ public class PgsqlEventProcessor implements EventProcessor {
             session.resetCurrentCommand();
             newQueries = null;
         }
-        QueriesTransferMode<ExecuteStep, CString> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
+        QueriesTransferMode<ExecuteStep, CommandResults> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
         LOGGER.debug("Execute step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
         return mode;
     }
 
+    private List<List<ByteBuf>> buildRows(Map<CString, List<CString>> metadata, int maxSize) {
+        // Build rows (replacing / by .)
+        List<List<ByteBuf>> rows = metadata.entrySet().stream()
+                .flatMap(e -> {
+                    CString key = e.getKey().replace('/', '.');
+                    ByteBuf clearColumn = key.getByteBuf(key.length());
+                    return e.getValue().stream()
+                            .map(v -> {
+                                CString value = v != null ? v.replace('/', '.') : null;
+                                ByteBuf protectedColumn = value != null ? value.getByteBuf(value.length()) : null;
+                                return Stream.of(clearColumn, protectedColumn).collect(Collectors.toList());
+                            });
+                })
+                .limit(maxSize < 0 ? Integer.MAX_VALUE : maxSize).collect(Collectors.toList());
+        return rows;
+    }
+
     @Override
-    public QueriesTransferMode<CloseStep, Void> processCloseStep(ChannelHandlerContext ctx, CloseStep closeStep) throws IOException {
+    public QueriesTransferMode<CloseStep, CommandResults> processCloseStep(ChannelHandlerContext ctx, CloseStep closeStep) throws IOException {
         LOGGER.debug("Close step: {}", closeStep);
         SQLSession session = getSession(ctx);
         TransferMode transferMode = session.getTransferMode();
         List<Query> newQueries = Collections.singletonList(closeStep);
-        Void response = null;
+        CommandResults response = null;
         Map<Byte, CString> errorDetails = null;
         if (transferMode == TransferMode.FORWARD) {
             if (closeStep.getCode() == 'S') {
+                ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(closeStep.getName());
+                ParseStep parseStep = parseStepStatus.getQuery();
+                if (parseStep.isMetadata()) {
+                    transferMode = TransferMode.FORGET;
+                    response = new CommandResults();
+                    response.setCloseCompleteRequired(true);
+                    newQueries = null;
+                }
                 session.removeParseStep(closeStep.getName());
             } else {
                 session.removeBindStep(closeStep.getName());
@@ -1066,6 +1447,9 @@ public class PgsqlEventProcessor implements EventProcessor {
             errorDetails = bufferQuery(ctx, closeStep);
             if (errorDetails != null) {
                 transferMode = TransferMode.ERROR;
+            } else {
+                response = new CommandResults();
+                response.setCloseCompleteRequired(true);
             }
             newQueries = null;
         } else if (transferMode == TransferMode.ERROR) {
@@ -1073,7 +1457,7 @@ public class PgsqlEventProcessor implements EventProcessor {
             session.resetCurrentCommand();
             newQueries = null;
         }
-        QueriesTransferMode<CloseStep, Void> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
+        QueriesTransferMode<CloseStep, CommandResults> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
         LOGGER.debug("Close step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
         return mode;
     }
@@ -1130,24 +1514,37 @@ public class PgsqlEventProcessor implements EventProcessor {
         return mode;
     }
 
-    private List<Query> buildNewQueries(ChannelHandlerContext ctx, ExtendedQueryStatus<ParseStep> parseStepStatus, ExtendedQueryStatus<BindStep> bindStepStatus) throws IOException {
+    private Result<List<Query>, CommandResults, CString> buildNewQueries(ChannelHandlerContext ctx, ExtendedQueryStatus<ParseStep> parseStepStatus, ExtendedQueryStatus<BindStep> bindStepStatus) throws IOException {
+        List<ExtendedQuery> newExtendedQuery = null;
+        if (parseStepStatus.isToProcess()) {
+            Result<List<ExtendedQuery>, CommandResults, CString> result = processExtendedQuery(ctx, parseStepStatus, bindStepStatus);
+            if (result.isQuery()) {
+                newExtendedQuery = result.query();
+            } else if (result.isResponse()) {
+                return Result.response(result.response());
+            } else if (result.isError()) {
+                return Result.error(result.error());
+            }
+        } else {
+            newExtendedQuery = Arrays.asList(parseStepStatus.getQuery(), bindStepStatus.getQuery());
+        }
         List<Query> newQueries = processBufferedQueries(ctx);
-        List<ExtendedQuery> newExtendedQuery = parseStepStatus.isToProcess() ? processExtendedQuery(ctx, parseStepStatus, bindStepStatus) : Arrays.asList(parseStepStatus.getQuery(), bindStepStatus.getQuery());
         newExtendedQuery.forEach(Query::retain);
         if (newQueries.isEmpty()) {
             newQueries = newExtendedQuery.stream().map(q -> (Query)q).collect(Collectors.toList());
         } else {
             newQueries.addAll(newExtendedQuery);
         }
-        return newQueries;
+        return Result.query(newQueries);
     }
 
-    private List<ExtendedQuery> processExtendedQuery(ChannelHandlerContext ctx, ExtendedQueryStatus<ParseStep> parseStepStatus, ExtendedQueryStatus<BindStep> bindStepStatus) {
+    private Result<List<ExtendedQuery>, CommandResults, CString> processExtendedQuery(ChannelHandlerContext ctx, ExtendedQueryStatus<ParseStep> parseStepStatus, ExtendedQueryStatus<BindStep> bindStepStatus) {
         ParseStep parseStep = parseStepStatus.getQuery();
         BindStep bindStep = bindStepStatus.getQuery();
         // Parse SQL statement
         Statement stmt = parseSQL(ctx, parseStep.getSQL());
         SQLSession session = getSession(ctx);
+        Result<List<ExtendedQuery>, CommandResults, CString> result = null;
         if (stmt != null) {
             // Build bind parameter (type+format+value)
             List<ParameterValue> parameterValues = bindStep.getParameterValues().stream()
@@ -1169,19 +1566,38 @@ public class PgsqlEventProcessor implements EventProcessor {
                     parameterValue.setFormat(format);
                 }
             }
-            // Extract data operation
-            DataOperation dataOperation = null;
-            if (stmt instanceof Insert) {
-                dataOperation = extractInsertOperation(ctx, (Insert)stmt, parameterValues, null);
-            } else if (stmt instanceof Select) {
-                dataOperation = extractSelectOperation(ctx, (Select)stmt, parameterValues, null);
-            } else if (stmt instanceof Update) {
-                // TODO Update
-            } else if (stmt instanceof Delete) {
-                // TODO Delete
+            // Extract module operation
+            ModuleOperation moduleOperation = null;
+            try {
+                if (stmt instanceof Insert) {
+                    moduleOperation = extractInsertOperation(ctx, (Insert)stmt, parameterValues, null);
+                } else if (stmt instanceof Select) {
+                    moduleOperation = extractSelectOperation(ctx, (Select)stmt, parameterValues);
+                } else if (stmt instanceof Update) {
+                    // TODO Update
+                } else if (stmt instanceof Delete) {
+                    // TODO Delete
+                }
+            } catch (ParseException e) {
+                return Result.error(CString.valueOf(e.getMessage()));
             }
-            // Process data operation
-            if (dataOperation != null) {
+            if (moduleOperation instanceof MetadataOperation) {
+                // Process metadata operation
+                MetadataOperation metadataOperation = (MetadataOperation) moduleOperation;
+                // Save column names (row description)
+                List<CString> columns = metadataOperation.getDataIds();
+                parseStep.setColumns(columns);
+                parseStep.setMetadata(true);
+                // Forget SQL statement, reply directly to the frontend
+                CommandResults commandResults = new CommandResults();
+                commandResults.setBindCompleteRequired(true);
+                result = Result.response(commandResults);
+            } else if (moduleOperation instanceof DataOperation) {
+                DataOperation dataOperation = (DataOperation) moduleOperation;
+                // Save column names (row description)
+                List<CString> columns = dataOperation.getDataIds().stream().map(id -> id.substring(id.lastIndexOf('/') + 1)).collect(Collectors.toList());
+                parseStep.setColumns(columns);
+                // Process data operation
                 List<DataOperation> newDataOperations = getProtocolService(ctx).newDataOperation(dataOperation);
                 dataOperation = newDataOperations.get(0);
                 if (dataOperation.isModified()) {
@@ -1193,7 +1609,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                     }
                     String newSQL = stmt.toString();
                     newSQL = StringUtilities.addIrrelevantCharacters(newSQL, parseStep.getSQL(), " \t\r\n;");
-                    parseStep = new ParseStep(parseStep.getName(), CString.valueOf(newSQL), parseStep.getParameterTypes());
+                    parseStep = new ParseStep(parseStep.getName(), CString.valueOf(newSQL), parseStep.isMetadata(), parseStep.getColumns(), parseStep.getParameterTypes());
                     boolean allMatch = parameterValues.stream()
                             .map(ParameterValue::getValue).collect(Collectors.toList()) // build a list of parameter ByteBuf values
                             .equals(bindStep.getParameterValues());                     // test if parameter ByteBuf values has been changed
@@ -1210,21 +1626,24 @@ public class PgsqlEventProcessor implements EventProcessor {
                 }
             }
         }
-        List<ExtendedQuery> newQueries = new ArrayList<ExtendedQuery>();
-        if (!parseStepStatus.isProcessed()) {
-            newQueries.add(parseStep);
-            parseStepStatus.setProcessed(true);
+        if (result == null) {
+            List<ExtendedQuery> newQueries = new ArrayList<ExtendedQuery>();
+            if (!parseStepStatus.isProcessed()) {
+                newQueries.add(parseStep);
+                parseStepStatus.setProcessed(true);
+            }
+            DescribeStep describeStep = session.getDescribeStep((byte) 'S', parseStep.getName());
+            if (describeStep != null) {
+                newQueries.add(describeStep);
+                session.removeDescribeStep(describeStep.getCode(), describeStep.getName());
+            }
+            if (!bindStepStatus.isProcessed()) {
+                newQueries.add(bindStep);
+                bindStepStatus.setProcessed(true);
+            }
+            result = Result.query(newQueries);
         }
-        DescribeStep describeStep = session.getDescribeStep((byte) 'S', parseStep.getName());
-        if (describeStep != null) {
-            newQueries.add(describeStep);
-            session.removeDescribeStep(describeStep.getCode(), describeStep.getName());
-        }
-        if (!bindStepStatus.isProcessed()) {
-            newQueries.add(bindStep);
-            bindStepStatus.setProcessed(true);
-        }
-        return newQueries;
+        return result;
     }
 
     private Statement parseSQL(ChannelHandlerContext ctx, CString sql) {
@@ -1258,7 +1677,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (query instanceof SimpleQuery) {
             if (session.getTransactionStatus() == (byte)'E') {
                 if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
-                    // command ignored, don't expect to receive command complete response 
+                    // command ignored, don't expect to receive command complete response
                     // don't notify frontend of error
                 } else {
                     // expect to receive error response
@@ -1279,7 +1698,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                     errorDetails = session.getRetainedTransactionErrorDetails();
                 } else if (extendedQuery instanceof BindStep) {
                     if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
-                        // command ignored, don't expect to receive bind complete response 
+                        // command ignored, don't expect to receive bind complete response
                         // don't notify frontend of error
                     } else {
                         // expect to receive error response
@@ -1289,7 +1708,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                     }
                 } else if (extendedQuery instanceof DescribeStep) {
                     if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
-                        // command ignored, don't expect to receive parameter description, row description or no data responses 
+                        // command ignored, don't expect to receive parameter description, row description or no data responses
                         // don't notify frontend of error
                     } else {
                         // expect to receive error response
@@ -1299,7 +1718,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                     }
                 } else if (extendedQuery instanceof ExecuteStep) {
                     if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
-                        // command ignored, don't expect to receive command complete response 
+                        // command ignored, don't expect to receive command complete response
                         // don't notify frontend of error
                     } else {
                         // expect to receive error response
@@ -1309,7 +1728,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                     }
                 } else if (extendedQuery instanceof CloseStep) {
                     if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
-                        // command ignored, don't expect to receive close complete response 
+                        // command ignored, don't expect to receive close complete response
                         // don't notify frontend of error
                     } else {
                         // expect to receive error response
@@ -1322,7 +1741,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                     session.addLastQueryResponseToIgnore(QueryResponseType.READY_FOR_QUERY);
                     // don't notify frontend of error
                 } else if (extendedQuery instanceof FlushStep) {
-                    // don't expect to receive any response 
+                    // don't expect to receive any response
                     if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
                         // don't notify frontend of error
                     } else {
@@ -1339,7 +1758,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                     if (((DescribeStep) query).getCode() == 'S') {
                         session.addLastQueryResponseToIgnore(QueryResponseType.PARAMETER_DESCRIPTION);
                     }
-                    if (session.getCurrentOperation() == Operation.READ) {
+                    if (session.getCurrentCommandOperation() == Operation.READ) {
                         session.addLastQueryResponseToIgnore(QueryResponseType.ROW_DESCRIPTION_AND_ROW_DATA);
                     } else {
                         session.addLastQueryResponseToIgnore(QueryResponseType.NO_DATA);
@@ -1351,7 +1770,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                 } else if (extendedQuery instanceof SynchronizeStep) {
                     session.addLastQueryResponseToIgnore(QueryResponseType.READY_FOR_QUERY);
                 } else if (extendedQuery instanceof FlushStep) {
-                    // don't expect to receive any response 
+                    // don't expect to receive any response
                 }
             }
         }
@@ -1427,7 +1846,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY) {
             transferMode = TransferMode.FORWARD;
             newFields = fields;
-            if (session.getCurrentOperation() == Operation.READ) {
+            if (session.getCurrentCommandOperation() == Operation.READ) {
                 session.setRowDescription(fields);
                 // Modify promise in case query don't explicitly specify columns (e.g. '*')
                 if (session.getPromise() instanceof DefaultPromise && (session.getPromise().getAttributeNames() == null || session.getPromise().getAttributeNames().length == 0)) {
@@ -1455,7 +1874,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY) {
             transferMode = TransferMode.FORWARD;
             newValues = values;
-            if (session.getCurrentOperation() == Operation.READ) {
+            if (session.getCurrentCommandOperation() == Operation.READ) {
                 newValues = processDataResult(ctx, values);
             }
         } else if (nextQueryResponseToIgnore == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
@@ -1556,7 +1975,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY) {
             transferMode = TransferMode.FORWARD;
             newTag = tag;
-            session.resetCurrentOperation();
+            session.resetCurrentCommand();
         } else if (nextQueryResponseToIgnore == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
             transferMode = TransferMode.FORGET;
             session.removeFirstQueryResponseToIgnore();
@@ -1576,7 +1995,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
         if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY) {
             transferMode = TransferMode.FORWARD;
-            session.resetCurrentOperation();
+            session.resetCurrentCommand();
         } else if (nextQueryResponseToIgnore == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
             transferMode = TransferMode.FORGET;
             session.removeFirstQueryResponseToIgnore();
@@ -1624,7 +2043,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (session.getQueryResponsesToIgnore().isEmpty()) {
             transferMode = TransferMode.FORWARD;
             newFields = fields;
-            session.resetCurrentOperation();
+            session.resetCurrentCommand();
         } else {
             transferMode = TransferMode.FORGET;
         }

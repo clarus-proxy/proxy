@@ -13,7 +13,7 @@ public class NoopEventProcessor implements EventProcessor {
 
     @Override
     public CString processUserAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
-		return null;
+        return null;
     }
 
     @Override
@@ -27,27 +27,27 @@ public class NoopEventProcessor implements EventProcessor {
     }
     
     @Override
-    public QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException {
+    public QueriesTransferMode<SQLStatement, CommandResults> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException {
         return new QueriesTransferMode<>(sqlStatement, TransferMode.FORWARD);
     }
 
     @Override
-    public QueriesTransferMode<BindStep, Void> processBindStep(ChannelHandlerContext ctx, BindStep bindStep) throws IOException {
+    public QueriesTransferMode<BindStep, CommandResults> processBindStep(ChannelHandlerContext ctx, BindStep bindStep) throws IOException {
         return new QueriesTransferMode<>(bindStep, TransferMode.FORWARD);
     }
 
     @Override
-    public QueriesTransferMode<DescribeStep, List<?>[]> processDescribeStep(ChannelHandlerContext ctx, DescribeStep describeStep) throws IOException {
+    public QueriesTransferMode<DescribeStep, CommandResults> processDescribeStep(ChannelHandlerContext ctx, DescribeStep describeStep) throws IOException {
         return new QueriesTransferMode<>(describeStep, TransferMode.FORWARD);
     }
 
     @Override
-    public QueriesTransferMode<ExecuteStep, CString> processExecuteStep(ChannelHandlerContext ctx, ExecuteStep executeStep) throws IOException {
+    public QueriesTransferMode<ExecuteStep, CommandResults> processExecuteStep(ChannelHandlerContext ctx, ExecuteStep executeStep) throws IOException {
         return new QueriesTransferMode<>(executeStep, TransferMode.FORWARD);
     }
 
     @Override
-    public QueriesTransferMode<CloseStep, Void> processCloseStep(ChannelHandlerContext ctx, CloseStep closeStep) throws IOException {
+    public QueriesTransferMode<CloseStep, CommandResults> processCloseStep(ChannelHandlerContext ctx, CloseStep closeStep) throws IOException {
         return new QueriesTransferMode<>(closeStep, TransferMode.FORWARD);
     }
 

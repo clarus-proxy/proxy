@@ -114,10 +114,12 @@ public class Proxy {
         if (nbParserThreads != null) {
             protocolConfiguration.setNbParserThreads(nbParserThreads);
         }
+        // Adapt data identifiers
+        String[] dataIds = protocol.adaptDataIds(securityPolicy.getDataIds());
         // Initialize the protection module
         if (protectionModule != null) {
             LOGGER.trace("Initializing the protection module...");
-            protectionModule.initialize(securityPolicy.getDocument(), securityPolicy.getDataIds());
+            protectionModule.initialize(securityPolicy.getDocument(), dataIds);
             LOGGER.debug("Protection module initialized");
         }
         // Register the protocol service
@@ -215,7 +217,7 @@ public class Proxy {
                         nbSessionThreads = Runtime.getRuntime().availableProcessors();
                     } else {
                         nbSessionThreads = Integer.parseInt(args[i]);
-                    }                        
+                    }
                     if (nbSessionThreads <= 0) {
                         System.out.println("Number of session threads must be a positive number or the special value 'cores' (number of cores)");
                         usage();
