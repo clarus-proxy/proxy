@@ -80,10 +80,10 @@ public class PgsqlEventProcessor implements EventProcessor {
 
     public static final String USER_KEY = "user";
     public static final String DATABASE_KEY = "database";
-    
+
     private final static int AUTHENTICATION_CLEARTEXT_PASSWORD = 3;
     private final static int AUTHENTICATION_MD5_PASSWORD = 5;
-    
+
     public static final String FUNCTION_METADATA = "CLARUS_METADATA";
     public static final String FUNCTION_PROTECTED = "CLARUS_PROTECTED";
 
@@ -102,12 +102,12 @@ public class PgsqlEventProcessor implements EventProcessor {
     public int processAuthenticationParameters(ChannelHandlerContext ctx, int authenticationType, ByteBuf authenticationParam) throws IOException {
         int newAuthenticationType = authenticationType;
         SQLSession sqlSession = getSession(ctx);
-        
+
         // Add authentication parameters to session.
         // Add authentication type to session.
         sqlSession.setAuthenticationParam(authenticationParam);
         sqlSession.setAuthenticationType(authenticationType);
-        
+
         // Case where authentication type is MD5, modify type to Cleartext.
         if (AUTHENTICATION_MD5_PASSWORD == authenticationType) {
             newAuthenticationType = AUTHENTICATION_CLEARTEXT_PASSWORD;
@@ -120,7 +120,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         SQLSession sqlSession = getSession(ctx);
         CString userName = sqlSession.getUser();
         CString password = passwordClear;
-        
+
         // Handle case where MD5 password is needed.
         if (AUTHENTICATION_MD5_PASSWORD == sqlSession.getAuthenticationType()) {
             ByteBuf authenticationParam = sqlSession.getAuthenticationParam();
@@ -128,20 +128,20 @@ public class PgsqlEventProcessor implements EventProcessor {
                 // Retrieve salt from authentication parameters.
                 byte[] salt = new byte[authenticationParam.readableBytes()];
                 authenticationParam.readBytes(salt);
-                
+
                 // Create MD5 digester.
                 MessageDigest digest = MessageDigest.getInstance("MD5");
-                
-                // Generate MD5 hash for password + user name. 
+
+                // Generate MD5 hash for password + user name.
                 digest.update((password.toString() + userName.toString()).getBytes());
                 String pwdUsrEnc = DatatypeConverter.printHexBinary(digest.digest()).toLowerCase();
-                
+
                 // Generate MD5 hash for hashed password + user name & salt.
                 // Finally, add "md5" at the newly hashed password.
                 digest.update(pwdUsrEnc.getBytes());
                 digest.update(salt);
                 String passwordEncrypted = "md5" + DatatypeConverter.printHexBinary(digest.digest()).toLowerCase();
-                
+
                 // MD5 password is equivalent to SQL concat('md5', md5(concat(md5(concat(password, username)), random-salt)))
                 password = CString.valueOf(passwordEncrypted);
             }
@@ -149,7 +149,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         CString[] userCredentials = getProtocolService(ctx).userAuthentication(userName, password);
         return userCredentials[1];
     }
-    
+
     @Override
     public QueriesTransferMode<SQLStatement, CommandResults> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException {
         LOGGER.debug("SQL statement: {}", sqlStatement);
@@ -825,24 +825,8 @@ public class PgsqlEventProcessor implements EventProcessor {
             dataOperation = new DataOperation();
             dataOperation.setOperation(Operation.CREATE);
             // Extract dataset id
-            StringBuilder sb = new StringBuilder();
-            if (stmt.getTable().getDatabase() != null) {
-                String databaseName = StringUtilities.unquote(stmt.getTable().getDatabase().getDatabaseName());
-                if (databaseName != null && !databaseName.isEmpty()) {
-                    sb.append(databaseName).append('/');
-                }
-            }
-            SQLSession session = getSession(ctx);
-            if (sb.length() == 0 && session.getDatabaseName() != null) {
-                sb.append(session.getDatabaseName()).append('/');
-            }
-            String schemaName = StringUtilities.unquote(stmt.getTable().getSchemaName());
-            if (schemaName != null) {
-                sb.append(schemaName).append('.');
-            }
-            String tableName = StringUtilities.unquote(stmt.getTable().getName());
-            sb.append(tableName).append('/');
-            String datasetId = sb.toString();
+            String schemaId = getSchemaId(ctx, stmt.getTable());
+            String datasetId = getDatasetId(ctx, stmt.getTable(), schemaId);
             // Extract data ids
             List<CString> dataIds;
             if (stmt.getColumns() == null) {
@@ -935,7 +919,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<String> datasetIds = new ArrayList<>(capacity);
         if (select.getFromItem() instanceof Table) {
             Table table = (Table) select.getFromItem();
-            String schemaId = getShemaId(ctx, table);
+            String schemaId = getSchemaId(ctx, table);
             schemaIds.add(schemaId);
             String datasetId = getDatasetId(ctx, table, schemaId);
             datasetIds.add(datasetId);
@@ -943,7 +927,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                 for (Join join : select.getJoins()) {
                     if (join.getRightItem() instanceof Table) {
                         table = (Table) join.getRightItem();
-                        schemaId = getShemaId(ctx, table);
+                        schemaId = getSchemaId(ctx, table);
                         schemaIds.add(schemaId);
                         datasetId = getDatasetId(ctx, table, schemaId);
                         datasetIds.add(datasetId);
@@ -951,8 +935,12 @@ public class PgsqlEventProcessor implements EventProcessor {
                 }
             }
         } else {
-            schemaIds.add("");
-            datasetIds.add("");
+            String schemaId = getSchemaId(ctx, null);
+            schemaIds.add(schemaId);
+            String datasetId = getDatasetId(ctx, null, schemaId);
+            datasetIds.add(datasetId);
+//            schemaIds.add("");
+//            datasetIds.add("");
         }
         // Extract data ids
         List<CString> dataIds = new ArrayList<>();
@@ -1027,30 +1015,44 @@ public class PgsqlEventProcessor implements EventProcessor {
         return moduleOperation;
     }
 
-    private String getShemaId(ChannelHandlerContext ctx, Table table) {
+    private String getSchemaId(ChannelHandlerContext ctx, Table table) {
         StringBuilder sb = new StringBuilder();
-        if (table.getDatabase() != null) {
+        if (table != null && table.getDatabase() != null) {
             String databaseName = StringUtilities.unquote(table.getDatabase().getDatabaseName());
             if (databaseName != null && !databaseName.isEmpty()) {
-                sb.append(databaseName).append('/');
+                sb.append(databaseName);
             }
         }
-        SQLSession session = getSession(ctx);
-        if (sb.length() == 0 && session.getDatabaseName() != null) {
-            sb.append(session.getDatabaseName()).append('/');
+        if (sb.length() == 0) {
+            SQLSession session = getSession(ctx);
+            if (session.getDatabaseName() != null) {
+                sb.append(session.getDatabaseName());
+            }
         }
-        String schemaName = StringUtilities.unquote(table.getSchemaName());
-        if (schemaName != null) {
-            sb.append(schemaName).append('.');
+        if (sb.length() == 0) {
+            sb.append('*');
+        }
+        sb.append('/');
+        if (table != null) {
+            String schemaName = StringUtilities.unquote(table.getSchemaName());
+            if (schemaName != null) {
+                sb.append(schemaName).append('.');
+            }
         }
         String schemaId = sb.toString();
         return schemaId;
     }
 
     private String getDatasetId(ChannelHandlerContext ctx, Table table, String schemaId) {
-        StringBuilder sb = new StringBuilder(schemaId);
-        String tableName = StringUtilities.unquote(table.getName());
-        sb.append(tableName).append('/');
+        StringBuilder sb = new StringBuilder();
+        if (table != null) {
+            String tableName = StringUtilities.unquote(table.getName());
+            sb.append(schemaId).append(tableName);
+        }
+        if (sb.length() == 0) {
+            sb.append(schemaId).append('*');
+        }
+        sb.append('/');
         String datasetId = sb.toString();
         return datasetId;
     }
