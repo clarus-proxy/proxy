@@ -23,6 +23,7 @@ public class PgsqlCommandCompleteMessageWriter implements PgsqlMessageWriter<Pgs
         Map<Integer, ByteBuf> offsets = Collections.singletonMap(headerSize, msg.getTag().getByteBuf());
         return offsets;
     }
+
     @Override
     public void writeContent(PgsqlCommandCompleteMessage msg, ByteBuf buffer) throws IOException {
         // Write tag

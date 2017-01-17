@@ -10,7 +10,11 @@ import io.netty.util.AttributeKey;
 
 public interface PgsqlConstants extends TCPConstants {
 
-    AttributeKey<Map<Class<? extends PgsqlMessage>, PgsqlMessageParser<? extends PgsqlMessage>>> MSG_PARSERS_KEY = AttributeKey.<Map<Class<? extends PgsqlMessage>, PgsqlMessageParser<? extends PgsqlMessage>>>newInstance("MSG_PARSERS_KEY");
+    AttributeKey<Map<Class<? extends PgsqlMessage>, PgsqlMessageParser<? extends PgsqlMessage>>> MSG_PARSERS_KEY = AttributeKey
+            .<Map<Class<? extends PgsqlMessage>, PgsqlMessageParser<? extends PgsqlMessage>>>newInstance(
+                    "MSG_PARSERS_KEY");
 
-    AttributeKey<Map<Class<? extends PgsqlMessage>, PgsqlMessageWriter<? extends PgsqlMessage>>> MSG_WRITERS_KEY = AttributeKey.<Map<Class<? extends PgsqlMessage>, PgsqlMessageWriter<? extends PgsqlMessage>>>newInstance("MSG_WRITERS_KEY");
+    AttributeKey<Map<Class<? extends PgsqlMessage>, PgsqlMessageWriter<? extends PgsqlMessage>>> MSG_WRITERS_KEY = AttributeKey
+            .<Map<Class<? extends PgsqlMessage>, PgsqlMessageWriter<? extends PgsqlMessage>>>newInstance(
+                    "MSG_WRITERS_KEY");
 }

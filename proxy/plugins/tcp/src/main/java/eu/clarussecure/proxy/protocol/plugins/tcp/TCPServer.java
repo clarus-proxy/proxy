@@ -35,12 +35,10 @@ public class TCPServer<CI extends ChannelInitializer<Channel>> implements Callab
         EventLoopGroup childGroup = new NioEventLoopGroup(configuration.getNbSessionThreads());
         try {
             ServerBootstrap bootstrap = new ServerBootstrap();
-            bootstrap.group(acceptorGroup, childGroup)
-                    .channel(NioServerSocketChannel.class)
+            bootstrap.group(acceptorGroup, childGroup).channel(NioServerSocketChannel.class)
                     .localAddress(new InetSocketAddress(configuration.getListenPort()))
                     .childAttr(TCPConstants.CONFIGURATION_KEY, configuration)
-                    .childHandler(buildClientSidePipelineInitializer())
-                    .childOption(ChannelOption.AUTO_READ, false);
+                    .childHandler(buildClientSidePipelineInitializer()).childOption(ChannelOption.AUTO_READ, false);
             ChannelFuture f = bootstrap.bind().sync();
             LOGGER.info("Server ready to serve requests at:" + f.channel().localAddress());
             f.channel().closeFuture().sync();
@@ -57,7 +55,8 @@ public class TCPServer<CI extends ChannelInitializer<Channel>> implements Callab
         } catch (InstantiationException | IllegalAccessException e) {
             // Should not occur
             LOGGER.error("Cannot create instance of class {}: ", channelInitializerType.getSimpleName(), e);
-            throw new IllegalArgumentException(String.format("Cannot create instance of class %s: ", channelInitializerType.getSimpleName(), e));
+            throw new IllegalArgumentException(
+                    String.format("Cannot create instance of class %s: ", channelInitializerType.getSimpleName(), e));
         }
     }
 }

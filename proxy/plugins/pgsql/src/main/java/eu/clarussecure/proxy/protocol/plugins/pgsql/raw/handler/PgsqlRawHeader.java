@@ -34,4 +34,3 @@ public interface PgsqlRawHeader extends PgsqlRawPart {
         }
     }
 }
-

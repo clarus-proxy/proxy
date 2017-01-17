@@ -49,11 +49,13 @@ public class DefaultMutablePgsqlRawMessage extends DefaultPgsqlRawMessage implem
 
     @Override
     public ByteBuf getContent() {
-        return getBytes().slice(contentIndex + getHeaderSize(), getBytes().writerIndex() - contentIndex - getHeaderSize());
+        return getBytes().slice(contentIndex + getHeaderSize(),
+                getBytes().writerIndex() - contentIndex - getHeaderSize());
     }
 
     @Override
     public String toString() {
-        return StringUtil.simpleClassName(this) + "(bytes: " + getBytes().capacity() + ", type: " + (char) getType() + ", length: " + getLength() + ", missing: " + missing + ')';
+        return StringUtil.simpleClassName(this) + "(bytes: " + getBytes().capacity() + ", type: " + (char) getType()
+                + ", length: " + getLength() + ", missing: " + missing + ')';
     }
 }

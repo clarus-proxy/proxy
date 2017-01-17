@@ -25,7 +25,7 @@ public class PgsqlPasswordMessageWriter implements PgsqlMessageWriter<PgsqlPassw
         Map<Integer, ByteBuf> offsets = Collections.singletonMap(offset, msg.getPassword().getByteBuf());
         return offsets;
     }
-    
+
     @Override
     public void writeContent(PgsqlPasswordMessage msg, ByteBuf buffer) throws IOException {
         // Write password

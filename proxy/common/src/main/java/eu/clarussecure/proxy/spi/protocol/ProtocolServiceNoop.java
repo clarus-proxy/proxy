@@ -22,6 +22,6 @@ public class ProtocolServiceNoop implements ProtocolService {
 
     @Override
     public CString[] userAuthentication(CString user, CString password) {
-        return new CString[] {user, password};
+        return new CString[] { user, password };
     }
 }

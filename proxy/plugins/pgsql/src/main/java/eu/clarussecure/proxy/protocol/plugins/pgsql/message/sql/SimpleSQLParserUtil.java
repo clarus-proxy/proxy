@@ -17,8 +17,10 @@ public class SimpleSQLParserUtil {
             start = nextTokenStartPosition(sql, end);
             end = nextTokenEndPosition(sql, start);
             CString nextStmtToken = sql.subSequence(start, end);
-            final int index = i ++;
-            SQLCommandType[] res = Arrays.stream(types).filter(type -> nextStmtToken.equalsIgnoreCase(getToken(type, index))).toArray(SQLCommandType[]::new);
+            final int index = i++;
+            SQLCommandType[] res = Arrays.stream(types)
+                    .filter(type -> nextStmtToken.equalsIgnoreCase(getToken(type, index)))
+                    .toArray(SQLCommandType[]::new);
             if (res.length == 0) {
                 res = Arrays.stream(types).filter(type -> getToken(type, index) == null).toArray(SQLCommandType[]::new);
             }
@@ -37,7 +39,7 @@ public class SimpleSQLParserUtil {
             if (!Character.isWhitespace(c)) {
                 break;
             }
-            i ++;
+            i++;
         }
         return i;
     }
@@ -49,7 +51,7 @@ public class SimpleSQLParserUtil {
             if (Character.isWhitespace(c) || c == ';' || c == '(') {
                 break;
             }
-            i ++;
+            i++;
         }
         return i;
     }

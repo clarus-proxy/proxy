@@ -12,13 +12,15 @@ public class PgsqlSession extends TCPSession {
     private static boolean EVENT_PROCESSING_ACTIVATED;
     static {
         String eventProcessing = System.getProperty("pgsql.event.processing", "true");
-        EVENT_PROCESSING_ACTIVATED = Boolean.TRUE.toString().equalsIgnoreCase(eventProcessing) || "1".equalsIgnoreCase(eventProcessing) || "yes".equalsIgnoreCase(eventProcessing) || "on".equalsIgnoreCase(eventProcessing);
+        EVENT_PROCESSING_ACTIVATED = Boolean.TRUE.toString().equalsIgnoreCase(eventProcessing)
+                || "1".equalsIgnoreCase(eventProcessing) || "yes".equalsIgnoreCase(eventProcessing)
+                || "on".equalsIgnoreCase(eventProcessing);
     }
 
     private SessionInitializer sessionInitializer;
 
     private SQLSession sqlSession;
-    
+
     private EventProcessor eventProcessor;
 
     public SessionInitializer getSessionInitializer() {

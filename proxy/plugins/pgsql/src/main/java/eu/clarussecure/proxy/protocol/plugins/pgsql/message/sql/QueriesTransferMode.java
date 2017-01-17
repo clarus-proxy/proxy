@@ -28,7 +28,8 @@ public class QueriesTransferMode<Q extends Query, R> {
         this(newQueries, transferMode, null, errorDetails);
     }
 
-    public QueriesTransferMode(List<Query> newQueries, TransferMode transferMode, R response, Map<Byte, CString> errorDetails) {
+    public QueriesTransferMode(List<Query> newQueries, TransferMode transferMode, R response,
+            Map<Byte, CString> errorDetails) {
         this.newQueries = newQueries;
         this.transferMode = transferMode;
         this.response = response;

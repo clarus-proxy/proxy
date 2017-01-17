@@ -10,9 +10,9 @@ public class PgsqlUtilities {
 
     public static CString getCString(ByteBuf buffer) {
         CString str = null;
-        
+
         if (buffer != null) {
-            int len = buffer.bytesBefore((byte)0);
+            int len = buffer.bytesBefore((byte) 0);
             if (len > -1) {
                 str = CString.valueOf(buffer.readSlice(len + 1), len);
             }
@@ -37,7 +37,7 @@ public class PgsqlUtilities {
         }
         StringBuilder builder = new StringBuilder();
         byteBuf.forEachByte(new ByteProcessor() {
-            
+
             @Override
             public boolean process(byte value) throws Exception {
                 builder.append(String.format("%02x", value & 0xff));

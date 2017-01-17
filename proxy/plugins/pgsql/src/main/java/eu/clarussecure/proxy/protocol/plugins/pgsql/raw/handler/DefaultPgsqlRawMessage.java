@@ -13,7 +13,7 @@ public class DefaultPgsqlRawMessage extends DefaultPgsqlRawPart<PgsqlRawMessage>
      * Creates a new instance with the specified chunk bytes.
      */
     public DefaultPgsqlRawMessage(ByteBuf bytes) {
-        this(bytes, (byte)0, 0);
+        this(bytes, (byte) 0, 0);
     }
 
     /**
@@ -23,7 +23,8 @@ public class DefaultPgsqlRawMessage extends DefaultPgsqlRawPart<PgsqlRawMessage>
         super(bytes);
         this.type = type;
         this.length = length;
-        this.content = bytes.slice(getBytes().readerIndex() + getHeaderSize(), getBytes().readableBytes() - getHeaderSize());
+        this.content = bytes.slice(getBytes().readerIndex() + getHeaderSize(),
+                getBytes().readableBytes() - getHeaderSize());
     }
 
     @Override
@@ -48,6 +49,7 @@ public class DefaultPgsqlRawMessage extends DefaultPgsqlRawPart<PgsqlRawMessage>
 
     @Override
     public String toString() {
-        return StringUtil.simpleClassName(this) + "(bytes: " + getBytes().capacity() + ", type: " + (char) type + ", length: " + length + ", content: " + getContent().readableBytes() + ')';
+        return StringUtil.simpleClassName(this) + "(bytes: " + getBytes().capacity() + ", type: " + (char) type
+                + ", length: " + length + ", content: " + getContent().readableBytes() + ')';
     }
 }

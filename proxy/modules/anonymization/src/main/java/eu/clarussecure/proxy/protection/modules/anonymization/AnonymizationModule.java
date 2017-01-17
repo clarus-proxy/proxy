@@ -39,7 +39,8 @@ public class AnonymizationModule implements ProtectionModule, DataOperation {
         anonymizeModule = new AnonymizeModule(document);
         this.dataIds = dataIds;
         if (this.dataIds != null) {
-            this.dataIdPatterns = Arrays.stream(dataIds).map(s -> s.replace("*/", "(\\w*/)*")).map(Pattern::compile).toArray(Pattern[]::new);
+            this.dataIdPatterns = Arrays.stream(dataIds).map(s -> s.replace("*/", "(\\w*/)*")).map(Pattern::compile)
+                    .toArray(Pattern[]::new);
         }
     }
 
@@ -68,7 +69,8 @@ public class AnonymizationModule implements ProtectionModule, DataOperation {
         //return anonymizeModule.get(promise, contents);
         boolean modify = false;
         if (dataIdPatterns != null && promise != null && promise.getAttributeNames() != null) {
-            modify = Arrays.stream(promise.getAttributeNames()).anyMatch(an -> Arrays.stream(dataIdPatterns).anyMatch(t -> t.matcher(an).matches()));
+            modify = Arrays.stream(promise.getAttributeNames())
+                    .anyMatch(an -> Arrays.stream(dataIdPatterns).anyMatch(t -> t.matcher(an).matches()));
         }
         if (modify) {
             return contents.clone();

@@ -75,13 +75,15 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                 }
                 // Send query to backend
                 PgsqlSimpleQueryMessage newMsg = new PgsqlSimpleQueryMessage(newSQLCommands);
-                PgsqlRawContent rawMsg = new DefaultLastPgsqlRawContent(encode(ctx, newMsg, allocate(ctx, newMsg, newSQLCommands.getByteBuf())));
+                PgsqlRawContent rawMsg = new DefaultLastPgsqlRawContent(
+                        encode(ctx, newMsg, allocate(ctx, newMsg, newSQLCommands.getByteBuf())));
                 ctx.fireChannelRead(rawMsg);
             }
         }
     }
 
-    private CString process(ChannelHandlerContext ctx, CString newSQLCommands, CString sqlCommand, boolean last) throws IOException {
+    private CString process(ChannelHandlerContext ctx, CString newSQLCommands, CString sqlCommand, boolean last)
+            throws IOException {
         CString newSQLCommand = process(ctx, sqlCommand, last);
 
         if (newSQLCommand != null) {
@@ -97,7 +99,8 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
     }
 
     @Override
-    protected PgsqlQueryRequestMessage process(ChannelHandlerContext ctx, PgsqlQueryRequestMessage msg) throws IOException {
+    protected PgsqlQueryRequestMessage process(ChannelHandlerContext ctx, PgsqlQueryRequestMessage msg)
+            throws IOException {
         switch (msg.getType()) {
         case PgsqlSimpleQueryMessage.TYPE: {
             return process((PgsqlSimpleQueryMessage) msg, "Simple query",
@@ -109,7 +112,7 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                     PgsqlMessageToQueryConverter::to);
         }
         case PgsqlParseMessage.TYPE: {
-            return this.<PgsqlParseMessage, SQLStatement, CString> process(ctx, (PgsqlParseMessage) msg, "Parse",
+            return this.<PgsqlParseMessage, SQLStatement, CString>process(ctx, (PgsqlParseMessage) msg, "Parse",
                     // Build SQL statement from Parse message
                     PgsqlMessageToQueryConverter::from,
                     // Process SQL statement
@@ -181,7 +184,8 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                     // Process flush step
                     flushStep -> getEventProcessor(ctx).processFlushStep(ctx, flushStep),
                     // Send response to client (only if necessary)
-                    nil -> {},
+                    nil -> {
+                    },
                     // Build Flush message from flush step
                     PgsqlMessageToQueryConverter::to);
         }
@@ -213,15 +217,15 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
         }
         // Return a new SQL statement only if SQL commands are modified
         return newSQLCommands == sqlCommands ? sqlStatement
-             : newSQLCommands != null ? new SimpleSQLStatement(newSQLCommands)
-             : null;
+                : newSQLCommands != null ? new SimpleSQLStatement(newSQLCommands) : null;
     }
 
     private interface StreamEvaluator {
         boolean available() throws IOException;
     }
 
-    private int nextSQLCommandLength(InputStream in, boolean separatorCharRequired, StreamEvaluator stream) throws IOException {
+    private int nextSQLCommandLength(InputStream in, boolean separatorCharRequired, StreamEvaluator stream)
+            throws IOException {
         boolean inQuote = false;
         boolean inSingleQuote = false;
         int len = -1;
@@ -231,14 +235,14 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
         in.mark(0);
         if (stream.available()) {
             ci = Character.valueOf((char) in.read());
-            index ++;
+            index++;
         }
         while (ci != null) {
             if (ci == '"' && !inSingleQuote) {
                 if (inQuote) {
                     if ((index > 0) && stream.available()) {
                         char cn = (char) in.read();
-                        index ++;
+                        index++;
                         if ((cp != '\\' && cp != '"') && cn != '"') {
                             inQuote = false;
                         }
@@ -250,7 +254,7 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                     cp = ci;
                     if (stream.available()) {
                         ci = Character.valueOf((char) in.read());
-                        index ++;
+                        index++;
                     } else {
                         ci = null;
                     }
@@ -259,7 +263,7 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                 if (inSingleQuote) {
                     if ((index > 0) && stream.available()) {
                         char cn = (char) in.read();
-                        index ++;
+                        index++;
                         if ((cp != '\\' && cp != '\'') && cn != '\'') {
                             inSingleQuote = false;
                         }
@@ -271,7 +275,7 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                     cp = ci;
                     if (stream.available()) {
                         ci = Character.valueOf((char) in.read());
-                        index ++;
+                        index++;
                     } else {
                         ci = null;
                     }
@@ -280,7 +284,7 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                 int rewind = 0;
                 while (stream.available()) {
                     ci = Character.valueOf((char) in.read());
-                    index ++;
+                    index++;
                     if (ci != '\r' && ci != '\n') {
                         if (ci != 0) {
                             rewind = 1;
@@ -294,7 +298,7 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                 cp = ci;
                 if (stream.available()) {
                     ci = Character.valueOf((char) in.read());
-                    index ++;
+                    index++;
                 } else {
                     ci = null;
                 }
@@ -307,7 +311,8 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
         return len;
     }
 
-    private CString process(ChannelHandlerContext ctx, CString sqlCommands, CString newSQLCommands, int from, CString sqlCommand, boolean last) throws IOException {
+    private CString process(ChannelHandlerContext ctx, CString sqlCommands, CString newSQLCommands, int from,
+            CString sqlCommand, boolean last) throws IOException {
         CString newSQLCommand = process(ctx, sqlCommand, last);
 
         if (newSQLCommand != sqlCommand || newSQLCommands != sqlCommands) {
@@ -335,31 +340,33 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
 
     private CString process(ChannelHandlerContext ctx, CString sqlCommand, boolean last) throws IOException {
         SQLStatement sqlStatement = new SimpleSQLStatement(sqlCommand);
-        QueriesTransferMode<SQLStatement, CString> transferMode = getEventProcessor(ctx).processStatement(ctx, sqlStatement);
-        SQLStatement newSQLStatement = process(ctx, transferMode,
-                response -> {
-                    if (response != null) {
-                        sendCommandCompleteResponse(ctx, response);
-                        if (last) {
-                            sendReadyForQueryResponse(ctx, (byte) 'T');
-                        }
-                    }
-                },
-                errorDetails -> {
-                    sendErrorResponse(ctx, errorDetails);
-                    if (last) {
-                        sendReadyForQueryResponse(ctx, (byte) 'E');
-                    }
-                });
+        QueriesTransferMode<SQLStatement, CString> transferMode = getEventProcessor(ctx).processStatement(ctx,
+                sqlStatement);
+        SQLStatement newSQLStatement = process(ctx, transferMode, response -> {
+            if (response != null) {
+                sendCommandCompleteResponse(ctx, response);
+                if (last) {
+                    sendReadyForQueryResponse(ctx, (byte) 'T');
+                }
+            }
+        }, errorDetails -> {
+            sendErrorResponse(ctx, errorDetails);
+            if (last) {
+                sendReadyForQueryResponse(ctx, (byte) 'E');
+            }
+        });
         return newSQLStatement != null ? newSQLStatement.getSQL() : null;
     }
 
     @FunctionalInterface
     private interface CheckedFunction<T, R> {
-       R apply(T t) throws IOException;
+        R apply(T t) throws IOException;
     }
 
-    private <M extends PgsqlQueryRequestMessage, Q extends Query, R> PgsqlQueryRequestMessage process(ChannelHandlerContext ctx, M msg, String prefix, Function<M, Q> queryBuilder, CheckedFunction<Q, QueriesTransferMode<Q, R>> processor, CheckedConsumer<R> responseConsumer, Function<Q, PgsqlQueryRequestMessage> msgBuilder) throws IOException {
+    private <M extends PgsqlQueryRequestMessage, Q extends Query, R> PgsqlQueryRequestMessage process(
+            ChannelHandlerContext ctx, M msg, String prefix, Function<M, Q> queryBuilder,
+            CheckedFunction<Q, QueriesTransferMode<Q, R>> processor, CheckedConsumer<R> responseConsumer,
+            Function<Q, PgsqlQueryRequestMessage> msgBuilder) throws IOException {
         return process(msg, prefix, queryBuilder, query -> {
             // Process query
             QueriesTransferMode<Q, R> transferMode = processor.apply(query);
@@ -369,7 +376,9 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
         }, msgBuilder);
     }
 
-    private <M extends PgsqlQueryRequestMessage, Q extends Query> PgsqlQueryRequestMessage process(M msg, String prefix, Function<M, Q> queryBuilder, CheckedFunction<Q, Q> processor, Function<Q, PgsqlQueryRequestMessage> msgBuilder) throws IOException {
+    private <M extends PgsqlQueryRequestMessage, Q extends Query> PgsqlQueryRequestMessage process(M msg, String prefix,
+            Function<M, Q> queryBuilder, CheckedFunction<Q, Q> processor,
+            Function<Q, PgsqlQueryRequestMessage> msgBuilder) throws IOException {
         PgsqlQueryRequestMessage newMsg = msg;
         Q query = queryBuilder.apply(msg);
         LOGGER.debug("{}: {}", prefix, query);
@@ -393,7 +402,8 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
         void accept(T t) throws IOException;
     }
 
-    private <Q extends Query, R> Q process(ChannelHandlerContext ctx, QueriesTransferMode<Q, R> transferMode, CheckedConsumer<R> responseConsumer, CheckedConsumer<Map<Byte, CString>> errorConsumer) throws IOException {
+    private <Q extends Query, R> Q process(ChannelHandlerContext ctx, QueriesTransferMode<Q, R> transferMode,
+            CheckedConsumer<R> responseConsumer, CheckedConsumer<Map<Byte, CString>> errorConsumer) throws IOException {
         Q newQuery;
         switch (transferMode.getTransferMode()) {
         case FORWARD:
@@ -416,7 +426,9 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
             break;
         default:
             // Should not occur
-            throw new IllegalArgumentException( "Invalid value for enum " + transferMode.getTransferMode().getClass().getSimpleName() + ": " + transferMode.getTransferMode());
+            throw new IllegalArgumentException(
+                    "Invalid value for enum " + transferMode.getTransferMode().getClass().getSimpleName() + ": "
+                            + transferMode.getTransferMode());
         }
         return newQuery;
     }
@@ -424,7 +436,7 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
     private void waitForResponse(ChannelHandlerContext ctx) throws IOException {
         // Wait for response
         PgsqlSession psqlSession = getPsqlSession(ctx);
-        synchronized(psqlSession) {
+        synchronized (psqlSession) {
             try {
                 psqlSession.wait();
             } catch (InterruptedException e) {
@@ -467,7 +479,8 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
         }
     }
 
-    private void sendParameterDescriptionResponse(ChannelHandlerContext ctx, List<Long> parameterTypes) throws IOException {
+    private void sendParameterDescriptionResponse(ChannelHandlerContext ctx, List<Long> parameterTypes)
+            throws IOException {
         // Build parameter description message
         PgsqlParameterDescriptionMessage msg = new PgsqlParameterDescriptionMessage(parameterTypes);
         // Send response

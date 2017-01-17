@@ -11,7 +11,8 @@ public class StringUtilities {
         if (str == null || length == 0)
             return str;
 
-        if (length > 1 && ((str.charAt(0) == '\"' && str.charAt(length - 1) == '\"') || (str.charAt(0) == '\'' && str.charAt(length - 1) == '\''))) {
+        if (length > 1 && ((str.charAt(0) == '\"' && str.charAt(length - 1) == '\"')
+                || (str.charAt(0) == '\'' && str.charAt(length - 1) == '\''))) {
             str = str.substring(1, length - 1);
         }
 
@@ -42,10 +43,11 @@ public class StringUtilities {
         return str;
     }
 
-    public static String addIrrelevantCharacters(String newStatement, CharSequence statement, String irrelevantCharacters) {
+    public static String addIrrelevantCharacters(String newStatement, CharSequence statement,
+            String irrelevantCharacters) {
         // Append irrelevant characters at the begin of the original statement
         int index;
-        for (index = 0; index < statement.length(); index ++) {
+        for (index = 0; index < statement.length(); index++) {
             char c = statement.charAt(index);
             if (irrelevantCharacters.indexOf(c) == -1) {
                 break;
@@ -55,7 +57,7 @@ public class StringUtilities {
             newStatement = statement.subSequence(0, index) + newStatement;
         }
         // Append irrelevant characters at the end of the original statement
-        for (index = statement.length(); index > 0; index --) {
+        for (index = statement.length(); index > 0; index--) {
             char c = statement.charAt(index - 1);
             if (irrelevantCharacters.indexOf(c) == -1) {
                 break;

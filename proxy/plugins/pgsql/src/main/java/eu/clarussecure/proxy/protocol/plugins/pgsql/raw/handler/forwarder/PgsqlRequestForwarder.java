@@ -7,7 +7,8 @@ import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
 import eu.clarussecure.proxy.protocol.plugins.tcp.handler.forwarder.ClientMessageForwarder;
 import io.netty.channel.ChannelHandlerContext;
 
-public class PgsqlRequestForwarder extends ClientMessageForwarder<PgsqlRawPart, BackendSidePipelineInitializer, PgsqlSession> {
+public class PgsqlRequestForwarder
+        extends ClientMessageForwarder<PgsqlRawPart, BackendSidePipelineInitializer, PgsqlSession> {
 
     public PgsqlRequestForwarder() {
         super(BackendSidePipelineInitializer.class, PgsqlSession.class);

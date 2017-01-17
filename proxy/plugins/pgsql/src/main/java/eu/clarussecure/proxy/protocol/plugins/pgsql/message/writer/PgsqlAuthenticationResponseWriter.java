@@ -11,15 +11,15 @@ import eu.clarussecure.proxy.protocol.plugins.pgsql.message.AuthenticationHandle
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlAuthenticationResponse;
 import io.netty.buffer.ByteBuf;
 
-public class PgsqlAuthenticationResponseWriter implements PgsqlMessageWriter<PgsqlAuthenticationResponse>{
+public class PgsqlAuthenticationResponseWriter implements PgsqlMessageWriter<PgsqlAuthenticationResponse> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PgsqlAuthenticationResponseWriter.class);
-    
+
     @Override
     public int contentSize(PgsqlAuthenticationResponse msg) {
         // Get content size
         int size = Integer.BYTES;
-        
+
         // Get specific field size if exist.
         if (msg.getAuthenticationParameters() != null) {
             size += msg.getAuthenticationParameters().readableBytes();
@@ -34,10 +34,10 @@ public class PgsqlAuthenticationResponseWriter implements PgsqlMessageWriter<Pgs
         // Compute buffer offsets
         int offset = headerSize;
         offset += Integer.BYTES;
-        
-        Map<Integer, ByteBuf> offsets = null;        
+
+        Map<Integer, ByteBuf> offsets = null;
         if (msg.getAuthenticationParameters() != null) {
-             offsets = Collections.singletonMap(offset, msg.getAuthenticationParameters());
+            offsets = Collections.singletonMap(offset, msg.getAuthenticationParameters());
         } else {
             offsets = Collections.emptyMap();
         }
@@ -49,12 +49,11 @@ public class PgsqlAuthenticationResponseWriter implements PgsqlMessageWriter<Pgs
         // Write authentication type;
         LOGGER.debug("PgsqlAuthenticationResponseWriter authenticationtype: {}", msg.getAuthenticationType());
         buffer.writeInt(msg.getAuthenticationType());
-        
+
         // Write specific bytes if exist.
         if (msg.getAuthenticationParameters() != null) {
             buffer.writeBytes(msg.getAuthenticationParameters());
         }
     }
 
-    
 }

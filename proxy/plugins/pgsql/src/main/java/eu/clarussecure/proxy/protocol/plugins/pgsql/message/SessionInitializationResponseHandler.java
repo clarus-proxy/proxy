@@ -9,7 +9,8 @@ import eu.clarussecure.proxy.protocol.plugins.pgsql.message.ssl.SessionInitializ
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.ssl.SessionMessageTransferMode;
 import io.netty.channel.ChannelHandlerContext;
 
-public class SessionInitializationResponseHandler extends PgsqlMessageHandler<PgsqlSessionInitializationResponseMessage> {
+public class SessionInitializationResponseHandler
+        extends PgsqlMessageHandler<PgsqlSessionInitializationResponseMessage> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SessionInitializationResponseHandler.class);
 
@@ -18,13 +19,15 @@ public class SessionInitializationResponseHandler extends PgsqlMessageHandler<Pg
     }
 
     @Override
-    protected PgsqlSessionInitializationResponseMessage process(ChannelHandlerContext ctx, PgsqlSessionInitializationResponseMessage msg) throws IOException {
+    protected PgsqlSessionInitializationResponseMessage process(ChannelHandlerContext ctx,
+            PgsqlSessionInitializationResponseMessage msg) throws IOException {
         PgsqlSessionInitializationResponseMessage newMsg = msg;
         if (msg instanceof PgsqlSSLResponseMessage) {
             byte code = ((PgsqlSSLResponseMessage) msg).getCode();
             LOGGER.debug("SSL response: {}", code);
-            SessionMessageTransferMode<Byte, Void> transferMode = getSessionInitializer(ctx).processSSLResponse(ctx, ((PgsqlSSLResponseMessage) msg).getCode());
-            
+            SessionMessageTransferMode<Byte, Void> transferMode = getSessionInitializer(ctx).processSSLResponse(ctx,
+                    ((PgsqlSSLResponseMessage) msg).getCode());
+
             switch (transferMode.getTransferMode()) {
             case FORWARD:
                 // Forward the message
@@ -43,7 +46,9 @@ public class SessionInitializationResponseHandler extends PgsqlMessageHandler<Pg
             case ORCHESTRATE:
             default:
                 // Should not occur
-                throw new IllegalArgumentException( "Invalid value for enum " + transferMode.getTransferMode().getClass().getSimpleName() + ": " + transferMode.getTransferMode());
+                throw new IllegalArgumentException(
+                        "Invalid value for enum " + transferMode.getTransferMode().getClass().getSimpleName() + ": "
+                                + transferMode.getTransferMode());
             }
         }
         return newMsg;

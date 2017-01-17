@@ -30,9 +30,13 @@ public class FrontendSidePipelineInitializer extends ChannelInitializer<Channel>
     private static boolean QUERY_PROCESSING_ACTIVATED;
     static {
         String messageProcessing = System.getProperty("pgsql.message.processing", "true");
-        MESSAGE_PROCESSING_ACTIVATED = Boolean.TRUE.toString().equalsIgnoreCase(messageProcessing) || "1".equalsIgnoreCase(messageProcessing) || "yes".equalsIgnoreCase(messageProcessing) || "on".equalsIgnoreCase(messageProcessing);
+        MESSAGE_PROCESSING_ACTIVATED = Boolean.TRUE.toString().equalsIgnoreCase(messageProcessing)
+                || "1".equalsIgnoreCase(messageProcessing) || "yes".equalsIgnoreCase(messageProcessing)
+                || "on".equalsIgnoreCase(messageProcessing);
         String queryProcessing = System.getProperty("pgsql.query.processing", "true");
-        QUERY_PROCESSING_ACTIVATED = Boolean.TRUE.toString().equalsIgnoreCase(queryProcessing) || "1".equalsIgnoreCase(queryProcessing) || "yes".equalsIgnoreCase(queryProcessing) || "on".equalsIgnoreCase(queryProcessing);
+        QUERY_PROCESSING_ACTIVATED = Boolean.TRUE.toString().equalsIgnoreCase(queryProcessing)
+                || "1".equalsIgnoreCase(queryProcessing) || "yes".equalsIgnoreCase(queryProcessing)
+                || "on".equalsIgnoreCase(queryProcessing);
     }
 
     @Override
@@ -41,10 +45,11 @@ public class FrontendSidePipelineInitializer extends ChannelInitializer<Channel>
         ChannelPipeline pipeline = ch.pipeline();
         pipeline.addLast("PgsqlPartCodec", new PgsqlRawPartCodec(true, configuration.getFramePartMaxLength()));
         if (MESSAGE_PROCESSING_ACTIVATED) {
-            pipeline.addLast("PgsqlPartAggregator", new PgsqlRawPartAggregator(
-                    PgsqlSSLRequestMessage.TYPE, PgsqlStartupMessage.TYPE/* , PgsqlSimpleQueryMessage.TYPE */, PgsqlParseMessage.TYPE,
-                    PgsqlBindMessage.TYPE, PgsqlDescribeMessage.TYPE, PgsqlExecuteMessage.TYPE, PgsqlCloseMessage.TYPE,
-                    PgsqlSyncMessage.TYPE, PgsqlFlushMessage.TYPE));
+            pipeline.addLast("PgsqlPartAggregator",
+                    new PgsqlRawPartAggregator(PgsqlSSLRequestMessage.TYPE,
+                            PgsqlStartupMessage.TYPE/* , PgsqlSimpleQueryMessage.TYPE */, PgsqlParseMessage.TYPE,
+                            PgsqlBindMessage.TYPE, PgsqlDescribeMessage.TYPE, PgsqlExecuteMessage.TYPE,
+                            PgsqlCloseMessage.TYPE, PgsqlSyncMessage.TYPE, PgsqlFlushMessage.TYPE));
             pipeline.addLast("PgsqlPartAccumulator", new PgsqlRawPartAccumulator(PgsqlSimpleQueryMessage.TYPE));
         }
         EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());

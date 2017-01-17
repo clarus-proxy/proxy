@@ -34,9 +34,13 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
     private static boolean QUERY_PROCESSING_ACTIVATED;
     static {
         String messageProcessing = System.getProperty("pgsql.message.processing", "true");
-        MESSAGE_PROCESSING_ACTIVATED = Boolean.TRUE.toString().equalsIgnoreCase(messageProcessing) || "1".equalsIgnoreCase(messageProcessing) || "yes".equalsIgnoreCase(messageProcessing) || "on".equalsIgnoreCase(messageProcessing);
+        MESSAGE_PROCESSING_ACTIVATED = Boolean.TRUE.toString().equalsIgnoreCase(messageProcessing)
+                || "1".equalsIgnoreCase(messageProcessing) || "yes".equalsIgnoreCase(messageProcessing)
+                || "on".equalsIgnoreCase(messageProcessing);
         String queryProcessing = System.getProperty("pgsql.query.processing", "true");
-        QUERY_PROCESSING_ACTIVATED = Boolean.TRUE.toString().equalsIgnoreCase(queryProcessing) || "1".equalsIgnoreCase(queryProcessing) || "yes".equalsIgnoreCase(queryProcessing) || "on".equalsIgnoreCase(queryProcessing);
+        QUERY_PROCESSING_ACTIVATED = Boolean.TRUE.toString().equalsIgnoreCase(queryProcessing)
+                || "1".equalsIgnoreCase(queryProcessing) || "yes".equalsIgnoreCase(queryProcessing)
+                || "on".equalsIgnoreCase(queryProcessing);
     }
 
     public BackendSidePipelineInitializer() {
@@ -47,23 +51,26 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
     protected void initChannel(Channel ch) throws Exception {
         Configuration configuration = ch.attr(PgsqlConstants.CONFIGURATION_KEY).get();
         PgsqlSession session = (PgsqlSession) ch.attr(TCPConstants.SESSION_KEY).get();
-        PgsqlRawPartCodec clientSideCodec = (PgsqlRawPartCodec) session.getClientSideChannel().pipeline().get("PgsqlPartCodec");
+        PgsqlRawPartCodec clientSideCodec = (PgsqlRawPartCodec) session.getClientSideChannel().pipeline()
+                .get("PgsqlPartCodec");
         ChannelPipeline pipeline = ch.pipeline();
-        pipeline.addLast("PgsqlPartCodec", new PgsqlRawPartCodec(false, configuration.getFramePartMaxLength(), clientSideCodec));
+        pipeline.addLast("PgsqlPartCodec",
+                new PgsqlRawPartCodec(false, configuration.getFramePartMaxLength(), clientSideCodec));
         EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
         if (MESSAGE_PROCESSING_ACTIVATED) {
-            pipeline.addLast("PgsqlPartAggregator", new PgsqlRawPartAggregator(
-                    PgsqlParseCompleteMessage.TYPE, PgsqlBindCompleteMessage.TYPE,
-                    PgsqlParameterDescriptionMessage.TYPE, PgsqlParameterStatusMessage.TYPE,
-                    PgsqlRowDescriptionMessage.TYPE, PgsqlDataRowMessage.TYPE, PgsqlNoDataMessage.TYPE,
-                    PgsqlCommandCompleteMessage.TYPE, PgsqlEmptyQueryMessage.TYPE, PgsqlPortalSuspendedMessage.TYPE,
-                    PgsqlErrorMessage.TYPE, PgsqlCloseCompleteMessage.TYPE, PgsqlReadyForQueryMessage.TYPE,
-                    PgsqlNoticeMessage.TYPE));
-                    pipeline.addLast(parserGroup, "PgsqlAuthenticationHandler", new AuthenticationHandler());
+            pipeline.addLast("PgsqlPartAggregator",
+                    new PgsqlRawPartAggregator(PgsqlParseCompleteMessage.TYPE, PgsqlBindCompleteMessage.TYPE,
+                            PgsqlParameterDescriptionMessage.TYPE, PgsqlParameterStatusMessage.TYPE,
+                            PgsqlRowDescriptionMessage.TYPE, PgsqlDataRowMessage.TYPE, PgsqlNoDataMessage.TYPE,
+                            PgsqlCommandCompleteMessage.TYPE, PgsqlEmptyQueryMessage.TYPE,
+                            PgsqlPortalSuspendedMessage.TYPE, PgsqlErrorMessage.TYPE, PgsqlCloseCompleteMessage.TYPE,
+                            PgsqlReadyForQueryMessage.TYPE, PgsqlNoticeMessage.TYPE));
+            pipeline.addLast(parserGroup, "PgsqlAuthenticationHandler", new AuthenticationHandler());
         }
         // Session initialization consists of dealing with optional initialization of SSL encryption: a specific SSL handler will be added as first handler in the pipeline if necessary
         // The session initialization handler will be removed while dealing with the startup message (by the SessionInitializationRequestHandler running on the frontend side). 
-        pipeline.addLast(parserGroup, "SessionInitializationResponseHandler", new SessionInitializationResponseHandler());
+        pipeline.addLast(parserGroup, "SessionInitializationResponseHandler",
+                new SessionInitializationResponseHandler());
         if (MESSAGE_PROCESSING_ACTIVATED) {
             if (QUERY_PROCESSING_ACTIVATED) {
                 pipeline.addLast(parserGroup, "QueryResultHandler", new QueryResponseHandler());

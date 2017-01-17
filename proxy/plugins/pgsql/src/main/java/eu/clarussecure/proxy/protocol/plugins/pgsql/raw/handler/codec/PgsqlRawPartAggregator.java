@@ -14,7 +14,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.MessageAggregator;
 
-public class PgsqlRawPartAggregator extends MessageAggregator<PgsqlRawPart, PgsqlRawHeader, PgsqlRawContent, MutablePgsqlRawMessage> {
+public class PgsqlRawPartAggregator
+        extends MessageAggregator<PgsqlRawPart, PgsqlRawHeader, PgsqlRawContent, MutablePgsqlRawMessage> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PgsqlRawPartAggregator.class);
 

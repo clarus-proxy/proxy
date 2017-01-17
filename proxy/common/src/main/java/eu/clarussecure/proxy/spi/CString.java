@@ -101,7 +101,8 @@ public class CString implements CharSequence, Cloneable {
 
     public ByteBuf getByteBuf() {
         if (buffer == null && str != null) {
-            buffer = ByteBufUtil.encodeString(UnpooledByteBufAllocator.DEFAULT, CharBuffer.wrap(str), StandardCharsets.ISO_8859_1, 1);
+            buffer = ByteBufUtil.encodeString(UnpooledByteBufAllocator.DEFAULT, CharBuffer.wrap(str),
+                    StandardCharsets.ISO_8859_1, 1);
             buffer.writeByte((byte) 0);
             strLen = buffer.writerIndex() - 1;
         }
@@ -147,7 +148,7 @@ public class CString implements CharSequence, Cloneable {
         if (buffer != null) {
             subBuffer = buffer.slice(start, end - start);
             while (subBuffer.getByte(end - start - 1) == 0) {
-                end --;
+                end--;
             }
         }
         return new CString(subBuffer, subCs, end - start);
@@ -236,7 +237,7 @@ public class CString implements CharSequence, Cloneable {
             }
             // Append other's char sequence to this internal char sequence
             try {
-                ((Appendable)str).append(src.subSequence(0, length));
+                ((Appendable) str).append(src.subSequence(0, length));
             } catch (IOException e) {
                 // Should not occurs
                 throw new IllegalStateException(e);
@@ -250,14 +251,15 @@ public class CString implements CharSequence, Cloneable {
     private void ensureBufferCapacity(CharSequence other, int length) {
         // For CompositeByteBuf only: because this internal buffer is composed of multiple buffer (including other's internal buffer),
         // the zero byte terminator must be removed (to avoid having a 0 byte in the middle of the buffer).  
-        if (buffer instanceof CompositeByteBuf && buffer.writerIndex() > 0 && buffer.getByte(buffer.writerIndex() - 1) == 0) {
+        if (buffer instanceof CompositeByteBuf && buffer.writerIndex() > 0
+                && buffer.getByte(buffer.writerIndex() - 1) == 0) {
             // Netty memory leak: calling capacity(new capacity) remove the last component if not used, but don't release the buffer
             // Workaround: test the capacity of the last component: if 1 -> explicitly remove it, if > 1 -> call capacity(new capacity) 
-            int index = ((CompositeByteBuf)buffer).toComponentIndex(strLen);
-            ByteBuf last = ((CompositeByteBuf)buffer).internalComponent(index);
+            int index = ((CompositeByteBuf) buffer).toComponentIndex(strLen);
+            ByteBuf last = ((CompositeByteBuf) buffer).internalComponent(index);
             if (last.capacity() == 1) {
                 // Last component only contains the zero byte terminator -> just remove it
-                ((CompositeByteBuf)buffer).removeComponent(index);
+                ((CompositeByteBuf) buffer).removeComponent(index);
                 buffer.writerIndex(buffer.writerIndex() - 1);
             } else {
                 // Last component contains more than the zero byte terminator -> call capacity to resize it
@@ -265,7 +267,8 @@ public class CString implements CharSequence, Cloneable {
             }
         }
         // Increase capacity if this internal buffer is not composite or if other is not a CString or don't have internal buffer
-        if (!(buffer instanceof CompositeByteBuf) || ((CompositeByteBuf)buffer).numComponents() == ((CompositeByteBuf)buffer).maxNumComponents()
+        if (!(buffer instanceof CompositeByteBuf)
+                || ((CompositeByteBuf) buffer).numComponents() == ((CompositeByteBuf) buffer).maxNumComponents()
                 || (!(other instanceof CString) || ((CString) other).buffer == null)) {
             if (buffer.capacity() - strLen < length + 1) {
                 // Increase capacity
@@ -284,12 +287,13 @@ public class CString implements CharSequence, Cloneable {
     }
 
     private void copy(ByteBuf src, int length) {
-        if (buffer instanceof CompositeByteBuf && ((CompositeByteBuf)buffer).numComponents() < ((CompositeByteBuf)buffer).maxNumComponents() - 1) {
+        if (buffer instanceof CompositeByteBuf
+                && ((CompositeByteBuf) buffer).numComponents() < ((CompositeByteBuf) buffer).maxNumComponents() - 1) {
             // For CompositeByteBuf only: because this internal buffer is composed of multiple buffer (including other's internal buffer),
             // we simply add the other's internal buffer (no copy).  
-            ((CompositeByteBuf)buffer).addComponent(true, /*src.readSlice(length)*/src.slice(0, length));
+            ((CompositeByteBuf) buffer).addComponent(true, /*src.readSlice(length)*/src.slice(0, length));
             // Add an additional buffer for the zero byte terminator
-            ((CompositeByteBuf)buffer).capacity(strLen + length + 1);
+            ((CompositeByteBuf) buffer).capacity(strLen + length + 1);
             buffer.writeByte(0);
         } else {
             // Determinate if copy is necessary
@@ -322,7 +326,7 @@ public class CString implements CharSequence, Cloneable {
                 if (buffer instanceof CompositeByteBuf) {
                     // ByteBufUtil.encodeString() calls ByteBuf.internalNioBuffer() method, but CompositeByteBuf don't support it
                     // -> determinate if there is one (and only one) component that can be used as the destination buffer 
-                    List<ByteBuf> byteBufs = ((CompositeByteBuf)buffer).decompose(buffer.writerIndex(), length);
+                    List<ByteBuf> byteBufs = ((CompositeByteBuf) buffer).decompose(buffer.writerIndex(), length);
                     if (byteBufs.size() == 1) {
                         // One component to store 'length' bytes at 'buffer.writerIndex()' index
                         byteBuf = byteBufs.get(0);
@@ -342,7 +346,8 @@ public class CString implements CharSequence, Cloneable {
         };
         // Encode other char sequence to this internal buffer.
         // ISO-LATIN-1 alphbet ensures to have one byte per character
-        ByteBuf src = ByteBufUtil.encodeString(allocator, CharBuffer.wrap(other.subSequence(0, length)), StandardCharsets.ISO_8859_1, 1);
+        ByteBuf src = ByteBufUtil.encodeString(allocator, CharBuffer.wrap(other.subSequence(0, length)),
+                StandardCharsets.ISO_8859_1, 1);
         // Add zero byte terminator
         src.writeByte(0);
         // Adjust writer index
@@ -439,8 +444,8 @@ public class CString implements CharSequence, Cloneable {
      * @see  #equals(Object)
      */
     public boolean equalsIgnoreCase(CharSequence cs) {
-        return (this == cs) ? true : (cs != null) && (cs.length() == length())
-                && regionMatches(true, 0, cs, 0, length());
+        return (this == cs) ? true
+                : (cs != null) && (cs.length() == length()) && regionMatches(true, 0, cs, 0, length());
     }
 
     /**
@@ -493,14 +498,12 @@ public class CString implements CharSequence, Cloneable {
      *          or case insensitive depends on the {@code ignoreCase}
      *          argument.
      */
-    public boolean regionMatches(boolean ignoreCase, int toffset,
-            CharSequence other, int ooffset, int len) {
+    public boolean regionMatches(boolean ignoreCase, int toffset, CharSequence other, int ooffset, int len) {
         int to = toffset;
         int po = ooffset;
         // Note: toffset, ooffset, or len might be near -1>>>1.
-        if ((ooffset < 0) || (toffset < 0)
-                || (toffset > (long)length() - len)
-                || (ooffset > (long)other.length() - len)) {
+        if ((ooffset < 0) || (toffset < 0) || (toffset > (long) length() - len)
+                || (ooffset > (long) other.length() - len)) {
             return false;
         }
         while (len-- > 0) {

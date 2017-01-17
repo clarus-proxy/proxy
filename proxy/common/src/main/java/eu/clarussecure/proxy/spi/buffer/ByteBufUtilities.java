@@ -24,7 +24,8 @@ public class ByteBufUtilities {
             int bufferCapacity = buffer.capacity();
             long partAddress = part.memoryAddress();
             int partCapacity = part.capacity();
-            if ((partAddress - bufferAddress == position) && (bufferAddress + bufferCapacity) >= (partAddress + partCapacity)) {
+            if ((partAddress - bufferAddress == position)
+                    && (bufferAddress + bufferCapacity) >= (partAddress + partCapacity)) {
                 return true;
             }
         }

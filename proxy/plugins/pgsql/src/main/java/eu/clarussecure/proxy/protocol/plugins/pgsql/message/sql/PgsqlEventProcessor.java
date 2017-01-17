@@ -63,17 +63,20 @@ public class PgsqlEventProcessor implements EventProcessor {
     private static boolean FORCE_SQL_PROCESSING;
     static {
         String sqlForceProcessing = System.getProperty("pgsql.sql.force.processing", "false");
-        FORCE_SQL_PROCESSING = Boolean.TRUE.toString().equalsIgnoreCase(sqlForceProcessing) || "1".equalsIgnoreCase(sqlForceProcessing) || "yes".equalsIgnoreCase(sqlForceProcessing) || "on".equalsIgnoreCase(sqlForceProcessing);
+        FORCE_SQL_PROCESSING = Boolean.TRUE.toString().equalsIgnoreCase(sqlForceProcessing)
+                || "1".equalsIgnoreCase(sqlForceProcessing) || "yes".equalsIgnoreCase(sqlForceProcessing)
+                || "on".equalsIgnoreCase(sqlForceProcessing);
     }
 
     public static final String USER_KEY = "user";
     public static final String DATABASE_KEY = "database";
-    
+
     private final static int AUTHENTICATION_CLEARTEXT_PASSWORD = 3;
     private final static int AUTHENTICATION_MD5_PASSWORD = 5;
-    
+
     @Override
-    public CString processUserAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
+    public CString processUserAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters)
+            throws IOException {
         CString databaseName = parameters.get(CString.valueOf(DATABASE_KEY));
         SQLSession sqlSession = getSession(ctx);
         sqlSession.setDatabaseName((CString) databaseName.clone());
@@ -84,15 +87,16 @@ public class PgsqlEventProcessor implements EventProcessor {
     }
 
     @Override
-    public int processAuthenticationParameters(ChannelHandlerContext ctx, int authenticationType, ByteBuf authenticationParam) throws IOException {
+    public int processAuthenticationParameters(ChannelHandlerContext ctx, int authenticationType,
+            ByteBuf authenticationParam) throws IOException {
         int newAuthenticationType = authenticationType;
         SQLSession sqlSession = getSession(ctx);
-        
+
         // Add authentication parameters to session.
         // Add authentication type to session.
         sqlSession.setAuthenticationParam(authenticationParam);
         sqlSession.setAuthenticationType(authenticationType);
-        
+
         // Case where authentication type is MD5, modify type to Cleartext.
         if (AUTHENTICATION_MD5_PASSWORD == authenticationType) {
             newAuthenticationType = AUTHENTICATION_CLEARTEXT_PASSWORD;
@@ -101,11 +105,12 @@ public class PgsqlEventProcessor implements EventProcessor {
     }
 
     @Override
-    public CString processAuthentication(ChannelHandlerContext ctx, CString passwordClear) throws IOException, NoSuchAlgorithmException {
+    public CString processAuthentication(ChannelHandlerContext ctx, CString passwordClear)
+            throws IOException, NoSuchAlgorithmException {
         SQLSession sqlSession = getSession(ctx);
         CString userName = sqlSession.getUser();
         CString password = passwordClear;
-        
+
         // Handle case where MD5 password is needed.
         if (AUTHENTICATION_MD5_PASSWORD == sqlSession.getAuthenticationType()) {
             ByteBuf authenticationParam = sqlSession.getAuthenticationParam();
@@ -113,20 +118,20 @@ public class PgsqlEventProcessor implements EventProcessor {
                 // Retrieve salt from authentication parameters.
                 byte[] salt = new byte[authenticationParam.readableBytes()];
                 authenticationParam.readBytes(salt);
-                
+
                 // Create MD5 digester.
                 MessageDigest digest = MessageDigest.getInstance("MD5");
-                
+
                 // Generate MD5 hash for password + user name. 
                 digest.update((password.toString() + userName.toString()).getBytes());
                 String pwdUsrEnc = DatatypeConverter.printHexBinary(digest.digest()).toLowerCase();
-                
+
                 // Generate MD5 hash for hashed password + user name & salt.
                 // Finally, add "md5" at the newly hashed password.
                 digest.update(pwdUsrEnc.getBytes());
                 digest.update(salt);
                 String passwordEncrypted = "md5" + DatatypeConverter.printHexBinary(digest.digest()).toLowerCase();
-                
+
                 // MD5 password is equivalent to SQL concat('md5', md5(concat(md5(concat(password, username)), random-salt)))
                 password = CString.valueOf(passwordEncrypted);
             }
@@ -134,9 +139,10 @@ public class PgsqlEventProcessor implements EventProcessor {
         CString[] userCredentials = getProtocolService(ctx).userAuthentication(userName, password);
         return userCredentials[1];
     }
-    
+
     @Override
-    public QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException {
+    public QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx,
+            SQLStatement sqlStatement) throws IOException {
         LOGGER.debug("SQL statement: {}", sqlStatement);
         TransferMode transferMode = TransferMode.FORWARD;
         List<Query> newQueries = Collections.singletonList(sqlStatement);
@@ -152,24 +158,24 @@ public class PgsqlEventProcessor implements EventProcessor {
             switch (type) {
             case START_TRANSACTION: {
                 toProcess = isSQLStatementToProcess(null);
-                if (sqlStatement instanceof SimpleQuery && session.getTransactionStatus() != (byte)'E') {
+                if (sqlStatement instanceof SimpleQuery && session.getTransactionStatus() != (byte) 'E') {
                     // transaction status is followed by tracking ready for query responses
                     // however, in case of simple query, starting a transaction may be part of a whole script in a single query
                     // in that case, we can't wait for ready for query response
                     // so we suppose starting a transaction is ok (provided that transaction status is not error)
-                    session.setTransactionStatus((byte)'T');
+                    session.setTransactionStatus((byte) 'T');
                 }
                 break;
             }
             case COMMIT:
             case ROLLBACK: {
                 toProcess = isSQLStatementToProcess(null);
-                if (sqlStatement instanceof SimpleQuery && session.getTransactionStatus() != (byte)'E') {
+                if (sqlStatement instanceof SimpleQuery && session.getTransactionStatus() != (byte) 'E') {
                     // transaction status is followed by tracking ready for query responses
                     // however, in case of simple query, closing a transaction may be part of a whole script in a single query
                     // in that case, we can't wait for ready for query response
                     // so we suppose closing a transaction is ok (provided that transaction status is not error)
-                    session.setTransactionStatus((byte)'I');
+                    session.setTransactionStatus((byte) 'I');
                 }
                 if (session.isInDatasetCreation()) {
                     // Closing a transaction completes creation of a dataset (arbitrary decision)
@@ -191,7 +197,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                     } else if (processingMode == Mode.ORCHESTRATION) {
                         // TODO orchestration mode. Meanwhile, same as AS_IT_IS mode
                         session.setCurrentOperation(operation);
-                    } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.BUFFERING || processingMode == Mode.STREAMING) {
+                    } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.BUFFERING
+                            || processingMode == Mode.STREAMING) {
                         session.setCurrentOperation(operation);
                     }
                 }
@@ -216,12 +223,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                         } else {
                             // Should not occur
                             transferMode = TransferMode.ERROR;
-                            error = CString.valueOf("Buffering processing mode not supported for record creation by this CLARUS proxy");
+                            error = CString.valueOf(
+                                    "Buffering processing mode not supported for record creation by this CLARUS proxy");
                         }
                     } else if (processingMode == Mode.ORCHESTRATION) {
                         // Should not occur
                         transferMode = TransferMode.ERROR;
-                        error = CString.valueOf("Orchestration processing mode not supported for dataset or record creation by this CLARUS proxy");
+                        error = CString.valueOf(
+                                "Orchestration processing mode not supported for dataset or record creation by this CLARUS proxy");
                     } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.STREAMING) {
                         session.setCurrentOperation(operation);
                     }
@@ -236,7 +245,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                         transferMode = TransferMode.ERROR;
                         error = CString.valueOf("Dataset creation not supported by this CLARUS proxy");
                     } else {
-                        if (session.getTransactionStatus() == (byte)'T') {
+                        if (session.getTransactionStatus() == (byte) 'T') {
                             session.setInDatasetCreation(true);
                         }
                     }
@@ -267,12 +276,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                         } else {
                             // Should not occur
                             transferMode = TransferMode.ERROR;
-                            error = CString.valueOf("Buffering processing mode not supported for record modification by this CLARUS proxy");
+                            error = CString.valueOf(
+                                    "Buffering processing mode not supported for record modification by this CLARUS proxy");
                         }
                     } else if (processingMode == Mode.ORCHESTRATION) {
                         // Should not occur
                         transferMode = TransferMode.ERROR;
-                        error = CString.valueOf("Orchestration processing mode not supported for dataset or record modification by this CLARUS proxy");
+                        error = CString.valueOf(
+                                "Orchestration processing mode not supported for dataset or record modification by this CLARUS proxy");
                     } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.STREAMING) {
                         session.setCurrentOperation(operation);
                     }
@@ -299,12 +310,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                         } else {
                             // Should not occur
                             transferMode = TransferMode.ERROR;
-                            error = CString.valueOf("Buffering processing mode not supported for record delete by this CLARUS proxy");
+                            error = CString.valueOf(
+                                    "Buffering processing mode not supported for record delete by this CLARUS proxy");
                         }
                     } else if (processingMode == Mode.ORCHESTRATION) {
                         // Should not occur
                         transferMode = TransferMode.ERROR;
-                        error = CString.valueOf("Orchestration processing mode not supported for dataset or record delete by this CLARUS proxy");
+                        error = CString.valueOf(
+                                "Orchestration processing mode not supported for dataset or record delete by this CLARUS proxy");
                     } else {
                         session.setCurrentOperation(operation);
                     }
@@ -345,14 +358,16 @@ public class PgsqlEventProcessor implements EventProcessor {
             }
             newQueries = null;
         } else if (transferMode == TransferMode.ERROR) {
-            if (session.getTransactionStatus() == (byte)'T') {
+            if (session.getTransactionStatus() == (byte) 'T') {
                 session.setTransactionErrorDetails(errorDetails);
             }
             session.resetCurrentCommand();
             newQueries = null;
         }
-        QueriesTransferMode<SQLStatement, CString> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
-        LOGGER.debug("SQL statement processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
+        QueriesTransferMode<SQLStatement, CString> mode = new QueriesTransferMode<>(newQueries, transferMode, response,
+                errorDetails);
+        LOGGER.debug("SQL statement processed: new queries={}, transfer mode={}", mode.getNewQueries(),
+                mode.getTransferMode());
         return mode;
     }
 
@@ -360,7 +375,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         return FORCE_SQL_PROCESSING || processingMode != Mode.AS_IT_IS;
     }
 
-    private List<Query> buildNewQueries(ChannelHandlerContext ctx, SimpleSQLStatement sqlStatement, boolean toProcess) throws IOException {
+    private List<Query> buildNewQueries(ChannelHandlerContext ctx, SimpleSQLStatement sqlStatement, boolean toProcess)
+            throws IOException {
         List<Query> newQueries = processBufferedQueries(ctx);
         SimpleSQLStatement newSQLStatement = toProcess ? processSimpleSQLStatement(ctx, sqlStatement) : sqlStatement;
         if (newQueries.isEmpty()) {
@@ -411,9 +427,9 @@ public class PgsqlEventProcessor implements EventProcessor {
         Map<CString, Integer> lastParseStepIndexes = new HashMap<>();
         // Track usage of parse steps and bind steps to know if they must be closed
         Map<CString, Integer> parseStepCounters = session.getParseStepStatuses().keySet().stream()
-                .collect(Collectors.toMap(java.util.function.Function.identity(), i -> 1));     // Initialize parse step counters
+                .collect(Collectors.toMap(java.util.function.Function.identity(), i -> 1)); // Initialize parse step counters
         Map<CString, Integer> bindStepCounters = session.getBindStepStatuses().keySet().stream()
-                .collect(Collectors.toMap(java.util.function.Function.identity(), i -> 1));     // Initialize bind step counters
+                .collect(Collectors.toMap(java.util.function.Function.identity(), i -> 1)); // Initialize bind step counters
         int index = 0;
         int row = 0;
         for (Query bufferedQuery : session.getBufferedQueries()) {
@@ -423,9 +439,9 @@ public class PgsqlEventProcessor implements EventProcessor {
             boolean extract = false;
             if (bufferedQuery instanceof SimpleQuery) {
                 // Parse SQL statement
-                stmt = parseSQL(ctx, ((SimpleSQLStatement)bufferedQuery).getSQL());
+                stmt = parseSQL(ctx, ((SimpleSQLStatement) bufferedQuery).getSQL());
                 // Save row for this SQL statement
-                optionalRow = Integer.valueOf(row ++);
+                optionalRow = Integer.valueOf(row++);
                 // Ready to extract and protect data for this query
                 extract = true;
             } else {
@@ -454,7 +470,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                         stmt = allStatements.get(lastParseStepIndex);
                     } else {
                         // Parse step was done long time ago (and is tracked by session)
-                        ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(bindStep.getPreparedStatement());
+                        ExtendedQueryStatus<ParseStep> parseStepStatus = session
+                                .getParseStepStatus(bindStep.getPreparedStatement());
                         if (parseStepStatus != null) {
                             parseStep = parseStepStatus.getQuery();
                             // Parse SQL statement
@@ -463,23 +480,22 @@ public class PgsqlEventProcessor implements EventProcessor {
                     }
                     if (parseStep != null) {
                         // Build portal parameter (type+format+value)
-                        parameterValues = bindStep.getParameterValues().stream()
-                                .map(ParameterValue::new)       // create a PortalParameter for each parameter value
-                                .collect(Collectors.toList());  // build a list
+                        parameterValues = bindStep.getParameterValues().stream().map(ParameterValue::new) // create a PortalParameter for each parameter value
+                                .collect(Collectors.toList()); // build a list
                         final List<Long> parameterTypes = parseStep.getParameterTypes();
-                        for (int idx = 0; idx < parameterTypes.size(); idx ++) {
+                        for (int idx = 0; idx < parameterTypes.size(); idx++) {
                             // set parameter type
                             parameterValues.get(idx).setType(parameterTypes.get(idx));
                         }
                         final List<Short> formats = bindStep.getParameterFormats();
-                        for (int i = 0; i < parameterValues.size(); i ++) {
+                        for (int i = 0; i < parameterValues.size(); i++) {
                             ParameterValue parameterValue = parameterValues.get(i);
                             Short format = formats.get(formats.size() == 1 ? 0 : i);
                             // set parameter value format
                             parameterValue.setFormat(format);
                         }
                         // Save row for this bind step
-                        optionalRow = Integer.valueOf(row ++);
+                        optionalRow = Integer.valueOf(row++);
                         // Ready to extract and protect data for this query
                         extract = true;
                     }
@@ -513,12 +529,12 @@ public class PgsqlEventProcessor implements EventProcessor {
             if (extract) {
                 // Extract data operation
                 if (stmt instanceof Insert) {
-                    dataOperation = extractInsertOperation(ctx, (Insert)stmt, parameterValues, dataOperation);
+                    dataOperation = extractInsertOperation(ctx, (Insert) stmt, parameterValues, dataOperation);
                 } else if (stmt instanceof Select) {
-                    dataOperation = extractSelectOperation(ctx, (Select)stmt, parameterValues, dataOperation);
+                    dataOperation = extractSelectOperation(ctx, (Select) stmt, parameterValues, dataOperation);
                 }
             }
-            index ++;
+            index++;
         }
         // Close parse steps and bind steps if their counter is negative or zero
         bindStepCounters.forEach((name, counter) -> {
@@ -548,39 +564,43 @@ public class PgsqlEventProcessor implements EventProcessor {
                         Integer optionalRow = rows.get(index);
                         if (optionalRow != null) {
                             if (stmt instanceof Insert) {
-                                modifyInsertStatement(ctx, (Insert)stmt, parameterValues, dataOperation, optionalRow);
+                                modifyInsertStatement(ctx, (Insert) stmt, parameterValues, dataOperation, optionalRow);
                             } else if (stmt instanceof Select) {
-                                modifySelectStatement(ctx, (Select)stmt, parameterValues, dataOperation, optionalRow);
+                                modifySelectStatement(ctx, (Select) stmt, parameterValues, dataOperation, optionalRow);
                             }
                         }
                         if (bufferedQuery instanceof SimpleQuery) {
-                            SimpleSQLStatement simpleSQLStatement = (SimpleSQLStatement)bufferedQuery;
+                            SimpleSQLStatement simpleSQLStatement = (SimpleSQLStatement) bufferedQuery;
                             String newSQL = stmt.toString();
-                            newSQL = StringUtilities.addIrrelevantCharacters(newSQL, simpleSQLStatement.getSQL(), " \t\r\n;");
+                            newSQL = StringUtilities.addIrrelevantCharacters(newSQL, simpleSQLStatement.getSQL(),
+                                    " \t\r\n;");
                             newQuery = new SimpleSQLStatement(CString.valueOf(newSQL));
                         } else {
-                            ExtendedQuery query = (ExtendedQuery)bufferedQuery;
+                            ExtendedQuery query = (ExtendedQuery) bufferedQuery;
                             if (query instanceof ParseStep) {
-                                ParseStep parseStep = (ParseStep)query;
+                                ParseStep parseStep = (ParseStep) query;
                                 String newSQL = stmt.toString();
-                                newSQL = StringUtilities.addIrrelevantCharacters(newSQL, parseStep.getSQL(), " \t\r\n;");
-                                newQuery = new ParseStep(parseStep.getName(), CString.valueOf(newSQL), parseStep.getParameterTypes());
+                                newSQL = StringUtilities.addIrrelevantCharacters(newSQL, parseStep.getSQL(),
+                                        " \t\r\n;");
+                                newQuery = new ParseStep(parseStep.getName(), CString.valueOf(newSQL),
+                                        parseStep.getParameterTypes());
                             } else if (query instanceof BindStep) {
-                                BindStep bindStep = (BindStep)query;
+                                BindStep bindStep = (BindStep) query;
                                 List<ByteBuf> parameterBinaryValues = parameterValues.stream()
-                                        .map(ParameterValue::getValue)  // get the parameter value
-                                        .collect(Collectors.toList());  // build a list
+                                        .map(ParameterValue::getValue) // get the parameter value
+                                        .collect(Collectors.toList()); // build a list
                                 if (!parameterBinaryValues.equals(bindStep.getParameterValues())) {
                                     // At least one parameter ByteBuf values has been changed
                                     newQuery = new BindStep(bindStep.getName(), bindStep.getPreparedStatement(),
-                                            bindStep.getParameterFormats(), parameterBinaryValues, bindStep.getResultColumnFormats());
+                                            bindStep.getParameterFormats(), parameterBinaryValues,
+                                            bindStep.getResultColumnFormats());
                                 }
                             }
                         }
                     }
                     newQuery.retain();
                     newQueries.add(newQuery);
-                    index ++;
+                    index++;
                 }
             }
         }
@@ -597,9 +617,9 @@ public class PgsqlEventProcessor implements EventProcessor {
         // Extract data operation
         DataOperation dataOperation = null;
         if (stmt instanceof Insert) {
-            dataOperation = extractInsertOperation(ctx, (Insert)stmt, null, null);
+            dataOperation = extractInsertOperation(ctx, (Insert) stmt, null, null);
         } else if (stmt instanceof Select) {
-            dataOperation = extractSelectOperation(ctx, (Select)stmt, null, null);
+            dataOperation = extractSelectOperation(ctx, (Select) stmt, null, null);
         } else if (stmt instanceof Update) {
             // TODO Update
         } else if (stmt instanceof Delete) {
@@ -612,9 +632,9 @@ public class PgsqlEventProcessor implements EventProcessor {
             if (dataOperation.isModified()) {
                 // Modify SQL statement
                 if (stmt instanceof Insert) {
-                    modifyInsertStatement(ctx, (Insert)stmt, null, dataOperation, 0);
+                    modifyInsertStatement(ctx, (Insert) stmt, null, dataOperation, 0);
                 } else if (stmt instanceof Select) {
-                    modifySelectStatement(ctx, (Select)stmt, null, dataOperation, 0);
+                    modifySelectStatement(ctx, (Select) stmt, null, dataOperation, 0);
                 } else if (stmt instanceof Update) {
                     // TODO Update
                 } else if (stmt instanceof Delete) {
@@ -632,7 +652,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         return sqlStatement;
     }
 
-    private DataOperation extractInsertOperation(ChannelHandlerContext ctx, Insert stmt, List<ParameterValue> parameterValues, DataOperation dataOperation) {
+    private DataOperation extractInsertOperation(ChannelHandlerContext ctx, Insert stmt,
+            List<ParameterValue> parameterValues, DataOperation dataOperation) {
         if (dataOperation == null) {
             dataOperation = new DataOperation();
             dataOperation.setOperation(Operation.CREATE);
@@ -661,12 +682,11 @@ public class PgsqlEventProcessor implements EventProcessor {
                 // TODO retrieve column names
                 dataIds = Collections.emptyList();
             } else {
-                dataIds = stmt.getColumns().stream()
-                    .map(Column::getColumnName)     // get column name
-                    .map(StringUtilities::unquote)  // unquote string
-                    .map(cn -> datasetId + cn)      // build dataId
-                    .map(CString::valueOf)          // transform to CString
-                    .collect(Collectors.toList());  // build a list
+                dataIds = stmt.getColumns().stream().map(Column::getColumnName) // get column name
+                        .map(StringUtilities::unquote) // unquote string
+                        .map(cn -> datasetId + cn) // build dataId
+                        .map(CString::valueOf) // transform to CString
+                        .collect(Collectors.toList()); // build a list
             }
             dataOperation.setDataIds(dataIds);
         }
@@ -674,22 +694,22 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<CString> dataValues = null;
         if (stmt.getItemsList() instanceof ExpressionList) {
             dataValues = ((ExpressionList) stmt.getItemsList()).getExpressions().stream()
-                    .map(exp -> (exp instanceof NullValue) ? null : exp.toString())     // transform to string
-                    .map(CString::valueOf)                                              // transform to CString
-                    .collect(Collectors.toList());                                      // build a list
+                    .map(exp -> (exp instanceof NullValue) ? null : exp.toString()) // transform to string
+                    .map(CString::valueOf) // transform to CString
+                    .collect(Collectors.toList()); // build a list
         }
         // TODO more complex insert statement
-//        else if (stmt.getItemsList() instanceof MultiExpressionList) {
-//        } else if (stmt.getItemsList() instanceof SubSelect) {
-//        }
+        //        else if (stmt.getItemsList() instanceof MultiExpressionList) {
+        //        } else if (stmt.getItemsList() instanceof SubSelect) {
+        //        }
         if (parameterValues != null) {
             // Replace parameter id by parameter value
-            dataValues.replaceAll(value -> {                                            // replace each data value ...
-                if (value != null && value.charAt(0) == '$') {                          // if value is a parameter id ($<index>)
-                    int idx = Integer.parseInt(value.substring(1).toString()) - 1;      // get the parameter index
-                    ParameterValue parameterValue = parameterValues.get(idx);           // get the parameter value
-                    value = convertToText(parameterValue.getType(),                     // convert parameter value to string
-                                parameterValue.getFormat(), parameterValue.getValue());
+            dataValues.replaceAll(value -> { // replace each data value ...
+                if (value != null && value.charAt(0) == '$') { // if value is a parameter id ($<index>)
+                    int idx = Integer.parseInt(value.substring(1).toString()) - 1; // get the parameter index
+                    ParameterValue parameterValue = parameterValues.get(idx); // get the parameter value
+                    value = convertToText(parameterValue.getType(), // convert parameter value to string
+                            parameterValue.getFormat(), parameterValue.getValue());
                 }
                 return value;
             });
@@ -698,20 +718,21 @@ public class PgsqlEventProcessor implements EventProcessor {
         return dataOperation;
     }
 
-    private void modifyInsertStatement(ChannelHandlerContext ctx, Insert stmt, List<ParameterValue> parameterValues, DataOperation dataOperation, int row) {
+    private void modifyInsertStatement(ChannelHandlerContext ctx, Insert stmt, List<ParameterValue> parameterValues,
+            DataOperation dataOperation, int row) {
         List<CString> dataValues = dataOperation.getDataValues().get(row);
         if (stmt.getItemsList() instanceof ExpressionList) {
             final List<Expression> expressions = ((ExpressionList) stmt.getItemsList()).getExpressions();
-            for (int i = 0; i < dataValues.size(); i ++) {
+            for (int i = 0; i < dataValues.size(); i++) {
                 Expression expression = expressions.get(i);
                 if (!(expression instanceof NullValue)) {
                     String strValue = expression.toString();
                     if (strValue.charAt(0) == '$') {
                         // modify parameter
                         if (parameterValues != null) {
-                            int paramIndex = Integer.parseInt(strValue.substring(1)) - 1;       // get the parameter index
-                            ParameterValue parameterValue = parameterValues.get(paramIndex);    // get the parameter value
-                            ByteBuf value = convertToByteBuf(parameterValue.getType(),          // convert string to ByteBuf
+                            int paramIndex = Integer.parseInt(strValue.substring(1)) - 1; // get the parameter index
+                            ParameterValue parameterValue = parameterValues.get(paramIndex); // get the parameter value
+                            ByteBuf value = convertToByteBuf(parameterValue.getType(), // convert string to ByteBuf
                                     parameterValue.getFormat(), dataValues.get(i));
                             // modify parameter value
                             parameterValue.setValue(value);
@@ -729,7 +750,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         }
     }
 
-    private DataOperation extractSelectOperation(ChannelHandlerContext ctx, Select stmt, List<ParameterValue> parameterValues, DataOperation dataOperation) {
+    private DataOperation extractSelectOperation(ChannelHandlerContext ctx, Select stmt,
+            List<ParameterValue> parameterValues, DataOperation dataOperation) {
         if (dataOperation == null) {
             dataOperation = new DataOperation();
             dataOperation.setOperation(Operation.READ);
@@ -765,11 +787,13 @@ public class PgsqlEventProcessor implements EventProcessor {
             // Extract data ids
             for (SelectItem selectItem : select.getSelectItems()) {
                 if (selectItem instanceof SelectExpressionItem) {
-                    SelectExpressionItem selectExpressionItem = (SelectExpressionItem)selectItem;
+                    SelectExpressionItem selectExpressionItem = (SelectExpressionItem) selectItem;
                     if (selectExpressionItem.getExpression() instanceof Function) {
-                        dataOperation.addDataId(CString.valueOf(datasetId + ((Function)selectExpressionItem.getExpression()).getName()));
+                        dataOperation.addDataId(CString
+                                .valueOf(datasetId + ((Function) selectExpressionItem.getExpression()).getName()));
                     } else {
-                        dataOperation.addDataId(CString.valueOf(datasetId + StringUtilities.unquote(selectExpressionItem.getExpression().toString())));
+                        dataOperation.addDataId(CString.valueOf(
+                                datasetId + StringUtilities.unquote(selectExpressionItem.getExpression().toString())));
                     }
                 } else {
                     // TODO All columns (*)
@@ -777,11 +801,13 @@ public class PgsqlEventProcessor implements EventProcessor {
             }
             // Extract parameter ids and values (functions)
             for (SelectItem selectItem : select.getSelectItems()) {
-                if (selectItem instanceof SelectExpressionItem && ((SelectExpressionItem)selectItem).getExpression() instanceof Function) {
-                    Function function = (Function) ((SelectExpressionItem)selectItem).getExpression();
+                if (selectItem instanceof SelectExpressionItem
+                        && ((SelectExpressionItem) selectItem).getExpression() instanceof Function) {
+                    Function function = (Function) ((SelectExpressionItem) selectItem).getExpression();
                     if (function.getParameters() != null) {
                         dataOperation.addParameterId(CString.valueOf(function.getName()));
-                        CString value = CString.valueOf(PlainSelect.getStringList(function.getParameters().getExpressions(), true, false));
+                        CString value = CString.valueOf(
+                                PlainSelect.getStringList(function.getParameters().getExpressions(), true, false));
                         dataOperation.addParameterValue(value);
                     }
                 }
@@ -791,11 +817,13 @@ public class PgsqlEventProcessor implements EventProcessor {
         return dataOperation;
     }
 
-    private void modifySelectStatement(ChannelHandlerContext ctx, Select stmt, List<ParameterValue> parameterValues, DataOperation dataOperation, int row) {
+    private void modifySelectStatement(ChannelHandlerContext ctx, Select stmt, List<ParameterValue> parameterValues,
+            DataOperation dataOperation, int row) {
         PlainSelect select = (PlainSelect) stmt.getSelectBody();
         for (SelectItem selectItem : select.getSelectItems()) {
-            if (selectItem instanceof SelectExpressionItem && ((SelectExpressionItem)selectItem).getExpression() instanceof Function) {
-                Function function = (Function) ((SelectExpressionItem)selectItem).getExpression();
+            if (selectItem instanceof SelectExpressionItem
+                    && ((SelectExpressionItem) selectItem).getExpression() instanceof Function) {
+                Function function = (Function) ((SelectExpressionItem) selectItem).getExpression();
                 int index = dataOperation.getParameterIds().indexOf(CString.valueOf(function.getName()));
                 if (index != -1) {
                     String expression = dataOperation.getParameterValues().get(index).toString();
@@ -813,19 +841,22 @@ public class PgsqlEventProcessor implements EventProcessor {
     }
 
     @Override
-    public QueriesTransferMode<BindStep, Void> processBindStep(ChannelHandlerContext ctx, BindStep bindStep) throws IOException {
+    public QueriesTransferMode<BindStep, Void> processBindStep(ChannelHandlerContext ctx, BindStep bindStep)
+            throws IOException {
         LOGGER.debug("Bind step: {}", bindStep);
         SQLSession session = getSession(ctx);
         ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(bindStep.getPreparedStatement());
         if (parseStepStatus == null) {
-            throw new IllegalStateException(String.format("Parse step not found for bind step '%s'", bindStep.getName()));
+            throw new IllegalStateException(
+                    String.format("Parse step not found for bind step '%s'", bindStep.getName()));
         }
         TransferMode transferMode = TransferMode.FORWARD;
         List<Query> newQueries = Collections.singletonList(bindStep);
         Void response = null;
         Map<Byte, CString> errorDetails = null;
         // Track bind step (for describe, execute and close steps)
-        ExtendedQueryStatus<BindStep> bindStepStatus = session.addBindStep(bindStep, parseStepStatus.getOperation(), parseStepStatus.isToProcess());
+        ExtendedQueryStatus<BindStep> bindStepStatus = session.addBindStep(bindStep, parseStepStatus.getOperation(),
+                parseStepStatus.isToProcess());
         Operation operation = parseStepStatus.getOperation();
         if (operation != null) {
             CString error = null;
@@ -843,7 +874,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 } else if (processingMode == Mode.ORCHESTRATION) {
                     // TODO orchestration mode. Meanwhile, same as AS_IT_IS mode
                     transferMode = TransferMode.FORWARD;
-                } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.BUFFERING || processingMode == Mode.STREAMING) {
+                } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.BUFFERING
+                        || processingMode == Mode.STREAMING) {
                     transferMode = TransferMode.FORWARD;
                 }
                 break;
@@ -860,12 +892,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                     } else {
                         // Should not occur
                         transferMode = TransferMode.ERROR;
-                        error = CString.valueOf("Buffering processing mode not supported for record creation by this CLARUS proxy");
+                        error = CString.valueOf(
+                                "Buffering processing mode not supported for record creation by this CLARUS proxy");
                     }
                 } else if (processingMode == Mode.ORCHESTRATION) {
                     // Should not occur
                     transferMode = TransferMode.ERROR;
-                    error = CString.valueOf("Orchestration processing mode not supported for dataset or record creation by this CLARUS proxy");
+                    error = CString.valueOf(
+                            "Orchestration processing mode not supported for dataset or record creation by this CLARUS proxy");
                 } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.STREAMING) {
                     transferMode = TransferMode.FORWARD;
                 }
@@ -884,12 +918,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                     } else {
                         // Should not occur
                         transferMode = TransferMode.ERROR;
-                        error = CString.valueOf("Buffering processing mode not supported for record modification by this CLARUS proxy");
+                        error = CString.valueOf(
+                                "Buffering processing mode not supported for record modification by this CLARUS proxy");
                     }
                 } else if (processingMode == Mode.ORCHESTRATION) {
                     // Should not occur
                     transferMode = TransferMode.ERROR;
-                    error = CString.valueOf("Orchestration processing mode not supported for dataset or record modification by this CLARUS proxy");
+                    error = CString.valueOf(
+                            "Orchestration processing mode not supported for dataset or record modification by this CLARUS proxy");
                 } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.STREAMING) {
                     transferMode = TransferMode.FORWARD;
                 }
@@ -908,12 +944,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                     } else {
                         // Should not occur
                         transferMode = TransferMode.ERROR;
-                        error = CString.valueOf("Buffering processing mode not supported for record delete by this CLARUS proxy");
+                        error = CString.valueOf(
+                                "Buffering processing mode not supported for record delete by this CLARUS proxy");
                     }
                 } else if (processingMode == Mode.ORCHESTRATION) {
                     // Should not occur
                     transferMode = TransferMode.ERROR;
-                    error = CString.valueOf("Orchestration processing mode not supported for dataset or record delete by this CLARUS proxy");
+                    error = CString.valueOf(
+                            "Orchestration processing mode not supported for dataset or record delete by this CLARUS proxy");
                 } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.STREAMING) {
                     transferMode = TransferMode.FORWARD;
                 }
@@ -938,19 +976,22 @@ public class PgsqlEventProcessor implements EventProcessor {
             }
             newQueries = null;
         } else if (transferMode == TransferMode.ERROR) {
-            if (session.getTransactionStatus() == (byte)'T') {
+            if (session.getTransactionStatus() == (byte) 'T') {
                 session.setTransactionErrorDetails(errorDetails);
             }
             session.resetCurrentCommand();
             newQueries = null;
         }
-        QueriesTransferMode<BindStep, Void> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
-        LOGGER.debug("Bind step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
+        QueriesTransferMode<BindStep, Void> mode = new QueriesTransferMode<>(newQueries, transferMode, response,
+                errorDetails);
+        LOGGER.debug("Bind step processed: new queries={}, transfer mode={}", mode.getNewQueries(),
+                mode.getTransferMode());
         return mode;
     }
 
     @Override
-    public QueriesTransferMode<DescribeStep, List<?>[]> processDescribeStep(ChannelHandlerContext ctx, DescribeStep describeStep) throws IOException {
+    public QueriesTransferMode<DescribeStep, List<?>[]> processDescribeStep(ChannelHandlerContext ctx,
+            DescribeStep describeStep) throws IOException {
         LOGGER.debug("Describe step: {}", describeStep);
         SQLSession session = getSession(ctx);
         TransferMode transferMode = session.getTransferMode();
@@ -975,7 +1016,7 @@ public class PgsqlEventProcessor implements EventProcessor {
             }
         } else if (transferMode == TransferMode.FORGET) {
             // TODO parse SQL statement to extract selected columns (to row description)
-            List<PgsqlRowDescriptionMessage.Field> rowDescription = null;       // null means no data
+            List<PgsqlRowDescriptionMessage.Field> rowDescription = null; // null means no data
             List<Long> parameterTypes = null;
             if (describeStep.getCode() == 'S') {
                 ExtendedQueryStatus<ParseStep> parseStepStatus = session.getParseStepStatus(describeStep.getName());
@@ -996,13 +1037,16 @@ public class PgsqlEventProcessor implements EventProcessor {
             session.resetCurrentCommand();
             newQueries = null;
         }
-        QueriesTransferMode<DescribeStep, List<?>[]> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
-        LOGGER.debug("Describe step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
+        QueriesTransferMode<DescribeStep, List<?>[]> mode = new QueriesTransferMode<>(newQueries, transferMode,
+                response, errorDetails);
+        LOGGER.debug("Describe step processed: new queries={}, transfer mode={}", mode.getNewQueries(),
+                mode.getTransferMode());
         return mode;
     }
 
     @Override
-    public QueriesTransferMode<ExecuteStep, CString> processExecuteStep(ChannelHandlerContext ctx, ExecuteStep executeStep) throws IOException {
+    public QueriesTransferMode<ExecuteStep, CString> processExecuteStep(ChannelHandlerContext ctx,
+            ExecuteStep executeStep) throws IOException {
         LOGGER.debug("Execute step: {}", executeStep);
         SQLSession session = getSession(ctx);
         TransferMode transferMode = session.getTransferMode();
@@ -1012,7 +1056,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (transferMode == TransferMode.FORWARD) {
             // nothing to do, just forward query
         } else if (transferMode == TransferMode.FORGET) {
-            ExtendedQueryStatus<BindStep> bindStepStatus = session.getBindStepStatus(executeStep.getPortal()); 
+            ExtendedQueryStatus<BindStep> bindStepStatus = session.getBindStepStatus(executeStep.getPortal());
             Operation operation = bindStepStatus.getOperation();
             if (operation != null) {
                 switch (operation) {
@@ -1042,13 +1086,16 @@ public class PgsqlEventProcessor implements EventProcessor {
             session.resetCurrentCommand();
             newQueries = null;
         }
-        QueriesTransferMode<ExecuteStep, CString> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
-        LOGGER.debug("Execute step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
+        QueriesTransferMode<ExecuteStep, CString> mode = new QueriesTransferMode<>(newQueries, transferMode, response,
+                errorDetails);
+        LOGGER.debug("Execute step processed: new queries={}, transfer mode={}", mode.getNewQueries(),
+                mode.getTransferMode());
         return mode;
     }
 
     @Override
-    public QueriesTransferMode<CloseStep, Void> processCloseStep(ChannelHandlerContext ctx, CloseStep closeStep) throws IOException {
+    public QueriesTransferMode<CloseStep, Void> processCloseStep(ChannelHandlerContext ctx, CloseStep closeStep)
+            throws IOException {
         LOGGER.debug("Close step: {}", closeStep);
         SQLSession session = getSession(ctx);
         TransferMode transferMode = session.getTransferMode();
@@ -1073,13 +1120,16 @@ public class PgsqlEventProcessor implements EventProcessor {
             session.resetCurrentCommand();
             newQueries = null;
         }
-        QueriesTransferMode<CloseStep, Void> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
-        LOGGER.debug("Close step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
+        QueriesTransferMode<CloseStep, Void> mode = new QueriesTransferMode<>(newQueries, transferMode, response,
+                errorDetails);
+        LOGGER.debug("Close step processed: new queries={}, transfer mode={}", mode.getNewQueries(),
+                mode.getTransferMode());
         return mode;
     }
 
     @Override
-    public QueriesTransferMode<SynchronizeStep, Byte> processSynchronizeStep(ChannelHandlerContext ctx, SynchronizeStep synchronizeStep) throws IOException {
+    public QueriesTransferMode<SynchronizeStep, Byte> processSynchronizeStep(ChannelHandlerContext ctx,
+            SynchronizeStep synchronizeStep) throws IOException {
         LOGGER.debug("Synchronize step: {}", synchronizeStep);
         SQLSession session = getSession(ctx);
         TransferMode transferMode = session.getTransferMode();
@@ -1098,13 +1148,16 @@ public class PgsqlEventProcessor implements EventProcessor {
             // Reset transfer mode for next queries
             session.setTransferMode(TransferMode.FORWARD);
         }
-        QueriesTransferMode<SynchronizeStep, Byte> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
-        LOGGER.debug("Synchronize step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
+        QueriesTransferMode<SynchronizeStep, Byte> mode = new QueriesTransferMode<>(newQueries, transferMode, response,
+                errorDetails);
+        LOGGER.debug("Synchronize step processed: new queries={}, transfer mode={}", mode.getNewQueries(),
+                mode.getTransferMode());
         return mode;
     }
 
     @Override
-    public QueriesTransferMode<FlushStep, Void> processFlushStep(ChannelHandlerContext ctx, FlushStep flushStep) throws IOException {
+    public QueriesTransferMode<FlushStep, Void> processFlushStep(ChannelHandlerContext ctx, FlushStep flushStep)
+            throws IOException {
         LOGGER.debug("Flush step: {}", flushStep);
         SQLSession session = getSession(ctx);
         TransferMode transferMode = session.getTransferMode();
@@ -1125,24 +1178,30 @@ public class PgsqlEventProcessor implements EventProcessor {
             session.resetCurrentCommand();
             newQueries = null;
         }
-        QueriesTransferMode<FlushStep, Void> mode = new QueriesTransferMode<>(newQueries, transferMode, response, errorDetails);
-        LOGGER.debug("Flush step processed: new queries={}, transfer mode={}", mode.getNewQueries(), mode.getTransferMode());
+        QueriesTransferMode<FlushStep, Void> mode = new QueriesTransferMode<>(newQueries, transferMode, response,
+                errorDetails);
+        LOGGER.debug("Flush step processed: new queries={}, transfer mode={}", mode.getNewQueries(),
+                mode.getTransferMode());
         return mode;
     }
 
-    private List<Query> buildNewQueries(ChannelHandlerContext ctx, ExtendedQueryStatus<ParseStep> parseStepStatus, ExtendedQueryStatus<BindStep> bindStepStatus) throws IOException {
+    private List<Query> buildNewQueries(ChannelHandlerContext ctx, ExtendedQueryStatus<ParseStep> parseStepStatus,
+            ExtendedQueryStatus<BindStep> bindStepStatus) throws IOException {
         List<Query> newQueries = processBufferedQueries(ctx);
-        List<ExtendedQuery> newExtendedQuery = parseStepStatus.isToProcess() ? processExtendedQuery(ctx, parseStepStatus, bindStepStatus) : Arrays.asList(parseStepStatus.getQuery(), bindStepStatus.getQuery());
+        List<ExtendedQuery> newExtendedQuery = parseStepStatus.isToProcess()
+                ? processExtendedQuery(ctx, parseStepStatus, bindStepStatus)
+                : Arrays.asList(parseStepStatus.getQuery(), bindStepStatus.getQuery());
         newExtendedQuery.forEach(Query::retain);
         if (newQueries.isEmpty()) {
-            newQueries = newExtendedQuery.stream().map(q -> (Query)q).collect(Collectors.toList());
+            newQueries = newExtendedQuery.stream().map(q -> (Query) q).collect(Collectors.toList());
         } else {
             newQueries.addAll(newExtendedQuery);
         }
         return newQueries;
     }
 
-    private List<ExtendedQuery> processExtendedQuery(ChannelHandlerContext ctx, ExtendedQueryStatus<ParseStep> parseStepStatus, ExtendedQueryStatus<BindStep> bindStepStatus) {
+    private List<ExtendedQuery> processExtendedQuery(ChannelHandlerContext ctx,
+            ExtendedQueryStatus<ParseStep> parseStepStatus, ExtendedQueryStatus<BindStep> bindStepStatus) {
         ParseStep parseStep = parseStepStatus.getQuery();
         BindStep bindStep = bindStepStatus.getQuery();
         // Parse SQL statement
@@ -1150,19 +1209,18 @@ public class PgsqlEventProcessor implements EventProcessor {
         SQLSession session = getSession(ctx);
         if (stmt != null) {
             // Build bind parameter (type+format+value)
-            List<ParameterValue> parameterValues = bindStep.getParameterValues().stream()
-                    .map(ParameterValue::new)           // create a ParameterValue for each parameter value
-                    .collect(Collectors.toList());      // build a list
+            List<ParameterValue> parameterValues = bindStep.getParameterValues().stream().map(ParameterValue::new) // create a ParameterValue for each parameter value
+                    .collect(Collectors.toList()); // build a list
             if (!parseStep.getParameterTypes().isEmpty()) {
                 final List<Long> parameterTypes = parseStep.getParameterTypes();
-                for (int idx = 0; idx < parameterTypes.size(); idx ++) {
+                for (int idx = 0; idx < parameterTypes.size(); idx++) {
                     // set parameter type
                     parameterValues.get(idx).setType(parameterTypes.get(idx));
                 }
             }
             if (!bindStep.getParameterFormats().isEmpty()) {
                 final List<Short> formats = bindStep.getParameterFormats();
-                for (int i = 0; i < parameterValues.size(); i ++) {
+                for (int i = 0; i < parameterValues.size(); i++) {
                     ParameterValue parameterValue = parameterValues.get(i);
                     Short format = formats.get(formats.size() == 1 ? 0 : i);
                     // set parameter value format
@@ -1172,9 +1230,9 @@ public class PgsqlEventProcessor implements EventProcessor {
             // Extract data operation
             DataOperation dataOperation = null;
             if (stmt instanceof Insert) {
-                dataOperation = extractInsertOperation(ctx, (Insert)stmt, parameterValues, null);
+                dataOperation = extractInsertOperation(ctx, (Insert) stmt, parameterValues, null);
             } else if (stmt instanceof Select) {
-                dataOperation = extractSelectOperation(ctx, (Select)stmt, parameterValues, null);
+                dataOperation = extractSelectOperation(ctx, (Select) stmt, parameterValues, null);
             } else if (stmt instanceof Update) {
                 // TODO Update
             } else if (stmt instanceof Delete) {
@@ -1187,20 +1245,20 @@ public class PgsqlEventProcessor implements EventProcessor {
                 if (dataOperation.isModified()) {
                     // Modify SQL statement
                     if (stmt instanceof Insert) {
-                        modifyInsertStatement(ctx, (Insert)stmt, parameterValues, dataOperation, 0);
+                        modifyInsertStatement(ctx, (Insert) stmt, parameterValues, dataOperation, 0);
                     } else if (stmt instanceof Select) {
-                        modifySelectStatement(ctx, (Select)stmt, parameterValues, dataOperation, 0);
+                        modifySelectStatement(ctx, (Select) stmt, parameterValues, dataOperation, 0);
                     }
                     String newSQL = stmt.toString();
                     newSQL = StringUtilities.addIrrelevantCharacters(newSQL, parseStep.getSQL(), " \t\r\n;");
-                    parseStep = new ParseStep(parseStep.getName(), CString.valueOf(newSQL), parseStep.getParameterTypes());
-                    boolean allMatch = parameterValues.stream()
-                            .map(ParameterValue::getValue).collect(Collectors.toList()) // build a list of parameter ByteBuf values
-                            .equals(bindStep.getParameterValues());                     // test if parameter ByteBuf values has been changed
+                    parseStep = new ParseStep(parseStep.getName(), CString.valueOf(newSQL),
+                            parseStep.getParameterTypes());
+                    boolean allMatch = parameterValues.stream().map(ParameterValue::getValue)
+                            .collect(Collectors.toList()) // build a list of parameter ByteBuf values
+                            .equals(bindStep.getParameterValues()); // test if parameter ByteBuf values has been changed
                     if (!allMatch) {
-                        List<ByteBuf> newParameterValues = parameterValues.stream()
-                                .map(ParameterValue::getValue)  // get the parameter value
-                                .collect(Collectors.toList());  // build a list
+                        List<ByteBuf> newParameterValues = parameterValues.stream().map(ParameterValue::getValue) // get the parameter value
+                                .collect(Collectors.toList()); // build a list
                         bindStep = new BindStep(bindStep.getName(), bindStep.getPreparedStatement(),
                                 bindStep.getParameterFormats(), newParameterValues, bindStep.getResultColumnFormats());
                     }
@@ -1235,7 +1293,8 @@ public class PgsqlEventProcessor implements EventProcessor {
             if (sql.isBuffered()) {
                 byteBuf = sql.getByteBuf();
                 byteBuf.markReaderIndex();
-                stmt = CCJSqlParserUtil.parse(new ByteBufInputStream(byteBuf.readSlice(sql.length())), StandardCharsets.ISO_8859_1.name());
+                stmt = CCJSqlParserUtil.parse(new ByteBufInputStream(byteBuf.readSlice(sql.length())),
+                        StandardCharsets.ISO_8859_1.name());
             } else {
                 stmt = CCJSqlParserUtil.parse(sql.toString());
             }
@@ -1256,64 +1315,76 @@ public class PgsqlEventProcessor implements EventProcessor {
         SQLSession session = getSession(ctx);
         session.addBufferedQuery(query);
         if (query instanceof SimpleQuery) {
-            if (session.getTransactionStatus() == (byte)'E') {
-                if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+            if (session.getTransactionStatus() == (byte) 'E') {
+                if (session
+                        .lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
                     // command ignored, don't expect to receive command complete response 
                     // don't notify frontend of error
                 } else {
                     // expect to receive error response
-                    session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                    session.addLastQueryResponseToIgnore(
+                            QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
                 }
                 // notify frontend of error
                 errorDetails = session.getRetainedTransactionErrorDetails();
             } else {
-                session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                session.addLastQueryResponseToIgnore(
+                        QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
             }
         } else {
             ExtendedQuery extendedQuery = (ExtendedQuery) query;
-            if (session.getTransactionStatus() == (byte)'E') {
+            if (session.getTransactionStatus() == (byte) 'E') {
                 if (extendedQuery instanceof ParseStep) {
                     // expect to receive error response
-                    session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                    session.addLastQueryResponseToIgnore(
+                            QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
                     // notify frontend of error
                     errorDetails = session.getRetainedTransactionErrorDetails();
                 } else if (extendedQuery instanceof BindStep) {
-                    if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+                    if (session
+                            .lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
                         // command ignored, don't expect to receive bind complete response 
                         // don't notify frontend of error
                     } else {
                         // expect to receive error response
-                        session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                        session.addLastQueryResponseToIgnore(
+                                QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
                         // notify frontend of error
                         errorDetails = session.getRetainedTransactionErrorDetails();
                     }
                 } else if (extendedQuery instanceof DescribeStep) {
-                    if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+                    if (session
+                            .lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
                         // command ignored, don't expect to receive parameter description, row description or no data responses 
                         // don't notify frontend of error
                     } else {
                         // expect to receive error response
-                        session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                        session.addLastQueryResponseToIgnore(
+                                QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
                         // notify frontend of error
                         errorDetails = session.getRetainedTransactionErrorDetails();
                     }
                 } else if (extendedQuery instanceof ExecuteStep) {
-                    if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+                    if (session
+                            .lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
                         // command ignored, don't expect to receive command complete response 
                         // don't notify frontend of error
                     } else {
                         // expect to receive error response
-                        session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                        session.addLastQueryResponseToIgnore(
+                                QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
                         // notify frontend of error
                         errorDetails = session.getRetainedTransactionErrorDetails();
                     }
                 } else if (extendedQuery instanceof CloseStep) {
-                    if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+                    if (session
+                            .lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
                         // command ignored, don't expect to receive close complete response 
                         // don't notify frontend of error
                     } else {
                         // expect to receive error response
-                        session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                        session.addLastQueryResponseToIgnore(
+                                QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
                         // notify frontend of error
                         errorDetails = session.getRetainedTransactionErrorDetails();
                     }
@@ -1323,7 +1394,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                     // don't notify frontend of error
                 } else if (extendedQuery instanceof FlushStep) {
                     // don't expect to receive any response 
-                    if (session.lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
+                    if (session
+                            .lastQueryResponseToIgnore() == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
                         // don't notify frontend of error
                     } else {
                         // notify frontend of error
@@ -1345,7 +1417,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                         session.addLastQueryResponseToIgnore(QueryResponseType.NO_DATA);
                     }
                 } else if (extendedQuery instanceof ExecuteStep) {
-                    session.addLastQueryResponseToIgnore(QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
+                    session.addLastQueryResponseToIgnore(
+                            QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR);
                 } else if (extendedQuery instanceof CloseStep) {
                     session.addLastQueryResponseToIgnore(QueryResponseType.CLOSE_COMPLETE);
                 } else if (extendedQuery instanceof SynchronizeStep) {
@@ -1370,7 +1443,8 @@ public class PgsqlEventProcessor implements EventProcessor {
             transferMode = TransferMode.FORGET;
             session.removeFirstQueryResponseToIgnore();
         } else {
-            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.PARSE_COMPLETE, nextQueryResponseToIgnore));
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
+                    QueryResponseType.PARSE_COMPLETE, nextQueryResponseToIgnore));
         }
         MessageTransferMode<Void> mode = new MessageTransferMode<>(null, transferMode);
         LOGGER.debug("Parse complete processed: transfer mode={}", mode.getTransferMode());
@@ -1389,7 +1463,8 @@ public class PgsqlEventProcessor implements EventProcessor {
             transferMode = TransferMode.FORGET;
             session.removeFirstQueryResponseToIgnore();
         } else {
-            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.BIND_COMPLETE, nextQueryResponseToIgnore));
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
+                    QueryResponseType.BIND_COMPLETE, nextQueryResponseToIgnore));
         }
         MessageTransferMode<Void> mode = new MessageTransferMode<>(null, transferMode);
         LOGGER.debug("Bind complete processed: transfer mode={}", mode.getTransferMode());
@@ -1397,7 +1472,8 @@ public class PgsqlEventProcessor implements EventProcessor {
     }
 
     @Override
-    public MessageTransferMode<List<Long>> processParameterDescriptionResponse(ChannelHandlerContext ctx, List<Long> types) {
+    public MessageTransferMode<List<Long>> processParameterDescriptionResponse(ChannelHandlerContext ctx,
+            List<Long> types) {
         LOGGER.debug("Parameter description: {}", types);
         TransferMode transferMode;
         List<Long> newTypes = null;
@@ -1410,15 +1486,18 @@ public class PgsqlEventProcessor implements EventProcessor {
             transferMode = TransferMode.FORGET;
             session.removeFirstQueryResponseToIgnore();
         } else {
-            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.PARAMETER_DESCRIPTION, nextQueryResponseToIgnore));
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
+                    QueryResponseType.PARAMETER_DESCRIPTION, nextQueryResponseToIgnore));
         }
         MessageTransferMode<List<Long>> mode = new MessageTransferMode<>(newTypes, transferMode);
-        LOGGER.debug("Parameter description processed: new types={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
+        LOGGER.debug("Parameter description processed: new types={}, transfer mode={}", mode.getNewContent(),
+                mode.getTransferMode());
         return mode;
     }
 
     @Override
-    public MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> processRowDescriptionResponse(ChannelHandlerContext ctx, List<PgsqlRowDescriptionMessage.Field> fields) {
+    public MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> processRowDescriptionResponse(
+            ChannelHandlerContext ctx, List<PgsqlRowDescriptionMessage.Field> fields) {
         LOGGER.debug("Row description: {}", fields);
         TransferMode transferMode;
         List<PgsqlRowDescriptionMessage.Field> newFields = null;
@@ -1430,23 +1509,30 @@ public class PgsqlEventProcessor implements EventProcessor {
             if (session.getCurrentOperation() == Operation.READ) {
                 session.setRowDescription(fields);
                 // Modify promise in case query don't explicitly specify columns (e.g. '*')
-                if (session.getPromise() instanceof DefaultPromise && (session.getPromise().getAttributeNames() == null || session.getPromise().getAttributeNames().length == 0)) {
-                    ((DefaultPromise)session.getPromise()).setAttributeNames(newFields.stream().map(PgsqlRowDescriptionMessage.Field::getName).map(CString::toString).toArray(String[]::new));
+                if (session.getPromise() instanceof DefaultPromise && (session.getPromise().getAttributeNames() == null
+                        || session.getPromise().getAttributeNames().length == 0)) {
+                    ((DefaultPromise) session.getPromise())
+                            .setAttributeNames(newFields.stream().map(PgsqlRowDescriptionMessage.Field::getName)
+                                    .map(CString::toString).toArray(String[]::new));
                 }
             }
         } else if (nextQueryResponseToIgnore == QueryResponseType.ROW_DESCRIPTION_AND_ROW_DATA) {
             transferMode = TransferMode.FORGET;
             session.removeFirstQueryResponseToIgnore();
         } else {
-            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.ROW_DESCRIPTION_AND_ROW_DATA, nextQueryResponseToIgnore));
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
+                    QueryResponseType.ROW_DESCRIPTION_AND_ROW_DATA, nextQueryResponseToIgnore));
         }
-        MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> mode = new MessageTransferMode<>(newFields, transferMode);
-        LOGGER.debug("Row description processed: new fields={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
+        MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> mode = new MessageTransferMode<>(newFields,
+                transferMode);
+        LOGGER.debug("Row description processed: new fields={}, transfer mode={}", mode.getNewContent(),
+                mode.getTransferMode());
         return mode;
     }
 
     @Override
-    public MessageTransferMode<List<ByteBuf>> processDataRowResponse(ChannelHandlerContext ctx, List<ByteBuf> values) throws IOException {
+    public MessageTransferMode<List<ByteBuf>> processDataRowResponse(ChannelHandlerContext ctx, List<ByteBuf> values)
+            throws IOException {
         LOGGER.debug("Data row: {}", values);
         TransferMode transferMode;
         List<ByteBuf> newValues = null;
@@ -1461,10 +1547,12 @@ public class PgsqlEventProcessor implements EventProcessor {
         } else if (nextQueryResponseToIgnore == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
             transferMode = TransferMode.FORGET;
         } else {
-            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.NO_DATA, nextQueryResponseToIgnore));
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
+                    QueryResponseType.NO_DATA, nextQueryResponseToIgnore));
         }
         MessageTransferMode<List<ByteBuf>> mode = new MessageTransferMode<>(newValues, transferMode);
-        LOGGER.debug("Data row processed: new values={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
+        LOGGER.debug("Data row processed: new values={}, transfer mode={}", mode.getNewContent(),
+                mode.getTransferMode());
         return mode;
     }
 
@@ -1479,7 +1567,7 @@ public class PgsqlEventProcessor implements EventProcessor {
             dataOperation.addDataId(field.getName());
             CString dataValue = convertToText(field.getTypeOID(), field.getFormat(), values.get(i));
             dataValues.add(dataValue);
-            i ++;
+            i++;
         }
         dataOperation.addDataValues(dataValues);
         dataOperation.setPromise(session.getPromise());
@@ -1489,7 +1577,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<ByteBuf> newValues = values;
         if (dataOperation.isModified()) {
             // Modify data
-            for (i = 0; i < values.size(); i ++) {
+            for (i = 0; i < values.size(); i++) {
                 CString dataValue = dataValues.get(i);
                 CString newDataValue = dataOperation.getDataValues().get(0).get(i);
                 if (newDataValue != dataValue && (newDataValue == null || !newDataValue.equals(dataValue))) {
@@ -1539,7 +1627,8 @@ public class PgsqlEventProcessor implements EventProcessor {
             transferMode = TransferMode.FORGET;
             session.removeFirstQueryResponseToIgnore();
         } else {
-            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.NO_DATA, nextQueryResponseToIgnore));
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
+                    QueryResponseType.NO_DATA, nextQueryResponseToIgnore));
         }
         MessageTransferMode<Void> mode = new MessageTransferMode<>(null, transferMode);
         LOGGER.debug("No data processed: transfer mode={}", mode.getTransferMode());
@@ -1547,7 +1636,8 @@ public class PgsqlEventProcessor implements EventProcessor {
     }
 
     @Override
-    public MessageTransferMode<CString> processCommandCompleteResult(ChannelHandlerContext ctx, CString tag) throws IOException {
+    public MessageTransferMode<CString> processCommandCompleteResult(ChannelHandlerContext ctx, CString tag)
+            throws IOException {
         LOGGER.debug("Command complete: {}", tag);
         TransferMode transferMode;
         CString newTag = null;
@@ -1561,10 +1651,13 @@ public class PgsqlEventProcessor implements EventProcessor {
             transferMode = TransferMode.FORGET;
             session.removeFirstQueryResponseToIgnore();
         } else {
-            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR, nextQueryResponseToIgnore));
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
+                    QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR,
+                    nextQueryResponseToIgnore));
         }
         MessageTransferMode<CString> mode = new MessageTransferMode<>(newTag, transferMode);
-        LOGGER.debug("Command complete processed: new tag={}, transfer mode={}", mode.getNewContent(), mode.getTransferMode());
+        LOGGER.debug("Command complete processed: new tag={}, transfer mode={}", mode.getNewContent(),
+                mode.getTransferMode());
         return mode;
     }
 
@@ -1581,7 +1674,9 @@ public class PgsqlEventProcessor implements EventProcessor {
             transferMode = TransferMode.FORGET;
             session.removeFirstQueryResponseToIgnore();
         } else {
-            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR, nextQueryResponseToIgnore));
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
+                    QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR,
+                    nextQueryResponseToIgnore));
         }
         MessageTransferMode<Void> mode = new MessageTransferMode<>(null, transferMode);
         LOGGER.debug("Empty query processed: transfer mode={}", mode.getTransferMode());
@@ -1600,7 +1695,9 @@ public class PgsqlEventProcessor implements EventProcessor {
             transferMode = TransferMode.FORGET;
             session.removeFirstQueryResponseToIgnore();
         } else {
-            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR, nextQueryResponseToIgnore));
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
+                    QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR,
+                    nextQueryResponseToIgnore));
         }
         MessageTransferMode<Void> mode = new MessageTransferMode<>(null, transferMode);
         LOGGER.debug("Portal suspended processed: transfer mode={}", mode.getTransferMode());
@@ -1608,7 +1705,8 @@ public class PgsqlEventProcessor implements EventProcessor {
     }
 
     @Override
-    public MessageTransferMode<Map<Byte, CString>> processErrorResult(ChannelHandlerContext ctx, Map<Byte, CString> fields) throws IOException {
+    public MessageTransferMode<Map<Byte, CString>> processErrorResult(ChannelHandlerContext ctx,
+            Map<Byte, CString> fields) throws IOException {
         LOGGER.debug("Error: {}", fields);
         TransferMode transferMode;
         Map<Byte, CString> newFields = null;
@@ -1645,7 +1743,8 @@ public class PgsqlEventProcessor implements EventProcessor {
             transferMode = TransferMode.FORGET;
             session.removeFirstQueryResponseToIgnore();
         } else {
-            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.CLOSE_COMPLETE, nextQueryResponseToIgnore));
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
+                    QueryResponseType.CLOSE_COMPLETE, nextQueryResponseToIgnore));
         }
         MessageTransferMode<Void> mode = new MessageTransferMode<>(null, transferMode);
         LOGGER.debug("Close complete processed: transfer mode={}", mode.getTransferMode());
@@ -1653,14 +1752,15 @@ public class PgsqlEventProcessor implements EventProcessor {
     }
 
     @Override
-    public MessageTransferMode<Byte> processReadyForQueryResponse(ChannelHandlerContext ctx, Byte transactionStatus) throws IOException {
+    public MessageTransferMode<Byte> processReadyForQueryResponse(ChannelHandlerContext ctx, Byte transactionStatus)
+            throws IOException {
         LOGGER.debug("Ready for query: {}", (char) transactionStatus.byteValue());
         TransferMode transferMode;
         Byte newTransactionStatus = null;
         // Save current transaction status
         SQLSession session = getSession(ctx);
         session.setTransactionStatus(transactionStatus);
-        if (transactionStatus != (byte)'E') {
+        if (transactionStatus != (byte) 'E') {
             // Reset current error
             session.setTransactionErrorDetails(null);
         }
@@ -1672,10 +1772,12 @@ public class PgsqlEventProcessor implements EventProcessor {
             transferMode = TransferMode.FORGET;
             session.removeFirstQueryResponseToIgnore();
         } else {
-            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)", QueryResponseType.READY_FOR_QUERY, nextQueryResponseToIgnore));
+            throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
+                    QueryResponseType.READY_FOR_QUERY, nextQueryResponseToIgnore));
         }
         MessageTransferMode<Byte> mode = new MessageTransferMode<>(newTransactionStatus, transferMode);
-        LOGGER.debug("Ready for query processed: new transaction status={}, transfer mode={}", newTransactionStatus == null ? null : (char) newTransactionStatus.byteValue(), mode.getTransferMode());
+        LOGGER.debug("Ready for query processed: new transaction status={}, transfer mode={}",
+                newTransactionStatus == null ? null : (char) newTransactionStatus.byteValue(), mode.getTransferMode());
         return mode;
     }
 

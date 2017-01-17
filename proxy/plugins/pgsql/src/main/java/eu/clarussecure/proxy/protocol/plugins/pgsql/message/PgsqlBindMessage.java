@@ -17,7 +17,8 @@ public class PgsqlBindMessage extends PgsqlQueryRequestMessage {
     private List<ByteBuf> parameterValues;
     private List<Short> resultColumnFormats;
 
-    public PgsqlBindMessage(CString portal, CString preparedStatement, List<Short> parameterFormats, List<ByteBuf> parameterValues, List<Short> resultColumnFormats) {
+    public PgsqlBindMessage(CString portal, CString preparedStatement, List<Short> parameterFormats,
+            List<ByteBuf> parameterValues, List<Short> resultColumnFormats) {
         this.portal = Objects.requireNonNull(portal, "portal must not be null");
         this.preparedStatement = Objects.requireNonNull(preparedStatement, "preparedStatement must not be null");
         this.parameterFormats = Objects.requireNonNull(parameterFormats, "parameterFormats must not be null");
@@ -51,11 +52,11 @@ public class PgsqlBindMessage extends PgsqlQueryRequestMessage {
 
     public short getParameterFormat(int index) {
         switch (parameterFormats.size()) {
-        case 0:         // Text format
+        case 0: // Text format
             return 0;
-        case 1:         // Same format for all parameters
+        case 1: // Same format for all parameters
             return parameterFormats.get(0);
-        default:        // Format by parameter
+        default: // Format by parameter
             return parameterFormats.get(index);
         }
     }
@@ -98,11 +99,11 @@ public class PgsqlBindMessage extends PgsqlQueryRequestMessage {
 
     public short getResultColumnFormat(int index) {
         switch (resultColumnFormats.size()) {
-        case 0:         // Text format
+        case 0: // Text format
             return 0;
-        case 1:         // Same format for all result columns
+        case 1: // Same format for all result columns
             return resultColumnFormats.get(0);
-        default:        // Format by result column
+        default: // Format by result column
             return resultColumnFormats.get(index);
         }
     }

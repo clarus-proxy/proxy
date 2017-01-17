@@ -14,7 +14,8 @@ public class BindStep implements ExtendedQuery {
     private List<ByteBuf> parameterValues;
     private List<Short> resultColumnFormats;
 
-    public BindStep(CString portal, CString preparedStatement, List<Short> parameterFormats, List<ByteBuf> parameterValues, List<Short> resultColumnFormats) {
+    public BindStep(CString portal, CString preparedStatement, List<Short> parameterFormats,
+            List<ByteBuf> parameterValues, List<Short> resultColumnFormats) {
         this.name = Objects.requireNonNull(portal, "portal must not be null");
         this.preparedStatement = Objects.requireNonNull(preparedStatement, "preparedStatement must not be null");
         this.parameterFormats = Objects.requireNonNull(parameterFormats, "parameterFormats must not be null");
@@ -95,7 +96,8 @@ public class BindStep implements ExtendedQuery {
         if (preparedStatement.isBuffered()) {
             preparedStatementDeallocated = preparedStatement.release();
         }
-        Boolean parameterValuesDeallocated = parameterValues.stream().reduce(true, (a, b) -> a & b.release(), (a, b) -> a & b);
+        Boolean parameterValuesDeallocated = parameterValues.stream().reduce(true, (a, b) -> a & b.release(),
+                (a, b) -> a & b);
         return portalDeallocated && preparedStatementDeallocated && parameterValuesDeallocated;
     }
 }

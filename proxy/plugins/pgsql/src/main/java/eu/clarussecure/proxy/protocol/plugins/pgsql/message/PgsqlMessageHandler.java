@@ -29,7 +29,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageDecoder;
 import io.netty.util.ReferenceCountUtil;
 
-public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends MessageToMessageDecoder<PgsqlRawMessage> {
+public abstract class PgsqlMessageHandler<T extends PgsqlMessage> extends MessageToMessageDecoder<PgsqlRawMessage> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PgsqlMessageHandler.class);
 
@@ -43,7 +43,8 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
             } catch (IllegalArgumentException | IllegalAccessException | NoSuchFieldException | SecurityException e) {
                 // Should not occur
                 LOGGER.error("Cannot read TYPE field of message class {}: ", msgType.getSimpleName(), e);
-                throw new IllegalArgumentException(String.format("Cannot read TYPE field of message class %s: ", msgType.getSimpleName(), e));
+                throw new IllegalArgumentException(
+                        String.format("Cannot read TYPE field of message class %s: ", msgType.getSimpleName(), e));
             }
         }, msgType -> msgType));
     }
@@ -62,7 +63,8 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
     @Override
     protected void decode(ChannelHandlerContext ctx, PgsqlRawMessage rawMsg, List<Object> out) throws Exception {
         // decode message
-        if (isStreamingSupported(rawMsg.getType()) && rawMsg instanceof MutablePgsqlRawMessage && !((MutablePgsqlRawMessage) rawMsg).isComplete()) {
+        if (isStreamingSupported(rawMsg.getType()) && rawMsg instanceof MutablePgsqlRawMessage
+                && !((MutablePgsqlRawMessage) rawMsg).isComplete()) {
             LOGGER.trace("Decoding raw message in streaming mode: {}...", rawMsg);
             decodeStream(ctx, rawMsg);
             LOGGER.trace("Full raw message decoded: {}", rawMsg);
@@ -112,7 +114,8 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
         if (msgType == null) {
             // Should not occur
             LOGGER.error("Unsupported decoding of full raw message for type {}", type);
-            throw new UnsupportedOperationException(String.format("Unsupported decoding of full raw message for type %d", type));
+            throw new UnsupportedOperationException(
+                    String.format("Unsupported decoding of full raw message for type %d", type));
         }
         // Resolve parser
         PgsqlMessageParser<T> parser = getParser(ctx, msgType);
@@ -124,7 +127,8 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
     }
 
     protected T process(ChannelHandlerContext ctx, T msg) throws IOException, NoSuchAlgorithmException {
-        throw new UnsupportedOperationException(String.format("Unsupported processing of %s message", msg.getClass().getSimpleName()));
+        throw new UnsupportedOperationException(
+                String.format("Unsupported processing of %s message", msg.getClass().getSimpleName()));
     }
 
     protected ByteBuf allocate(ChannelHandlerContext ctx, T msg, ByteBuf buffer) {
@@ -133,7 +137,8 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
         if (writer == null) {
             // Should not occur
             LOGGER.error("Unsupported allocating buffer for {} message", msg.getClass().getSimpleName());
-            throw new UnsupportedOperationException(String.format("Unsupported allocating buffer for %s message", msg.getClass().getSimpleName()));
+            throw new UnsupportedOperationException(
+                    String.format("Unsupported allocating buffer for %s message", msg.getClass().getSimpleName()));
         }
         // Allocate buffer
         return writer.allocate(msg, buffer);
@@ -148,14 +153,16 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
         if (writer == null) {
             // Should not occur
             LOGGER.error("Unsupported encoding of {} message", msg.getClass().getSimpleName());
-            throw new UnsupportedOperationException(String.format("Unsupported encoding of %s message", msg.getClass().getSimpleName()));
+            throw new UnsupportedOperationException(
+                    String.format("Unsupported encoding of %s message", msg.getClass().getSimpleName()));
         }
         // Encode
         return writer.write(msg, buffer);
     }
 
     protected <M extends T> PgsqlMessageParser<M> getParser(ChannelHandlerContext ctx, Class<? extends T> msgType) {
-        Map<Class<? extends PgsqlMessage>, PgsqlMessageParser<? extends PgsqlMessage>> map = ctx.channel().attr(PgsqlConstants.MSG_PARSERS_KEY).get();
+        Map<Class<? extends PgsqlMessage>, PgsqlMessageParser<? extends PgsqlMessage>> map = ctx.channel()
+                .attr(PgsqlConstants.MSG_PARSERS_KEY).get();
         if (map == null) {
             map = new HashMap<>();
             ctx.channel().attr(PgsqlConstants.MSG_PARSERS_KEY).set(map);
@@ -169,8 +176,10 @@ public abstract class PgsqlMessageHandler <T extends PgsqlMessage> extends Messa
         return parser;
     }
 
-    protected <M extends PgsqlMessage> PgsqlMessageWriter<M> getWriter(ChannelHandlerContext ctx, Class<? extends PgsqlMessage> msgType) {
-        Map<Class<? extends PgsqlMessage>, PgsqlMessageWriter<? extends PgsqlMessage>> map = ctx.channel().attr(PgsqlConstants.MSG_WRITERS_KEY).get();
+    protected <M extends PgsqlMessage> PgsqlMessageWriter<M> getWriter(ChannelHandlerContext ctx,
+            Class<? extends PgsqlMessage> msgType) {
+        Map<Class<? extends PgsqlMessage>, PgsqlMessageWriter<? extends PgsqlMessage>> map = ctx.channel()
+                .attr(PgsqlConstants.MSG_WRITERS_KEY).get();
         if (map == null) {
             map = new HashMap<>();
             ctx.channel().attr(PgsqlConstants.MSG_WRITERS_KEY).set(map);

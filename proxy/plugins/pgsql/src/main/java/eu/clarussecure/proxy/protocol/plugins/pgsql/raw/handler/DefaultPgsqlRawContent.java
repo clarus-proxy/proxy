@@ -19,7 +19,8 @@ public class DefaultPgsqlRawContent extends DefaultPgsqlRawPart<PgsqlRawContent>
 
     @Override
     public String toString() {
-        return StringUtil.simpleClassName(this) + "(bytes: " + getBytes().capacity() + ", content: " + getContent().readableBytes() + ')';
+        return StringUtil.simpleClassName(this) + "(bytes: " + getBytes().capacity() + ", content: "
+                + getContent().readableBytes() + ')';
     }
 
 }

@@ -12,12 +12,14 @@ import io.netty.channel.ChannelHandlerContext;
 public class NoopEventProcessor implements EventProcessor {
 
     @Override
-    public CString processUserAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException {
-		return null;
+    public CString processUserAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters)
+            throws IOException {
+        return null;
     }
 
     @Override
-    public int processAuthenticationParameters(ChannelHandlerContext ctx, int authenticationType, ByteBuf specificField) throws IOException {
+    public int processAuthenticationParameters(ChannelHandlerContext ctx, int authenticationType, ByteBuf specificField)
+            throws IOException {
         return authenticationType;
     }
 
@@ -25,39 +27,46 @@ public class NoopEventProcessor implements EventProcessor {
     public CString processAuthentication(ChannelHandlerContext ctx, CString password) throws IOException {
         return null;
     }
-    
+
     @Override
-    public QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException {
+    public QueriesTransferMode<SQLStatement, CString> processStatement(ChannelHandlerContext ctx,
+            SQLStatement sqlStatement) throws IOException {
         return new QueriesTransferMode<>(sqlStatement, TransferMode.FORWARD);
     }
 
     @Override
-    public QueriesTransferMode<BindStep, Void> processBindStep(ChannelHandlerContext ctx, BindStep bindStep) throws IOException {
+    public QueriesTransferMode<BindStep, Void> processBindStep(ChannelHandlerContext ctx, BindStep bindStep)
+            throws IOException {
         return new QueriesTransferMode<>(bindStep, TransferMode.FORWARD);
     }
 
     @Override
-    public QueriesTransferMode<DescribeStep, List<?>[]> processDescribeStep(ChannelHandlerContext ctx, DescribeStep describeStep) throws IOException {
+    public QueriesTransferMode<DescribeStep, List<?>[]> processDescribeStep(ChannelHandlerContext ctx,
+            DescribeStep describeStep) throws IOException {
         return new QueriesTransferMode<>(describeStep, TransferMode.FORWARD);
     }
 
     @Override
-    public QueriesTransferMode<ExecuteStep, CString> processExecuteStep(ChannelHandlerContext ctx, ExecuteStep executeStep) throws IOException {
+    public QueriesTransferMode<ExecuteStep, CString> processExecuteStep(ChannelHandlerContext ctx,
+            ExecuteStep executeStep) throws IOException {
         return new QueriesTransferMode<>(executeStep, TransferMode.FORWARD);
     }
 
     @Override
-    public QueriesTransferMode<CloseStep, Void> processCloseStep(ChannelHandlerContext ctx, CloseStep closeStep) throws IOException {
+    public QueriesTransferMode<CloseStep, Void> processCloseStep(ChannelHandlerContext ctx, CloseStep closeStep)
+            throws IOException {
         return new QueriesTransferMode<>(closeStep, TransferMode.FORWARD);
     }
 
     @Override
-    public QueriesTransferMode<SynchronizeStep, Byte> processSynchronizeStep(ChannelHandlerContext ctx, SynchronizeStep synchronizeStep) throws IOException {
+    public QueriesTransferMode<SynchronizeStep, Byte> processSynchronizeStep(ChannelHandlerContext ctx,
+            SynchronizeStep synchronizeStep) throws IOException {
         return new QueriesTransferMode<>(synchronizeStep, TransferMode.FORWARD);
     }
 
     @Override
-    public QueriesTransferMode<FlushStep, Void> processFlushStep(ChannelHandlerContext ctx, FlushStep flushStep) throws IOException {
+    public QueriesTransferMode<FlushStep, Void> processFlushStep(ChannelHandlerContext ctx, FlushStep flushStep)
+            throws IOException {
         return new QueriesTransferMode<>(flushStep, TransferMode.FORWARD);
     }
 
@@ -72,17 +81,20 @@ public class NoopEventProcessor implements EventProcessor {
     }
 
     @Override
-    public MessageTransferMode<List<Long>> processParameterDescriptionResponse(ChannelHandlerContext ctx, List<Long> types) throws IOException {
+    public MessageTransferMode<List<Long>> processParameterDescriptionResponse(ChannelHandlerContext ctx,
+            List<Long> types) throws IOException {
         return new MessageTransferMode<>(types, TransferMode.FORWARD);
     }
 
     @Override
-    public MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> processRowDescriptionResponse(ChannelHandlerContext ctx, List<PgsqlRowDescriptionMessage.Field> fields) throws IOException {
+    public MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> processRowDescriptionResponse(
+            ChannelHandlerContext ctx, List<PgsqlRowDescriptionMessage.Field> fields) throws IOException {
         return new MessageTransferMode<>(fields, TransferMode.FORWARD);
     }
 
     @Override
-    public MessageTransferMode<List<ByteBuf>> processDataRowResponse(ChannelHandlerContext ctx, List<ByteBuf> values) throws IOException {
+    public MessageTransferMode<List<ByteBuf>> processDataRowResponse(ChannelHandlerContext ctx, List<ByteBuf> values)
+            throws IOException {
         return new MessageTransferMode<>(values, TransferMode.FORWARD);
     }
 
@@ -92,7 +104,8 @@ public class NoopEventProcessor implements EventProcessor {
     }
 
     @Override
-    public MessageTransferMode<CString> processCommandCompleteResult(ChannelHandlerContext ctx, CString tag) throws IOException {
+    public MessageTransferMode<CString> processCommandCompleteResult(ChannelHandlerContext ctx, CString tag)
+            throws IOException {
         return new MessageTransferMode<>(tag, TransferMode.FORWARD);
     }
 
@@ -107,7 +120,8 @@ public class NoopEventProcessor implements EventProcessor {
     }
 
     @Override
-    public MessageTransferMode<Map<Byte, CString>> processErrorResult(ChannelHandlerContext ctx, Map<Byte, CString> fields) throws IOException {
+    public MessageTransferMode<Map<Byte, CString>> processErrorResult(ChannelHandlerContext ctx,
+            Map<Byte, CString> fields) throws IOException {
         return new MessageTransferMode<>(fields, TransferMode.FORWARD);
     }
 
@@ -117,7 +131,8 @@ public class NoopEventProcessor implements EventProcessor {
     }
 
     @Override
-    public MessageTransferMode<Byte> processReadyForQueryResponse(ChannelHandlerContext ctx, Byte transactionStatus) throws IOException {
+    public MessageTransferMode<Byte> processReadyForQueryResponse(ChannelHandlerContext ctx, Byte transactionStatus)
+            throws IOException {
         return new MessageTransferMode<>(transactionStatus, TransferMode.FORWARD);
     }
 

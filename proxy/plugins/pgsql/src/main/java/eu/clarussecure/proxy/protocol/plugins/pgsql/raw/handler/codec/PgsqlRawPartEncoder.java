@@ -19,7 +19,8 @@ public class PgsqlRawPartEncoder extends MessageToByteEncoder<PgsqlRawPart> {
     }
 
     @Override
-    protected ByteBuf allocateBuffer(ChannelHandlerContext ctx, PgsqlRawPart msg, boolean preferDirect) throws Exception {
+    protected ByteBuf allocateBuffer(ChannelHandlerContext ctx, PgsqlRawPart msg, boolean preferDirect)
+            throws Exception {
         return msg.getBytes().readRetainedSlice(msg.getBytes().readableBytes());
     }
 
