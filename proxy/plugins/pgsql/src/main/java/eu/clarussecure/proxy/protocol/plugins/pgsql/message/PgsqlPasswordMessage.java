@@ -3,12 +3,12 @@ package eu.clarussecure.proxy.protocol.plugins.pgsql.message;
 import eu.clarussecure.proxy.spi.CString;
 import io.netty.util.internal.StringUtil;
 
-public class PgsqlPasswordMessage  implements PgsqlAuthenticationMessage {
+public class PgsqlPasswordMessage implements PgsqlAuthenticationMessage {
 
     public static final byte TYPE = (byte) 'p';
     public static final int HEADER_SIZE = Byte.BYTES + Integer.BYTES;
     private CString password;
-    
+
     @Override
     public byte getType() {
         return TYPE;
@@ -30,7 +30,7 @@ public class PgsqlPasswordMessage  implements PgsqlAuthenticationMessage {
     public void setPassword(CString password) {
         this.password = password;
     }
-    
+
     @Override
     public String toString() {
         StringBuilder builder = new StringBuilder(StringUtil.simpleClassName(this));

@@ -20,12 +20,14 @@ public class SessionInitializationRequestHandler extends PgsqlMessageHandler<Pgs
     }
 
     @Override
-    protected PgsqlSessionInitializationRequestMessage process(ChannelHandlerContext ctx, PgsqlSessionInitializationRequestMessage msg) throws IOException {
+    protected PgsqlSessionInitializationRequestMessage process(ChannelHandlerContext ctx,
+            PgsqlSessionInitializationRequestMessage msg) throws IOException {
         PgsqlSessionInitializationRequestMessage newMsg = msg;
         if (msg instanceof PgsqlSSLRequestMessage) {
             int code = ((PgsqlSSLRequestMessage) msg).getCode();
             LOGGER.debug("SSL request: {}", code);
-            SessionMessageTransferMode<Void, Byte> transferMode = getSessionInitializer(ctx).processSSLRequest(ctx, code);
+            SessionMessageTransferMode<Void, Byte> transferMode = getSessionInitializer(ctx).processSSLRequest(ctx,
+                    code);
             switch (transferMode.getTransferMode()) {
             case FORWARD:
                 // Forward the message
@@ -51,7 +53,9 @@ public class SessionInitializationRequestHandler extends PgsqlMessageHandler<Pgs
             case ORCHESTRATE:
             default:
                 // Should not occur
-                throw new IllegalArgumentException( "Invalid value for enum " + transferMode.getTransferMode().getClass().getSimpleName() + ": " + transferMode.getTransferMode());
+                throw new IllegalArgumentException(
+                        "Invalid value for enum " + transferMode.getTransferMode().getClass().getSimpleName() + ": "
+                                + transferMode.getTransferMode());
             }
         } else if (msg instanceof PgsqlStartupMessage) {
             SessionMessageTransferMode<Void, Void> transferMode = getSessionInitializer(ctx).processStartupMessage(ctx);
@@ -79,7 +83,9 @@ public class SessionInitializationRequestHandler extends PgsqlMessageHandler<Pgs
             case FORGET:
             default:
                 // Should not occur
-                throw new IllegalArgumentException( "Invalid value for enum " + transferMode.getTransferMode().getClass().getSimpleName() + ": " + transferMode.getTransferMode());
+                throw new IllegalArgumentException(
+                        "Invalid value for enum " + transferMode.getTransferMode().getClass().getSimpleName() + ": "
+                                + transferMode.getTransferMode());
             }
         }
         return newMsg;

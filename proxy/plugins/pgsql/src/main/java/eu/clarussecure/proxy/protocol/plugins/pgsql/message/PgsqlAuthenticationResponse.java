@@ -6,10 +6,10 @@ public class PgsqlAuthenticationResponse implements PgsqlAuthenticationMessage {
 
     public static final byte TYPE = (byte) 'R';
     public static final int HEADER_SIZE = Byte.BYTES + Integer.BYTES;
-    
+
     private int authenticationType;
-    private ByteBuf authenticationParameters; 
-    
+    private ByteBuf authenticationParameters;
+
     public PgsqlAuthenticationResponse(int authenticationType, ByteBuf authenticationParameters) {
         this.authenticationType = authenticationType;
         this.setAuthenticationParameters(authenticationParameters);
@@ -40,6 +40,5 @@ public class PgsqlAuthenticationResponse implements PgsqlAuthenticationMessage {
     public void setAuthenticationParameters(ByteBuf authenticationParameters) {
         this.authenticationParameters = authenticationParameters;
     }
-    
 
 }

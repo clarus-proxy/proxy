@@ -14,17 +14,12 @@ import eu.clarussecure.proxy.spi.security.policy.SecurityPolicy;
 
 public class AnonymizationCapabilities implements ProtectionModuleCapabilities {
 
-    private final Map<Operation, Set<Mode>> datasetCRUDOperations = Capabilities.toMap(new Enum<?>[][] {
-        {Operation.CREATE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING},
-        {Operation.READ, Mode.AS_IT_IS},
-        {Operation.UPDATE},
-        {Operation.DELETE, Mode.AS_IT_IS}});
+    private final Map<Operation, Set<Mode>> datasetCRUDOperations = Capabilities
+            .toMap(new Enum<?>[][] { { Operation.CREATE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING },
+                    { Operation.READ, Mode.AS_IT_IS }, { Operation.UPDATE }, { Operation.DELETE, Mode.AS_IT_IS } });
 
     private final Map<Operation, Set<Mode>> recordCRUDOperations = Capabilities.toMap(new Enum<?>[][] {
-        {Operation.CREATE},
-        {Operation.READ, Mode.AS_IT_IS},
-        {Operation.UPDATE},
-        {Operation.DELETE}});
+            { Operation.CREATE }, { Operation.READ, Mode.AS_IT_IS }, { Operation.UPDATE }, { Operation.DELETE } });
 
     @Override
     public Set<Operation> getSupportedCRUDOperations(boolean wholeDataset) {
@@ -51,25 +46,25 @@ public class AnonymizationCapabilities implements ProtectionModuleCapabilities {
                 preferredMode = Mode.STREAMING;
                 //preferredMode = Mode.BUFFERING;
                 NodeList subnodes = attributeTypesNode.getChildNodes();
-                for (int i=0; i < subnodes.getLength(); i++) {
+                for (int i = 0; i < subnodes.getLength(); i++) {
                     Node subnode = subnodes.item(i);
                     if (subnode.getNodeType() == Node.ELEMENT_NODE) {
-                       if (subnode.getNodeName().equals("attribute_type")) {
-                           Node protectionAttr = subnode.getAttributes().getNamedItem("protection");
-                           if (protectionAttr != null) {
-                               String protection = protectionAttr.getNodeValue();
-                               if ("coarsening".equals(protection)) {
-                                   Node coarseningTypeAttr = subnode.getAttributes().getNamedItem("coarsening_type");
-                                   if (coarseningTypeAttr != null) {
-                                       String coarseningType = coarseningTypeAttr.getNodeValue();
-                                       if ("microaggregation".equals(coarseningType)) {
-                                           preferredMode = Mode.BUFFERING;
-                                           break;
-                                       }
-                                   }
-                               }
-                           }
-                       }
+                        if (subnode.getNodeName().equals("attribute_type")) {
+                            Node protectionAttr = subnode.getAttributes().getNamedItem("protection");
+                            if (protectionAttr != null) {
+                                String protection = protectionAttr.getNodeValue();
+                                if ("coarsening".equals(protection)) {
+                                    Node coarseningTypeAttr = subnode.getAttributes().getNamedItem("coarsening_type");
+                                    if (coarseningTypeAttr != null) {
+                                        String coarseningType = coarseningTypeAttr.getNodeValue();
+                                        if ("microaggregation".equals(coarseningType)) {
+                                            preferredMode = Mode.BUFFERING;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -148,7 +148,7 @@ public class MutableByteBufInputStream extends InputStream implements DataInput 
 
     @Override
     public boolean readBoolean() throws IOException {
-//        checkAvailable(1);
+        //        checkAvailable(1);
         checkAvailable(Byte.BYTES);
         return read() != 0;
     }
@@ -229,17 +229,17 @@ public class MutableByteBufInputStream extends InputStream implements DataInput 
 
             int c = buffer.readUnsignedByte();
             switch (c) {
-                case '\n':
-                    break loop;
+            case '\n':
+                break loop;
 
-                case '\r':
-                    if (available() > 0 && (char) buffer.getUnsignedByte(buffer.readerIndex()) == '\n') {
-                        buffer.skipBytes(1);
-                    }
-                    break loop;
+            case '\r':
+                if (available() > 0 && (char) buffer.getUnsignedByte(buffer.readerIndex()) == '\n') {
+                    buffer.skipBytes(1);
+                }
+                break loop;
 
-                default:
-                    lineBuf.append((char) c);
+            default:
+                lineBuf.append((char) c);
             }
         }
 
@@ -287,13 +287,14 @@ public class MutableByteBufInputStream extends InputStream implements DataInput 
             throw new IndexOutOfBoundsException("fieldSize cannot be a negative number");
         }
         if (buffer.readerIndex() + fieldSize > endIndex) {
-            throw new EOFException("fieldSize is too long! Length is " + fieldSize
-                    + ", but maximum is " + (buffer.readerIndex() + fieldSize - endIndex));
+            throw new EOFException("fieldSize is too long! Length is " + fieldSize + ", but maximum is "
+                    + (buffer.readerIndex() + fieldSize - endIndex));
         }
     }
+
     private void ensureBufferIsReadable(int n) throws IOException {
         while (buffer.readableBytes() < n) {
-            synchronized(buffer) {
+            synchronized (buffer) {
                 if (buffer.readableBytes() < n) {
                     try {
                         buffer.wait();

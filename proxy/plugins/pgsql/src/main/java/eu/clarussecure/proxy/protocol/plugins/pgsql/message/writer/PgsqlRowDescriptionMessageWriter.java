@@ -55,7 +55,7 @@ public class PgsqlRowDescriptionMessageWriter implements PgsqlMessageWriter<Pgsq
             writeBytes(buffer, field.getName().getByteBuf());
             buffer.writeInt(field.getTableOID());
             buffer.writeShort(field.getColumnNumber());
-            buffer.writeInt((int)field.getTypeOID());
+            buffer.writeInt((int) field.getTypeOID());
             buffer.writeShort(field.getTypeSize());
             buffer.writeInt(field.getTypeModifier());
             buffer.writeShort(field.getFormat());

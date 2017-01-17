@@ -167,8 +167,7 @@ public abstract class MessageAccumulator<I, S, C extends ByteBufHolder, O extend
     public final void setMaxCumulationBufferComponents(int maxCumulationBufferComponents) {
         if (maxCumulationBufferComponents < 2) {
             throw new IllegalArgumentException(
-                    "maxCumulationBufferComponents: " + maxCumulationBufferComponents +
-                    " (expected: >= 2)");
+                    "maxCumulationBufferComponents: " + maxCumulationBufferComponents + " (expected: >= 2)");
         }
 
         if (ctx == null) {
@@ -255,7 +254,8 @@ public abstract class MessageAccumulator<I, S, C extends ByteBufHolder, O extend
             // A streamed message - initialize the cumulative buffer, and wait for incoming chunks.
             //CompositeByteBuf content = ctx.alloc().compositeBuffer(maxCumulationBufferComponents);
             //MyCompositeByteBuf content = new MyCompositeByteBuf(ctx.alloc(), true, maxCumulationBufferComponents);
-            SynchronizedCompositeByteBuf content = new SynchronizedCompositeByteBuf(ctx.alloc(), true, maxCumulationBufferComponents);
+            SynchronizedCompositeByteBuf content = new SynchronizedCompositeByteBuf(ctx.alloc(), true,
+                    maxCumulationBufferComponents);
             if (m instanceof ByteBufHolder) {
                 appendPartialContent(content, ((ByteBufHolder) m).content());
             }
@@ -304,8 +304,8 @@ public abstract class MessageAccumulator<I, S, C extends ByteBufHolder, O extend
                 DecoderResult decoderResult = ((DecoderResultProvider) m).decoderResult();
                 if (!decoderResult.isSuccess()) {
                     if (currentMessage instanceof DecoderResultProvider) {
-                        ((DecoderResultProvider) currentMessage).setDecoderResult(
-                                DecoderResult.failure(decoderResult.cause()));
+                        ((DecoderResultProvider) currentMessage)
+                                .setDecoderResult(DecoderResult.failure(decoderResult.cause()));
                     }
                     last = true;
                 } else {
@@ -384,12 +384,14 @@ public abstract class MessageAccumulator<I, S, C extends ByteBufHolder, O extend
      * aggregated message already, so that you don't need to.  Use this method to transfer the additional information
      * that the content message provides to {@code aggregated}.
      */
-    protected void aggregate(O aggregated, C content) throws Exception { }
+    protected void aggregate(O aggregated, C content) throws Exception {
+    }
 
     /**
      * Invoked when the specified {@code aggregated} message is about to be passed to the next handler in the pipeline.
      */
-    protected void finishAggregation(O aggregated) throws Exception { }
+    protected void finishAggregation(O aggregated) throws Exception {
+    }
 
     private void invokeHandleOversizedMessage(ChannelHandlerContext ctx, S oversized) throws Exception {
         handlingOversizedMessage = true;
@@ -410,8 +412,7 @@ public abstract class MessageAccumulator<I, S, C extends ByteBufHolder, O extend
      * @param oversized the accumulated message up to this point, whose type is {@code S} or {@code O}
      */
     protected void handleOversizedMessage(ChannelHandlerContext ctx, S oversized) throws Exception {
-        ctx.fireExceptionCaught(
-                new TooLongFrameException("content length exceeded " + maxContentLength() + " bytes."));
+        ctx.fireExceptionCaught(new TooLongFrameException("content length exceeded " + maxContentLength() + " bytes."));
     }
 
     @Override

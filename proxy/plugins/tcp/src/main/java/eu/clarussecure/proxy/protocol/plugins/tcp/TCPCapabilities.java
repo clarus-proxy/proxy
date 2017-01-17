@@ -10,7 +10,8 @@ import eu.clarussecure.proxy.spi.protocol.ProtocolCapabilities;
 
 public class TCPCapabilities implements ProtocolCapabilities {
 
-    private static final Set<Operation> DEFAULT_SUPPORTED_OPERATIONS = Operation.stream(Operation.values()).collect(Collectors.toSet());
+    private static final Set<Operation> DEFAULT_SUPPORTED_OPERATIONS = Operation.stream(Operation.values())
+            .collect(Collectors.toSet());
     private static final Set<Mode> DEFAULT_SUPPORTED_PROCESSING_MODES = Collections.singleton(Mode.AS_IT_IS);
     private static final boolean DEFAULT_USER_IDENTIFICATION_REQUIRED = false;
     private static final boolean DEFAULT_USER_IDENTIFICATION_SUPPORTED = false;

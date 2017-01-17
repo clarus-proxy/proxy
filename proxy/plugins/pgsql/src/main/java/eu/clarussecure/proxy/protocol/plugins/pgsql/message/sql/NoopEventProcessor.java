@@ -25,7 +25,7 @@ public class NoopEventProcessor implements EventProcessor {
     public CString processAuthentication(ChannelHandlerContext ctx, CString password) throws IOException {
         return null;
     }
-    
+
     @Override
     public QueriesTransferMode<SQLStatement, CommandResults> processStatement(ChannelHandlerContext ctx, SQLStatement sqlStatement) throws IOException {
         return new QueriesTransferMode<>(sqlStatement, TransferMode.FORWARD);

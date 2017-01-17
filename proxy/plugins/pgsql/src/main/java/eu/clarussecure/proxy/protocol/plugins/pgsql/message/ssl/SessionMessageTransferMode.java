@@ -23,7 +23,8 @@ public class SessionMessageTransferMode<D, R> {
         this(newDetails, transferMode, null, errorDetails);
     }
 
-    public SessionMessageTransferMode(D newDetails, TransferMode transferMode, R response, Map<Byte, CString> errorDetails) {
+    public SessionMessageTransferMode(D newDetails, TransferMode transferMode, R response,
+            Map<Byte, CString> errorDetails) {
         this.newDetails = newDetails;
         this.transferMode = transferMode;
         this.response = response;

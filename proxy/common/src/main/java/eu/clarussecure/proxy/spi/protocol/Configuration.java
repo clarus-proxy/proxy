@@ -10,9 +10,6 @@ import java.util.stream.Collectors;
 
 import eu.clarussecure.proxy.spi.Mode;
 import eu.clarussecure.proxy.spi.Operation;
-import eu.clarussecure.proxy.spi.protocol.Configurable;
-import eu.clarussecure.proxy.spi.protocol.ProtocolCapabilities;
-import eu.clarussecure.proxy.spi.protocol.ProtocolService;
 
 public abstract class Configuration implements Configurable {
 

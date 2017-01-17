@@ -80,13 +80,13 @@ public class SQLSession {
     private Map<CString, DescribeStep> describeSteps;
 
     /*
-     * 
+     *
      */
     // Users to save. Use of Set to avoid duplicate value.
     private CString user;
     private ByteBuf authenticationParam;
     private int authenticationType;
-    
+
     public CString getUser() {
         return user;
     }
@@ -120,7 +120,7 @@ public class SQLSession {
         this.authenticationType = authenticationType;
     }
     /*
-     * 
+     *
      */
 
     public CString getDatabaseName() {

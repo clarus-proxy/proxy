@@ -10,17 +10,17 @@ import eu.clarussecure.proxy.spi.protocol.ProtocolCapabilities;
 
 public class PgsqlCapabilities implements ProtocolCapabilities {
 
-    private final Map<Operation, Set<Mode>> datasetCRUDOperations = Capabilities.toMap(new Enum<?>[][] {
-        {Operation.CREATE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING},
-        {Operation.READ, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING},
-        {Operation.UPDATE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING},
-        {Operation.DELETE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING}});
+    private final Map<Operation, Set<Mode>> datasetCRUDOperations = Capabilities
+            .toMap(new Enum<?>[][] { { Operation.CREATE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING },
+                    { Operation.READ, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING },
+                    { Operation.UPDATE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING },
+                    { Operation.DELETE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING } });
 
-    private final Map<Operation, Set<Mode>> recordCRUDOperations = Capabilities.toMap(new Enum<?>[][] {
-        {Operation.CREATE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING},
-        {Operation.READ, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING, Mode.ORCHESTRATION},
-        {Operation.UPDATE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING},
-        {Operation.DELETE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING}});
+    private final Map<Operation, Set<Mode>> recordCRUDOperations = Capabilities
+            .toMap(new Enum<?>[][] { { Operation.CREATE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING },
+                    { Operation.READ, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING, Mode.ORCHESTRATION },
+                    { Operation.UPDATE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING },
+                    { Operation.DELETE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING } });
 
     @Override
     public Set<Operation> getSupportedCRUDOperations(boolean wholeDataset) {

@@ -14,7 +14,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.MessageAggregationException;
 
-public class PgsqlRawPartAccumulator extends MessageAccumulator<PgsqlRawPart, PgsqlRawHeader, PgsqlRawContent, MutablePgsqlRawMessage> {
+public class PgsqlRawPartAccumulator
+        extends MessageAccumulator<PgsqlRawPart, PgsqlRawHeader, PgsqlRawContent, MutablePgsqlRawMessage> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PgsqlRawPartAccumulator.class);
 
@@ -87,7 +88,8 @@ public class PgsqlRawPartAccumulator extends MessageAccumulator<PgsqlRawPart, Pg
     protected MutablePgsqlRawMessage beginAggregation(PgsqlRawHeader start, ByteBuf bytes) throws Exception {
         LOGGER.trace("Start aggregation of header raw message {} with content {}...", start, bytes);
         int missing = start.getTotalLength() - bytes.capacity();
-        DefaultMutablePgsqlRawMessage message = new DefaultMutablePgsqlRawMessage(bytes, start.getType(), start.getLength(), missing);
+        DefaultMutablePgsqlRawMessage message = new DefaultMutablePgsqlRawMessage(bytes, start.getType(),
+                start.getLength(), missing);
         LOGGER.trace("Aggregation of mutable raw message {} started", message);
         //Thread.sleep(10);
         return message;

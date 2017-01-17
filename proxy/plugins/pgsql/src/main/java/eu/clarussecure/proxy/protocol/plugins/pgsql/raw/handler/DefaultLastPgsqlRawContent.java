@@ -16,5 +16,4 @@ public class DefaultLastPgsqlRawContent extends DefaultPgsqlRawContent implement
         return new DefaultLastPgsqlRawContent(bytes);
     }
 
-
 }

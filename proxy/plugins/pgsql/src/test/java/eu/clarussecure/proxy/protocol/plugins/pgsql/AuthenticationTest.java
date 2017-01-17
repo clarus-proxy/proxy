@@ -58,7 +58,7 @@ public class AuthenticationTest {
 
     @Rule
     public final ExpectedException exception = ExpectedException.none();
-    
+
     /**
      * <p>
      * Case 1: Correct login and password.
@@ -81,7 +81,7 @@ public class AuthenticationTest {
             e.printStackTrace();
         }
     }
-    
+
     /**
      * <p>
      * Case 2: Correct login, wrong password.
@@ -102,7 +102,7 @@ public class AuthenticationTest {
         exception.expectMessage("password authentication failed for user");
         getHealthConnection(user, passwordRandom);
     }
-    
+
     /**
      * <p>
      * Case 3: Non existing login.
@@ -118,7 +118,7 @@ public class AuthenticationTest {
     @Test
     public void testCase3WrongUserConnection() throws SQLException {
         String user = TestUtils.generateRandomString();
-        String passwordRandom = TestUtils.generateRandomString(); 
+        String passwordRandom = TestUtils.generateRandomString();
         exception.expect(PSQLException.class);
         exception.expectMessage("no pg_hba.conf entry for host");
         getHealthConnection(user, passwordRandom);
@@ -136,9 +136,7 @@ public class AuthenticationTest {
         Properties connectionProps = new Properties();
         connectionProps.put("user", user);
         connectionProps.put("password", password);
-        return DriverManager.getConnection(
-                "jdbc:postgresql://localhost:5432/ehealth",
-                connectionProps);
+        return DriverManager.getConnection("jdbc:postgresql://localhost:5432/ehealth", connectionProps);
     }
-    
+
 }

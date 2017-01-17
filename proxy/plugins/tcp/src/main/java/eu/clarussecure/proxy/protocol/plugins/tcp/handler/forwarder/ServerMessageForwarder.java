@@ -22,7 +22,8 @@ public class ServerMessageForwarder<I> extends MessageForwarder<I> {
         ctx.channel().config().setAutoRead(true);
         sinkChannel.config().setAutoRead(true);
         super.channelActive(ctx);
-        LOGGER.info("Intercepting traffic between {} and {}", session.getClientSideChannel().remoteAddress(), ctx.channel().remoteAddress());
+        LOGGER.info("Intercepting traffic between {} and {}", session.getClientSideChannel().remoteAddress(),
+                ctx.channel().remoteAddress());
     }
 
 }

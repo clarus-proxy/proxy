@@ -2,7 +2,7 @@ package eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler;
 
 import io.netty.buffer.ByteBuf;
 
-public abstract class DefaultPgsqlRawPart <T extends PgsqlRawPart> implements PgsqlRawPart {
+public abstract class DefaultPgsqlRawPart<T extends PgsqlRawPart> implements PgsqlRawPart {
 
     private final ByteBuf bytes;
 

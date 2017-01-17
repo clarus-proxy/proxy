@@ -91,18 +91,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-clean-plugin</artifactId>
-                <inherited>false</inherited>
-                <configuration>
-                    <filesets>
-                        <fileset>
-                            <directory>${install.dir}</directory>
-                        </fileset>
-                    </filesets>       
-                </configuration>
-            </plugin>
         </plugins>
     </build>
 </project>

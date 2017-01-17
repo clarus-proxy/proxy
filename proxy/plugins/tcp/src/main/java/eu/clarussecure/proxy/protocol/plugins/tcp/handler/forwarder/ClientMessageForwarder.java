@@ -6,7 +6,8 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 
-public abstract class ClientMessageForwarder<I, CI extends ChannelInitializer<Channel>, S extends TCPSession> extends MessageForwarder<I> {
+public abstract class ClientMessageForwarder<I, CI extends ChannelInitializer<Channel>, S extends TCPSession>
+        extends MessageForwarder<I> {
 
     private Class<CI> channelInitializerType;
 
@@ -21,7 +22,8 @@ public abstract class ClientMessageForwarder<I, CI extends ChannelInitializer<Ch
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         LOGGER.debug("{} new client connection from {}", direction, ctx.channel().remoteAddress());
-        TCPClient<? extends ChannelInitializer<Channel>, ? extends TCPSession> client = new TCPClient<>(ctx, channelInitializerType, sessionType);
+        TCPClient<? extends ChannelInitializer<Channel>, ? extends TCPSession> client = new TCPClient<>(ctx,
+                channelInitializerType, sessionType);
         sinkChannel = client.call();
         super.channelActive(ctx);
     }

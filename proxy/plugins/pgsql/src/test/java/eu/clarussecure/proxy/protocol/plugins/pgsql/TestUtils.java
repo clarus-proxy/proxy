@@ -39,6 +39,17 @@ public class TestUtils {
                 "jdbc:postgresql://localhost:5432/ehealth",
                 connectionProps);
     }
+    
+    /**
+     * method which close connection if this connection exist
+     * @param con
+     * @throws SQLException
+     */
+    public static void closeConnection(Connection con) throws SQLException {
+        if (con != null) {
+            con.close();
+        }
+    }
 
     /**
      * method which close statement and connection enter as parameter

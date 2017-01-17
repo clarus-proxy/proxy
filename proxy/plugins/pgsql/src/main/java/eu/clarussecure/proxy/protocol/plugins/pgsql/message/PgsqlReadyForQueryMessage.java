@@ -21,7 +21,8 @@ public class PgsqlReadyForQueryMessage extends PgsqlDetailedQueryResponseMessage
         case 'E':
             return "Failed transaction block";
         default:
-            throw new IllegalArgumentException(String.format("Invalid transaction status indicator '%c'", (char) transactionStatus));
+            throw new IllegalArgumentException(
+                    String.format("Invalid transaction status indicator '%c'", (char) transactionStatus));
         }
     }
 
@@ -42,7 +43,8 @@ public class PgsqlReadyForQueryMessage extends PgsqlDetailedQueryResponseMessage
     public String toString() {
         StringBuilder builder = new StringBuilder(StringUtil.simpleClassName(this));
         builder.append(" [");
-        builder.append("transactionStatus=").append(transactionStatus).append(':').append(getTransactionStatusAsString());
+        builder.append("transactionStatus=").append(transactionStatus).append(':')
+                .append(getTransactionStatusAsString());
         builder.append("]");
         return builder.toString();
     }
