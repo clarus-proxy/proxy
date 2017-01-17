@@ -23,8 +23,8 @@ public class ProtocolServiceDelegate implements ProtocolService {
     }
 
     @Override
-    public CString[] userAuthentication(CString user, CString password){
-        return new CString[] {user, password};
+    public CString[] userAuthentication(CString user, CString password) {
+        return new CString[] { user, password };
     }
 
     @Override
@@ -39,9 +39,10 @@ public class ProtocolServiceDelegate implements ProtocolService {
         String[][] mapping = protectionModule.getDataOperation().head(attributeNames);
         if (mapping != null) {
             metadataOperation.getMetadata().clear();
-            for (int i = 0; i < mapping.length; i ++) {
+            for (int i = 0; i < mapping.length; i++) {
                 CString attributeName = CString.valueOf(mapping[i][0]);
-                List<CString> protectedAttributeNames = Arrays.stream(mapping[i], 1, mapping[i].length).map(CString::valueOf).collect(Collectors.toList());
+                List<CString> protectedAttributeNames = Arrays.stream(mapping[i], 1, mapping[i].length)
+                        .map(CString::valueOf).collect(Collectors.toList());
                 metadataOperation.addDataId(attributeName, protectedAttributeNames);
             }
             metadataOperation.setModified(true);
@@ -71,11 +72,15 @@ public class ProtocolServiceDelegate implements ProtocolService {
 
     private List<DataOperation> newCreateOperation(DataOperation dataOperation) {
         String[] attributeNames = dataOperation.getDataIds().stream().map(CString::toString).toArray(String[]::new);
-        String[][] contents = dataOperation.getDataValues().stream().map(row -> row.stream().map(StringUtilities::toString).map(StringUtilities::unquote).toArray(String[]::new)).toArray(String[][]::new);
+        String[][] contents = dataOperation.getDataValues().stream().map(
+                row -> row.stream().map(StringUtilities::toString).map(StringUtilities::unquote).toArray(String[]::new))
+                .toArray(String[][]::new);
         // Protect data
         String[][] results = protectionModule.getDataOperation().post(attributeNames, contents);
         if (results != null && !Arrays.equals(results, contents)) {
-            List<List<CString>> newDataValues = Arrays.stream(results).map(result -> Arrays.stream(result).map(StringUtilities::singleQuote).map(CString::valueOf).collect(Collectors.toList())).collect(Collectors.toList());
+            List<List<CString>> newDataValues = Arrays.stream(results).map(result -> Arrays.stream(result)
+                    .map(StringUtilities::singleQuote).map(CString::valueOf).collect(Collectors.toList()))
+                    .collect(Collectors.toList());
             dataOperation.setDataValues(newDataValues);
             dataOperation.setModified(true);
         }
@@ -89,24 +94,30 @@ public class ProtocolServiceDelegate implements ProtocolService {
             String[] criteriaOrig = null;
             String[] criteriaRes = null;
             if (dataOperation.getParameterValues() != null) {
-                criteriaOrig = dataOperation.getParameterValues().stream().map(CString::toString).toArray(String[]::new);
+                criteriaOrig = dataOperation.getParameterValues().stream().map(CString::toString)
+                        .toArray(String[]::new);
                 criteriaRes = criteriaOrig.clone();
             }
             promise = protectionModule.getDataOperation().get(attributeNames, criteriaRes, null);
             if (promise != null) {
                 if (criteriaRes != null && !Arrays.equals(criteriaRes, criteriaOrig)) {
                     // TODO change Promise to handle modified criteria
-                    List<CString> newParameterValues = Arrays.stream(criteriaRes).map(CString::valueOf).collect(Collectors.toList());
+                    List<CString> newParameterValues = Arrays.stream(criteriaRes).map(CString::valueOf)
+                            .collect(Collectors.toList());
                     dataOperation.setParameterValues(newParameterValues);
                     dataOperation.setModified(true);
                 }
                 dataOperation.setPromise(promise);
             }
         } else { // Response
-            String[][] contents = dataOperation.getDataValues().stream().map(row -> row.stream().map(StringUtilities::toString).toArray(String[]::new)).toArray(String[][]::new);
+            String[][] contents = dataOperation.getDataValues().stream()
+                    .map(row -> row.stream().map(StringUtilities::toString).toArray(String[]::new))
+                    .toArray(String[][]::new);
             String[][] results = protectionModule.getDataOperation().get(promise, contents);
             if (results != null && results != contents) {
-                List<List<CString>> newDataValues = Arrays.stream(results).map(result -> Arrays.stream(result).map(CString::valueOf).collect(Collectors.toList())).collect(Collectors.toList());
+                List<List<CString>> newDataValues = Arrays.stream(results)
+                        .map(result -> Arrays.stream(result).map(CString::valueOf).collect(Collectors.toList()))
+                        .collect(Collectors.toList());
                 dataOperation.setDataValues(newDataValues);
                 dataOperation.setModified(true);
             }

@@ -60,31 +60,31 @@ public class Scenarii {
      */
 
     @Test
-    public void executeInsertRow5() throws SQLException{
+    public void executeInsertRow5() throws SQLException {
         insertParametredRequestLoop(insertRequestNumber5);
         deleteRowInserted(insertRequestNumber5);
     }
 
     @Test
-    public void executeInsertRow10() throws SQLException{
+    public void executeInsertRow10() throws SQLException {
         insertParametredRequestLoop(insertRequestNumber10);
         deleteRowInserted(insertRequestNumber10);
     }
 
     @Test
-    public void executeInsertRow25() throws SQLException{
+    public void executeInsertRow25() throws SQLException {
         insertParametredRequestLoop(insertRequestNumber25);
         deleteRowInserted(insertRequestNumber25);
     }
 
     @Test
-    public void executeInsertRow50() throws SQLException{
+    public void executeInsertRow50() throws SQLException {
         insertParametredRequestLoop(insertRequestNumber50);
         deleteRowInserted(insertRequestNumber50);
     }
 
     @Test
-    public void executeInsertRow100() throws SQLException{
+    public void executeInsertRow100() throws SQLException {
         insertParametredRequestLoop(insertRequestNumber100);
         deleteRowInserted(insertRequestNumber100);
     }
@@ -94,31 +94,31 @@ public class Scenarii {
      */
 
     @Test
-    public void executeInsertAllRow5() throws SQLException{
+    public void executeInsertAllRow5() throws SQLException {
         insertParametredRequestOneShot(insertRequestNumber5);
         deleteRowInserted(insertRequestNumber5);
     }
 
     @Test
-    public void executeInsertAllRow10() throws SQLException{
+    public void executeInsertAllRow10() throws SQLException {
         insertParametredRequestOneShot(insertRequestNumber10);
         deleteRowInserted(insertRequestNumber10);
     }
 
     @Test
-    public void executeInsertAllRow25() throws SQLException{
+    public void executeInsertAllRow25() throws SQLException {
         insertParametredRequestOneShot(insertRequestNumber25);
         deleteRowInserted(insertRequestNumber25);
     }
 
     @Test
-    public void executeInsertAllRow50() throws SQLException{
+    public void executeInsertAllRow50() throws SQLException {
         insertParametredRequestOneShot(insertRequestNumber50);
         deleteRowInserted(insertRequestNumber50);
     }
 
     @Test
-    public void executeInsertAllRow100() throws SQLException{
+    public void executeInsertAllRow100() throws SQLException {
         insertParametredRequestOneShot(insertRequestNumber100);
         deleteRowInserted(insertRequestNumber100);
     }
@@ -128,27 +128,27 @@ public class Scenarii {
      */
 
     @Test
-    public void parseInsertRow5() throws SQLException{
+    public void parseInsertRow5() throws SQLException {
         parseInsertRequestRow(insertRequestNumber5);
     }
 
     @Test
-    public void parseInsertRow10() throws SQLException{
+    public void parseInsertRow10() throws SQLException {
         parseInsertRequestRow(insertRequestNumber10);
     }
 
     @Test
-    public void parseInsertRow25() throws SQLException{
+    public void parseInsertRow25() throws SQLException {
         parseInsertRequestRow(insertRequestNumber25);
     }
 
     @Test
-    public void parseInsertRow50() throws SQLException{
+    public void parseInsertRow50() throws SQLException {
         parseInsertRequestRow(insertRequestNumber50);
     }
 
     @Test
-    public void parseInsertRow100() throws SQLException{
+    public void parseInsertRow100() throws SQLException {
         parseInsertRequestRow(insertRequestNumber100);
     }
 
@@ -157,27 +157,27 @@ public class Scenarii {
      */
 
     @Test
-    public void bindInsertRow5() throws SQLException{
+    public void bindInsertRow5() throws SQLException {
         bindInsertRequestRow(insertRequestNumber5);
     }
 
     @Test
-    public void bindInsertRow10() throws SQLException{
+    public void bindInsertRow10() throws SQLException {
         bindInsertRequestRow(insertRequestNumber10);
     }
 
     @Test
-    public void bindInsertRow25() throws SQLException{
+    public void bindInsertRow25() throws SQLException {
         bindInsertRequestRow(insertRequestNumber25);
     }
 
     @Test
-    public void bindInsertRow50() throws SQLException{
+    public void bindInsertRow50() throws SQLException {
         bindInsertRequestRow(insertRequestNumber50);
     }
 
     @Test
-    public void bindInsertRow100() throws SQLException{
+    public void bindInsertRow100() throws SQLException {
         bindInsertRequestRow(insertRequestNumber100);
     }
 
@@ -186,58 +186,58 @@ public class Scenarii {
      */
 
     @Test
-    public void parseBindExecuteLogicScenario5() throws SQLException{
+    public void parseBindExecuteLogicScenario5() throws SQLException {
         parseBindExecuteLogicScenario(insertRequestNumber5);
     }
 
     @Test
-    public void parseBindExecuteLogicScenario10() throws SQLException{
+    public void parseBindExecuteLogicScenario10() throws SQLException {
         parseBindExecuteLogicScenario(insertRequestNumber10);
     }
 
     @Test
-    public void parseBindExecuteLogicScenario25() throws SQLException{
+    public void parseBindExecuteLogicScenario25() throws SQLException {
         parseBindExecuteLogicScenario(insertRequestNumber25);
     }
 
-//    @Test
-//    public void parseBindExecuteLogicScenario50() throws SQLException{
-//        parseBindExecuteLogicScenario(insertRequestNumber50);
-//    }
-//
-//    @Test
-//    public void parseBindExecuteLogicScenario100() throws SQLException{
-//        parseBindExecuteLogicScenario(insertRequestNumber100);
-//    }
+    //    @Test
+    //    public void parseBindExecuteLogicScenario50() throws SQLException{
+    //        parseBindExecuteLogicScenario(insertRequestNumber50);
+    //    }
+    //
+    //    @Test
+    //    public void parseBindExecuteLogicScenario100() throws SQLException{
+    //        parseBindExecuteLogicScenario(insertRequestNumber100);
+    //    }
 
     /*
      * TEST SCENARIO - RANDOM PARSE/BIND/EXECUTE
      */
 
     @Test
-    public void parseBindExecuteRandomScenario5() throws SQLException{
+    public void parseBindExecuteRandomScenario5() throws SQLException {
         parseBindExecuteRandomScenario(insertRequestNumber5);
     }
 
     @Test
-    public void parseBindExecuteRandomScenario10() throws SQLException{
+    public void parseBindExecuteRandomScenario10() throws SQLException {
         parseBindExecuteRandomScenario(insertRequestNumber10);
     }
 
     @Test
-    public void parseBindExecuteRandomScenario25() throws SQLException{
+    public void parseBindExecuteRandomScenario25() throws SQLException {
         parseBindExecuteRandomScenario(insertRequestNumber25);
     }
 
-//    @Test
-//    public void parseBindExecuteRandomScenario50() throws SQLException{
-//        parseBindExecuteRandomScenario(insertRequestNumber50);
-//    }
-//
-//    @Test
-//    public void parseBindExecuteRandomScenario100() throws SQLException{
-//        parseBindExecuteRandomScenario(insertRequestNumber100);
-//    }
+    //    @Test
+    //    public void parseBindExecuteRandomScenario50() throws SQLException{
+    //        parseBindExecuteRandomScenario(insertRequestNumber50);
+    //    }
+    //
+    //    @Test
+    //    public void parseBindExecuteRandomScenario100() throws SQLException{
+    //        parseBindExecuteRandomScenario(insertRequestNumber100);
+    //    }
 
     /*
      * SCENARII METHOD'S TEST
@@ -249,15 +249,15 @@ public class Scenarii {
      * @param numberOfRequest
      * @throws SQLException
      */
-    private void insertParametredRequestLoop(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = TestUtils.createStatement(con);){
+    private void insertParametredRequestLoop(int numberOfRequest) throws SQLException {
+        try (Connection con = TestUtils.getHealthConnection(); Statement stmt = TestUtils.createStatement(con);) {
             // check number of row before insert
             int rowBefore = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
             Assert.assertNotNull("Request's result is empty", rowBefore);
             // insert X row
             List<String> lstRequest = TestUtils.generateInsertRequest(numberOfRequest);
             Iterator<String> iterator = lstRequest.iterator();
-            while(iterator.hasNext()){
+            while (iterator.hasNext()) {
                 stmt.execute(iterator.next());
             }
             // check number of row after insert
@@ -274,8 +274,8 @@ public class Scenarii {
      * @param numberOfRequest
      * @throws SQLException
      */
-    private void insertParametredRequestOneShot(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = TestUtils.createStatement(con);){
+    private void insertParametredRequestOneShot(int numberOfRequest) throws SQLException {
+        try (Connection con = TestUtils.getHealthConnection(); Statement stmt = TestUtils.createStatement(con);) {
             // check number of row before insert
             int rowBefore = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
             Assert.assertNotNull("Request's result is empty", rowBefore);
@@ -296,11 +296,12 @@ public class Scenarii {
      * @param numberOfRequest
      * @throws SQLException
      */
-    private void parseInsertRequestRow(int numberOfRequest) throws SQLException{
+    private void parseInsertRequestRow(int numberOfRequest) throws SQLException {
         List<PreparedStatement> lstPrepStmt = TestUtils.generateInsertPreparedStatementRequest(numberOfRequest);
-        if(numberOfRequest != 0){
+        if (numberOfRequest != 0) {
             Assert.assertNotNull("List of PreparedStatement should not be null", lstPrepStmt);
-            Assert.assertEquals("Number of Statement should be equals to number of request parameter", numberOfRequest, lstPrepStmt.size());
+            Assert.assertEquals("Number of Statement should be equals to number of request parameter", numberOfRequest,
+                    lstPrepStmt.size());
         }
     }
 
@@ -311,10 +312,12 @@ public class Scenarii {
      * @param lstPrepStmt
      * @throws SQLException
      */
-    private void parseRequestSuccessfullTest(int numberOfRequest, List<PreparedStatement> lstPrepStmt) throws SQLException{
-        if(numberOfRequest != 0){
+    private void parseRequestSuccessfullTest(int numberOfRequest, List<PreparedStatement> lstPrepStmt)
+            throws SQLException {
+        if (numberOfRequest != 0) {
             Assert.assertNotNull("List of PreparedStatement should not be null", lstPrepStmt);
-            Assert.assertEquals("Number of Statement should be equals to number of request parameter", numberOfRequest, lstPrepStmt.size());
+            Assert.assertEquals("Number of Statement should be equals to number of request parameter", numberOfRequest,
+                    lstPrepStmt.size());
         }
     }
 
@@ -324,23 +327,24 @@ public class Scenarii {
      * @param numberOfRequest
      * @throws SQLException
      */
-    private void bindInsertRequestRow(int numberOfRequest) throws SQLException{
+    private void bindInsertRequestRow(int numberOfRequest) throws SQLException {
         List<PreparedStatement> lstPreparedStmtBinded = TestUtils.generateInsertBindRequest(numberOfRequest);
-        if(numberOfRequest != 0){
+        if (numberOfRequest != 0) {
             Assert.assertNotNull("List of PreparedStatement should not be null", lstPreparedStmtBinded);
-            Assert.assertEquals("Number of Statement should be equals to number of request parameter", numberOfRequest, lstPreparedStmtBinded.size());
+            Assert.assertEquals("Number of Statement should be equals to number of request parameter", numberOfRequest,
+                    lstPreparedStmtBinded.size());
             // check if all bind work succesfully and no "?" still in statement
             Iterator<PreparedStatement> iterator = lstPreparedStmtBinded.iterator();
-            while(iterator.hasNext()){
+            while (iterator.hasNext()) {
                 String request = String.valueOf(iterator.next());
                 int stringSize = request.length();
                 int counter = 0;
-                while(counter < stringSize){
-                    if(request.indexOf('?') != -1){
-                        Assert.assertNotEquals("Special character ? find, it means that binding didn't work correctly", -1, request.indexOf('?'));
+                while (counter < stringSize) {
+                    if (request.indexOf('?') != -1) {
+                        Assert.assertNotEquals("Special character ? find, it means that binding didn't work correctly",
+                                -1, request.indexOf('?'));
                         break;
-                    }
-                    else{
+                    } else {
                         counter = counter + 1;
                     }
                 }
@@ -354,22 +358,24 @@ public class Scenarii {
      * @param lstPrepStmt
      * @throws SQLException
      */
-    private void bindRequestSuccessfullTest(int numberOfRequest, List<PreparedStatement> lstPrepStmt) throws SQLException{
-        if(numberOfRequest != 0){
+    private void bindRequestSuccessfullTest(int numberOfRequest, List<PreparedStatement> lstPrepStmt)
+            throws SQLException {
+        if (numberOfRequest != 0) {
             Assert.assertNotNull("List of PreparedStatement should not be null", lstPrepStmt);
-            Assert.assertEquals("Number of Statement should be equals to number of request parameter", numberOfRequest, lstPrepStmt.size());
+            Assert.assertEquals("Number of Statement should be equals to number of request parameter", numberOfRequest,
+                    lstPrepStmt.size());
             // check if all bind work succesfully and no "?" still in statement
             Iterator<PreparedStatement> iterator = lstPrepStmt.iterator();
-            while(iterator.hasNext()){
+            while (iterator.hasNext()) {
                 String request = String.valueOf(iterator.next());
                 int stringSize = request.length();
                 int counter = 0;
-                while(counter < stringSize){
-                    if(request.indexOf('?') != -1){
-                        Assert.assertNotEquals("Special character ? find, it means that binding didn't work correctly", -1, request.indexOf('?'));
+                while (counter < stringSize) {
+                    if (request.indexOf('?') != -1) {
+                        Assert.assertNotEquals("Special character ? find, it means that binding didn't work correctly",
+                                -1, request.indexOf('?'));
                         break;
-                    }
-                    else{
+                    } else {
                         counter = counter + 1;
                     }
                 }
@@ -382,13 +388,15 @@ public class Scenarii {
      * @param numberOfRequest
      * @throws SQLException
      */
-    private void deleteRowInserted(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = TestUtils.createStatement(con);){
+    private void deleteRowInserted(int numberOfRequest) throws SQLException {
+        try (Connection con = TestUtils.getHealthConnection(); Statement stmt = TestUtils.createStatement(con);) {
             int rowBefore = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
-            String request = "DELETE FROM patient WHERE pat_id IN (SELECT pat_id FROM patient ORDER BY pat_id DESC LIMIT "+numberOfRequest+")";
+            String request = "DELETE FROM patient WHERE pat_id IN (SELECT pat_id FROM patient ORDER BY pat_id DESC LIMIT "
+                    + numberOfRequest + ")";
             stmt.execute(request);
             int rowAfter = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
-            Assert.assertEquals("Number of row after delete shall be equals to "+(rowBefore - numberOfRequest), (rowBefore - numberOfRequest), rowAfter);
+            Assert.assertEquals("Number of row after delete shall be equals to " + (rowBefore - numberOfRequest),
+                    (rowBefore - numberOfRequest), rowAfter);
             TestUtils.closeAll(stmt, con);
         }
     }
@@ -410,8 +418,8 @@ public class Scenarii {
      * @param numberOfRequet
      * @throws SQLException
      */
-    private void parseBindExecuteLogicScenario(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection(); Statement stmt = TestUtils.createStatement(con);){
+    private void parseBindExecuteLogicScenario(int numberOfRequest) throws SQLException {
+        try (Connection con = TestUtils.getHealthConnection(); Statement stmt = TestUtils.createStatement(con);) {
             // Check number of row before scenario
             int rowBeforeInsert = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
             Assert.assertNotNull("Table patient shall be not empty", rowBeforeInsert);
@@ -424,66 +432,72 @@ public class Scenarii {
             // Execute X INSERT request
             int counter = 1;
             Iterator<PreparedStatement> iterInsert = lstInsertBinded.iterator();
-            while(iterInsert.hasNext() && counter <= numberOfRequest){
+            while (iterInsert.hasNext() && counter <= numberOfRequest) {
                 stmt.execute(String.valueOf(iterInsert.next()));
-                Assert.assertEquals("Table patient shall contains "+(rowBeforeInsert + counter)+" rows", (rowBeforeInsert + counter), TestUtils.getNumberOfRow(stmt, "patient", "pat_id"));
-                counter ++;
+                Assert.assertEquals("Table patient shall contains " + (rowBeforeInsert + counter) + " rows",
+                        (rowBeforeInsert + counter), TestUtils.getNumberOfRow(stmt, "patient", "pat_id"));
+                counter++;
             }
             counter = 0;
             // check number of row after insert
             int rowAfterInsert = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
             Assert.assertNotNull("Table patient shall be not empty", rowAfterInsert);
-            Assert.assertEquals("Insert result's request unsuccesfull", rowBeforeInsert + numberOfRequest, rowAfterInsert);
+            Assert.assertEquals("Insert result's request unsuccesfull", rowBeforeInsert + numberOfRequest,
+                    rowAfterInsert);
             // Parse X SELECT request
             List<PreparedStatement> lstSelectParsed = TestUtils.generateSelectPreparedStatementRequest(numberOfRequest);
             parseRequestSuccessfullTest(numberOfRequest, lstSelectParsed);
             // Bind X SELECT request
             List<PreparedStatement> lstSelectBinded = new ArrayList<PreparedStatement>();
             List<String> lstIdSelected = new ArrayList<String>();
-            String request = "SELECT pat_id FROM patient WHERE pat_id IN (SELECT pat_id FROM patient ORDER BY pat_id DESC LIMIT "+numberOfRequest+") ORDER BY pat_id";
+            String request = "SELECT pat_id FROM patient WHERE pat_id IN (SELECT pat_id FROM patient ORDER BY pat_id DESC LIMIT "
+                    + numberOfRequest + ") ORDER BY pat_id";
             ResultSet res = stmt.executeQuery(request);
-            while(res.next()){
+            while (res.next()) {
                 String id = res.getString(1);
                 lstIdSelected.add(id);
             }
-            for(String id : lstIdSelected){
+            for (String id : lstIdSelected) {
                 PreparedStatement prep = TestUtils.bindSelectRequest(numberOfRequest, lstSelectParsed.get(counter), id);
                 lstSelectBinded.add(prep);
-                counter ++;
+                counter++;
             }
             counter = 1;
             bindRequestSuccessfullTest(numberOfRequest, lstSelectBinded);
             // Execute X Select request
             Iterator<PreparedStatement> iterSelect = lstSelectBinded.iterator();
-            while(iterSelect.hasNext() && counter < numberOfRequest){
+            while (iterSelect.hasNext() && counter < numberOfRequest) {
                 stmt.execute(String.valueOf(lstSelectBinded.get(counter)));
-                counter ++;
+                counter++;
             }
             counter = 1;
             // Parse X UPDATE request
             List<PreparedStatement> lstUpdateParsed = TestUtils.generateUpdatePreparedStatementRequest(numberOfRequest);
             parseRequestSuccessfullTest(numberOfRequest, lstUpdateParsed);
             // Bind X UPDATE request
-            List<PreparedStatement> lstUpdateBinded = TestUtils.bindUpdateRequest(numberOfRequest, lstUpdateParsed, lstIdSelected);
+            List<PreparedStatement> lstUpdateBinded = TestUtils.bindUpdateRequest(numberOfRequest, lstUpdateParsed,
+                    lstIdSelected);
             bindRequestSuccessfullTest(numberOfRequest, lstUpdateBinded);
             // Execute X UPDATE request
             Iterator<PreparedStatement> iterUpdate = lstUpdateBinded.iterator();
-            while(iterUpdate.hasNext() && counter < numberOfRequest){
+            while (iterUpdate.hasNext() && counter < numberOfRequest) {
                 PreparedStatement prepStmt = iterUpdate.next();
                 stmt.execute(String.valueOf(prepStmt));
                 String rowBeforUpdate = getRowBeforeUpdate(con, prepStmt);
                 updateRequestTestSuccesfull(con, prepStmt, rowBeforUpdate);
                 updateRequestTestSuccesfull(con, prepStmt, rowBeforUpdate);
             }
-            counter ++;
+            counter++;
             // Parse DELETE request
             PreparedStatement requestDeleteParsed = TestUtils.generateDeletePreparedStatementRequest(numberOfRequest);
             // Bind DELETE request
-            PreparedStatement requestDeleteBinded = TestUtils.bindDeleteBetweenRequest(numberOfRequest, requestDeleteParsed, lstIdSelected.get(0), lstIdSelected.get(lstIdSelected.size() - 1));
+            PreparedStatement requestDeleteBinded = TestUtils.bindDeleteBetweenRequest(numberOfRequest,
+                    requestDeleteParsed, lstIdSelected.get(0), lstIdSelected.get(lstIdSelected.size() - 1));
             // Execute DELETE request
             stmt.execute(String.valueOf(requestDeleteBinded));
             int rowEnd = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
-            Assert.assertEquals("Table patient shall contains "+(rowAfterInsert - numberOfRequest)+" rows", (rowAfterInsert - numberOfRequest), rowEnd);
+            Assert.assertEquals("Table patient shall contains " + (rowAfterInsert - numberOfRequest) + " rows",
+                    (rowAfterInsert - numberOfRequest), rowEnd);
             TestUtils.closeAll(stmt, con);
         }
     }
@@ -505,8 +519,8 @@ public class Scenarii {
      * @param numberOfRequest
      * @throws SQLException
      */
-    private void parseBindExecuteRandomScenario(int numberOfRequest) throws SQLException{
-        try(Connection con = TestUtils.getHealthConnection();){
+    private void parseBindExecuteRandomScenario(int numberOfRequest) throws SQLException {
+        try (Connection con = TestUtils.getHealthConnection();) {
             // check number of row before insert
             Statement stmt = TestUtils.createStatement(con);
             int rowBefore = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
@@ -517,31 +531,36 @@ public class Scenarii {
             List<String> lstIdInserted = new ArrayList<String>();
             Iterator<String> iterator = lstInsertRequest.iterator();
             int counter1 = 1;
-            while(iterator.hasNext()){
+            while (iterator.hasNext()) {
                 String request = iterator.next();
                 stmt.execute(request);
-                Assert.assertEquals("Table patient shall contains "+(rowBefore + counter1)+" rows", (rowBefore + counter1), TestUtils.getNumberOfRow(stmt, "patient", "pat_id"));
-                counter1 ++;
+                Assert.assertEquals("Table patient shall contains " + (rowBefore + counter1) + " rows",
+                        (rowBefore + counter1), TestUtils.getNumberOfRow(stmt, "patient", "pat_id"));
+                counter1++;
                 lstIdInserted.add((String) request.subSequence(29, 37));
             }
-            Assert.assertEquals("Table patient shall contains "+(rowBefore + numberOfRequest)+" rows", (rowBefore + numberOfRequest), TestUtils.getNumberOfRow(stmt, "patient", "pat_id"));
+            Assert.assertEquals("Table patient shall contains " + (rowBefore + numberOfRequest) + " rows",
+                    (rowBefore + numberOfRequest), TestUtils.getNumberOfRow(stmt, "patient", "pat_id"));
             // check number of row after insert
             int rowAfter = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
             Assert.assertNotNull("Table patient shall be not empty", rowAfter);
             Assert.assertEquals("Insert result's request unsuccesfull", rowBefore + numberOfRequest, rowAfter);
             // parse (X x 2) insert request
-            List<PreparedStatement> lstPrepStmtInsert = TestUtils.generateInsertPreparedStatementRequest(numberOfRequest*2);
-            parseRequestSuccessfullTest(numberOfRequest*2, lstPrepStmtInsert);
+            List<PreparedStatement> lstPrepStmtInsert = TestUtils
+                    .generateInsertPreparedStatementRequest(numberOfRequest * 2);
+            parseRequestSuccessfullTest(numberOfRequest * 2, lstPrepStmtInsert);
             // parse X update request
-            List<PreparedStatement> lstPrepStmtUpdate = TestUtils.generateUpdatePreparedStatementRequest(numberOfRequest);
+            List<PreparedStatement> lstPrepStmtUpdate = TestUtils
+                    .generateUpdatePreparedStatementRequest(numberOfRequest);
             parseRequestSuccessfullTest(numberOfRequest, lstPrepStmtUpdate);
             // bind Y (random) update request
             int nbrOfBind = TestUtils.generateRandomInt(1, numberOfRequest);
-            List<PreparedStatement> lstBindedUpdate = TestUtils.bindUpdateRequest(nbrOfBind, lstPrepStmtUpdate, lstIdInserted);
+            List<PreparedStatement> lstBindedUpdate = TestUtils.bindUpdateRequest(nbrOfBind, lstPrepStmtUpdate,
+                    lstIdInserted);
             bindRequestSuccessfullTest(nbrOfBind, lstBindedUpdate);
             // execute Y update request
             Iterator<PreparedStatement> iterator2 = lstBindedUpdate.iterator();
-            while(iterator2.hasNext()){
+            while (iterator2.hasNext()) {
                 PreparedStatement prepStmt = iterator2.next();
                 String rowBeforUpdate = getRowBeforeUpdate(con, prepStmt);
                 stmt.execute(String.valueOf(prepStmt));
@@ -551,23 +570,26 @@ public class Scenarii {
             List<PreparedStatement> lstPrepStmtInsertToBind = new ArrayList<PreparedStatement>();
             Iterator<PreparedStatement> iterator3 = lstPrepStmtInsert.iterator();
             int counter2 = 0;
-            while(iterator3.hasNext() && counter2 < numberOfRequest){
+            while (iterator3.hasNext() && counter2 < numberOfRequest) {
                 lstPrepStmtInsertToBind.add(iterator3.next());
                 iterator3.remove();
                 counter2 = counter2 + 1;
             }
-            List<PreparedStatement> lstBindedInsert = TestUtils.bindInsertRequest(lstPrepStmtInsertToBind.size(), lstPrepStmtInsertToBind);
+            List<PreparedStatement> lstBindedInsert = TestUtils.bindInsertRequest(lstPrepStmtInsertToBind.size(),
+                    lstPrepStmtInsertToBind);
             bindRequestSuccessfullTest(numberOfRequest, lstBindedInsert);
             // execute X binded insert
             Iterator<PreparedStatement> iterator4 = lstBindedInsert.iterator();
             int counter3 = 1;
-            while(iterator4.hasNext()){
+            while (iterator4.hasNext()) {
                 stmt.execute(String.valueOf(iterator4.next()));
-                Assert.assertEquals("Table patient shall contains "+(rowAfter + counter3)+" rows", (rowAfter + counter3), TestUtils.getNumberOfRow(stmt, "patient", "pat_id"));
-                counter3 ++;
+                Assert.assertEquals("Table patient shall contains " + (rowAfter + counter3) + " rows",
+                        (rowAfter + counter3), TestUtils.getNumberOfRow(stmt, "patient", "pat_id"));
+                counter3++;
             }
             // bind other insert (never executed)
-            List<PreparedStatement> lstOtherBindedInsert = TestUtils.bindInsertRequest(lstPrepStmtInsert.size(), lstPrepStmtInsert);
+            List<PreparedStatement> lstOtherBindedInsert = TestUtils.bindInsertRequest(lstPrepStmtInsert.size(),
+                    lstPrepStmtInsert);
             bindRequestSuccessfullTest(numberOfRequest, lstOtherBindedInsert);
             // parse + bind delete (all row inserted)
             String reqCountRow = "SELECT * FROM patient ORDER BY pat_id";
@@ -575,12 +597,16 @@ public class Scenarii {
             Assert.assertNotNull("Table patient should not be empty", resCountRow);
             resCountRow.last();
             String lastNewValue = TestUtils.getFirstOrLastFieldValueString(resCountRow, 1, "last");
-            String firstNewValue = TestUtils.concatenationZeroIntAsString(Integer.parseInt(lastNewValue) - (numberOfRequest * 2) + 1, 8);
+            String firstNewValue = TestUtils
+                    .concatenationZeroIntAsString(Integer.parseInt(lastNewValue) - (numberOfRequest * 2) + 1, 8);
             // execute all delete
-            String reqDelete = "DELETE FROM PATIENT WHERE pat_id BETWEEN '"+ firstNewValue +"' AND '"+lastNewValue+"'";
+            String reqDelete = "DELETE FROM PATIENT WHERE pat_id BETWEEN '" + firstNewValue + "' AND '" + lastNewValue
+                    + "'";
             stmt.execute(reqDelete);
             int rowEnd = TestUtils.getNumberOfRow(stmt, "patient", "pat_id");
-            Assert.assertEquals("Table patient shall contains "+(rowAfter + numberOfRequest - (numberOfRequest*2))+" rows", (rowAfter + numberOfRequest - (numberOfRequest*2)), rowEnd);
+            Assert.assertEquals(
+                    "Table patient shall contains " + (rowAfter + numberOfRequest - (numberOfRequest * 2)) + " rows",
+                    (rowAfter + numberOfRequest - (numberOfRequest * 2)), rowEnd);
             TestUtils.closeAll(stmt, con);
         }
     }
@@ -592,16 +618,16 @@ public class Scenarii {
      * @param requestBefore
      * @throws SQLException
      */
-    private void updateRequestTestSuccesfull(Connection con, PreparedStatement prepStmt, String requestBefore) throws SQLException{
+    private void updateRequestTestSuccesfull(Connection con, PreparedStatement prepStmt, String requestBefore)
+            throws SQLException {
         String request = String.valueOf(prepStmt);
         int index = request.indexOf("pat_id") + 10;
         String id = request.substring(index, index + 8);
         Statement stmt = TestUtils.createStatement(con);
-        String req = "SELECT * FROM patient WHERE pat_id = '"+id+"'";
+        String req = "SELECT * FROM patient WHERE pat_id = '" + id + "'";
         ResultSet res = stmt.executeQuery(req);
         Assert.assertNotEquals("Row update unsuccesfull", String.valueOf(res), requestBefore);
     }
-
 
     /**
      * method which return value of Id's patient in order to check if UPDATE request process successfully
@@ -610,12 +636,12 @@ public class Scenarii {
      * @return
      * @throws SQLException
      */
-    private String getRowBeforeUpdate(Connection con, PreparedStatement prepStmt) throws SQLException{
+    private String getRowBeforeUpdate(Connection con, PreparedStatement prepStmt) throws SQLException {
         String request = String.valueOf(prepStmt);
         int index = request.indexOf("pat_id") + 10;
         String id = request.substring(index, index + 8);
         Statement stmt = TestUtils.createStatement(con);
-        String req = "SELECT * FROM patient WHERE pat_id = '"+id+"'";
+        String req = "SELECT * FROM patient WHERE pat_id = '" + id + "'";
         ResultSet res = stmt.executeQuery(req);
         return String.valueOf(res);
     }

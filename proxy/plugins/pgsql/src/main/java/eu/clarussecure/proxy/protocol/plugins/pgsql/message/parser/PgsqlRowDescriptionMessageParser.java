@@ -25,7 +25,8 @@ public class PgsqlRowDescriptionMessageParser implements PgsqlMessageParser<Pgsq
             short typeSize = content.readShort();
             int typeModifier = content.readInt();
             short format = content.readShort();
-            PgsqlRowDescriptionMessage.Field field = new PgsqlRowDescriptionMessage.Field(name, tableOID, columnNumber, typeOID, typeSize, typeModifier, format);
+            PgsqlRowDescriptionMessage.Field field = new PgsqlRowDescriptionMessage.Field(name, tableOID, columnNumber,
+                    typeOID, typeSize, typeModifier, format);
             fields.add(field);
             --nbFields;
         }

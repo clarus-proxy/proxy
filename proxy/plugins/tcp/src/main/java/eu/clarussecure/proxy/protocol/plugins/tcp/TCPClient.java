@@ -39,12 +39,9 @@ public class TCPClient<CI extends ChannelInitializer<Channel>, S extends TCPSess
         TCPSession session = buildSession();
         session.setClientSideChannel(clientSideChannel);
         clientSideChannel.attr(TCPConstants.SESSION_KEY).set(session);
-        bootstrap.group(clientSideChannel.eventLoop())
-                .channel(NioSocketChannel.class)
-                .attr(TCPConstants.CONFIGURATION_KEY, configuration)
-                .attr(TCPConstants.SESSION_KEY, session)
-                .handler(buildServerSidePipelineInitializer())
-                .option(ChannelOption.AUTO_READ, false);
+        bootstrap.group(clientSideChannel.eventLoop()).channel(NioSocketChannel.class)
+                .attr(TCPConstants.CONFIGURATION_KEY, configuration).attr(TCPConstants.SESSION_KEY, session)
+                .handler(buildServerSidePipelineInitializer()).option(ChannelOption.AUTO_READ, false);
         LOGGER.trace("Initialize connection to {}", configuration.getServerEndpoint());
         ChannelFuture connectFuture = bootstrap.connect(configuration.getServerEndpoint());
         Channel serverSideChannel = connectFuture.channel();
@@ -58,7 +55,8 @@ public class TCPClient<CI extends ChannelInitializer<Channel>, S extends TCPSess
         } catch (InstantiationException | IllegalAccessException e) {
             // Should not occur
             LOGGER.error("Cannot create instance of class {}: ", channelInitializerType.getSimpleName(), e);
-            throw new IllegalArgumentException(String.format("Cannot create instance of class %s: ", channelInitializerType.getSimpleName(), e));
+            throw new IllegalArgumentException(
+                    String.format("Cannot create instance of class %s: ", channelInitializerType.getSimpleName(), e));
         }
     }
 
@@ -68,7 +66,8 @@ public class TCPClient<CI extends ChannelInitializer<Channel>, S extends TCPSess
         } catch (InstantiationException | IllegalAccessException e) {
             // Should not occur
             LOGGER.error("Cannot create instance of class {}: ", sessionType.getSimpleName(), e);
-            throw new IllegalArgumentException(String.format("Cannot create instance of class %s: ", sessionType.getSimpleName(), e));
+            throw new IllegalArgumentException(
+                    String.format("Cannot create instance of class %s: ", sessionType.getSimpleName(), e));
         }
     }
 

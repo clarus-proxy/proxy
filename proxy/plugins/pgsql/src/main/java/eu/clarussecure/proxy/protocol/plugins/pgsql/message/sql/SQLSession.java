@@ -332,13 +332,13 @@ public class SQLSession {
         // Remove create portals if exist
         getBindStepStatuses().values().stream() // iterate over bind step status
                 .map(ExtendedQueryStatus<BindStep>::getQuery) // retrieve bind
-                                                              // step
+                // step
                 .filter(q -> name.equals(q.getPreparedStatement())) // filter on
-                                                                    // prepared
-                                                                    // statement
-                                                                    // name
+                // prepared
+                // statement
+                // name
                 .forEach(q -> removeBindStep(q.getName())); // remove the bind
-                                                            // step
+        // step
         // Remove parse step status
         ExtendedQueryStatus<ParseStep> parseStepStatus = getParseStepStatuses().remove(name);
         if (parseStepStatus != null) {

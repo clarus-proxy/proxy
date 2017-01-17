@@ -43,7 +43,8 @@ public class Proxy {
     private SecurityPolicy securityPolicy;
     private Protocol protocol;
 
-    private Proxy(String securityPolicyPath, List<String> serverAddresses, Integer maxFrameLen, Integer nbListenThreads, Integer nbSessionThreads, Integer nbParserThreads) {
+    private Proxy(String securityPolicyPath, List<String> serverAddresses, Integer maxFrameLen, Integer nbListenThreads,
+            Integer nbSessionThreads, Integer nbParserThreads) {
         this.securityPolicyPath = securityPolicyPath;
         this.serverAddresses = serverAddresses;
         this.maxFrameLen = maxFrameLen;
@@ -131,39 +132,50 @@ public class Proxy {
         }
         protocolConfiguration.register(protocolService);
         LOGGER.debug("Protocol service registered");
-        LOGGER.info("The CLARUS proxy is ready to intercept {} protocol and to protect data with {}", protocolConfiguration.getProtocolName(), protectionModuleName);
+        LOGGER.info("The CLARUS proxy is ready to intercept {} protocol and to protect data with {}",
+                protocolConfiguration.getProtocolName(), protectionModuleName);
     }
 
-    private void configureProcessingModes(boolean wholedataset, ProtectionModuleCapabilities protectionModuleCapabilities,
-            ProtocolCapabilities protocolCapabilities, Configuration protocolConfiguration) {
+    private void configureProcessingModes(boolean wholedataset,
+            ProtectionModuleCapabilities protectionModuleCapabilities, ProtocolCapabilities protocolCapabilities,
+            Configuration protocolConfiguration) {
         LOGGER.trace("Configuring processing modes for access to {}...", wholedataset ? "wholedataset" : "records");
         Set<Operation> protectionOps;
         if (protectionModuleCapabilities != null) {
             protectionOps = protectionModuleCapabilities.getSupportedCRUDOperations(wholedataset);
-            LOGGER.trace("Protection module supports the following operations for access to {}: {}", wholedataset ? "wholedataset" : "records", protectionOps);
+            LOGGER.trace("Protection module supports the following operations for access to {}: {}",
+                    wholedataset ? "wholedataset" : "records", protectionOps);
         } else {
             protectionOps = Arrays.stream(Operation.values()).collect(Collectors.toSet());
         }
         Set<Operation> protocolOps = protocolCapabilities.getSupportedCRUDOperations(wholedataset);
-        LOGGER.trace("Protocol plugin supports the following operations for access to {}: {}", wholedataset ? "wholedataset" : "records", protocolOps);
+        LOGGER.trace("Protocol plugin supports the following operations for access to {}: {}",
+                wholedataset ? "wholedataset" : "records", protocolOps);
         Set<Operation> operations = EnumSet.copyOf(protocolOps);
         operations.retainAll(protectionOps);
-        LOGGER.debug("Supported operations by both the protection module and the protocol plugin for access to {}: {}", wholedataset ? "wholedataset" : "records", operations);
+        LOGGER.debug("Supported operations by both the protection module and the protocol plugin for access to {}: {}",
+                wholedataset ? "wholedataset" : "records", operations);
         for (Operation operation : operations) {
             Mode protectionProcessingMode;
             if (protectionModuleCapabilities != null) {
-                protectionProcessingMode = protectionModuleCapabilities.getPreferredProcessingMode(wholedataset, operation, securityPolicy);
-                LOGGER.trace("Preferred processing mode of the protection module (according to the security policy) for {} operation on {}: {}", operation, wholedataset ? "wholedataset" : "records", protectionProcessingMode);
+                protectionProcessingMode = protectionModuleCapabilities.getPreferredProcessingMode(wholedataset,
+                        operation, securityPolicy);
+                LOGGER.trace(
+                        "Preferred processing mode of the protection module (according to the security policy) for {} operation on {}: {}",
+                        operation, wholedataset ? "wholedataset" : "records", protectionProcessingMode);
             } else {
                 protectionProcessingMode = Mode.AS_IT_IS;
             }
-            Set<Mode> protocolProcessingModes = protocolCapabilities.getSupportedProcessingModes(wholedataset, operation);
-            LOGGER.trace("Supported processing modes by the protocol module for {} operation on {}: {}", operation, wholedataset ? "wholedataset" : "records", protocolProcessingModes);
+            Set<Mode> protocolProcessingModes = protocolCapabilities.getSupportedProcessingModes(wholedataset,
+                    operation);
+            LOGGER.trace("Supported processing modes by the protocol module for {} operation on {}: {}", operation,
+                    wholedataset ? "wholedataset" : "records", protocolProcessingModes);
             Set<Mode> processingModes = EnumSet.copyOf(protocolProcessingModes);
             processingModes.retainAll(Collections.singleton(protectionProcessingMode));
             Mode processingMode = processingModes.isEmpty() ? null : processingModes.iterator().next();
             protocolConfiguration.setProcessingMode(wholedataset, operation, processingMode);
-            LOGGER.debug("Processing mode to use for {} operation on {}: {}", operation, wholedataset ? "wholedataset" : "records", processingMode);
+            LOGGER.debug("Processing mode to use for {} operation on {}: {}", operation,
+                    wholedataset ? "wholedataset" : "records", processingMode);
         }
     }
 
@@ -183,7 +195,7 @@ public class Proxy {
         Integer nbListenThreads = null;
         Integer nbSessionThreads = null;
         Integer nbParserThreads = null;
-        for (int i = 0; i < args.length; i ++) {
+        for (int i = 0; i < args.length; i++) {
             String arg = args[i];
             if ("-sp".equals(arg) || "--security-policy".equals(arg)) {
                 if (++i < args.length) {
@@ -206,7 +218,8 @@ public class Proxy {
                         nbListenThreads = Integer.parseInt(args[i]);
                     }
                     if (nbListenThreads <= 0) {
-                        System.out.println("Number of listen threads must be a positive number or the special value 'cores' (number of cores)");
+                        System.out.println(
+                                "Number of listen threads must be a positive number or the special value 'cores' (number of cores)");
                         usage();
                         return;
                     }
@@ -219,7 +232,8 @@ public class Proxy {
                         nbSessionThreads = Integer.parseInt(args[i]);
                     }
                     if (nbSessionThreads <= 0) {
-                        System.out.println("Number of session threads must be a positive number or the special value 'cores' (number of cores)");
+                        System.out.println(
+                                "Number of session threads must be a positive number or the special value 'cores' (number of cores)");
                         usage();
                         return;
                     }
@@ -232,7 +246,8 @@ public class Proxy {
                         nbParserThreads = Integer.parseInt(args[i]);
                     }
                     if (nbParserThreads < 0) {
-                        System.out.println("Number of parser threads must be a positive number or 0 or the special value 'cores' (number of cores)");
+                        System.out.println(
+                                "Number of parser threads must be a positive number or 0 or the special value 'cores' (number of cores)");
                         usage();
                         return;
                     }
@@ -251,15 +266,18 @@ public class Proxy {
             usage();
             return;
         }
-        Proxy proxy = new Proxy(securityPolicyPath, serverAddresses, maxFrameLen, nbListenThreads, nbSessionThreads, nbParserThreads);
+        Proxy proxy = new Proxy(securityPolicyPath, serverAddresses, maxFrameLen, nbListenThreads, nbSessionThreads,
+                nbParserThreads);
         proxy.initialize();
         proxy.start();
     }
 
     private static void usage() {
-        System.out.println("usage: java -Djava.ext.dirs=<CLARUS_EXT_DIRS> [PROTOCOL OPTIONS] -jar proxy-1.0-SNAPSHOT.jar [OPTION]... [SERVER_ADDRESS]...");
+        System.out.println(
+                "usage: java -Djava.ext.dirs=<CLARUS_EXT_DIRS> [PROTOCOL OPTIONS] -jar proxy-1.0-SNAPSHOT.jar [OPTION]... [SERVER_ADDRESS]...");
         System.out.println("CLARUS extensions:");
-        System.out.println("  <CLARUS_EXT_DIRS>        list the extensions directories that contain protection modules and protocol plugins");
+        System.out.println(
+                "  <CLARUS_EXT_DIRS>        list the extensions directories that contain protection modules and protocol plugins");
         System.out.println("Security policy options:");
         System.out.println(" -sp, --security-policy <PATH>");
         System.out.println("                           the security policy to apply");
@@ -267,15 +285,20 @@ public class Proxy {
         System.out.println(" [-mf, --max-frame-len <MAX_FRAME_LENGTH>]");
         System.out.println("                           maximum frame length to process");
         System.out.println(" [-lt, --nb-listen-threads <NB_LISTEN_THREADS>]");
-        System.out.println("                           number of listen threads (default: 1). Must be a positive number or the special value 'cores' (number of cores)");
+        System.out.println(
+                "                           number of listen threads (default: 1). Must be a positive number or the special value 'cores' (number of cores)");
         System.out.println(" [-st, --nb-session-threads <NB_SESSION_THREADS>]");
-        System.out.println("                           number of session threads (default: number of cores). Must be a positive number or the special value 'cores' (number of cores)");
+        System.out.println(
+                "                           number of session threads (default: number of cores). Must be a positive number or the special value 'cores' (number of cores)");
         System.out.println(" [-pt, --nb-parser-threads <NB_PARSER_THREADS>]");
-        System.out.println("                           number of parser threads (default: 0). Must be a positive number or 0 or the special value 'cores' (number of cores)");
+        System.out.println(
+                "                           number of parser threads (default: 0). Must be a positive number or 0 or the special value 'cores' (number of cores)");
         System.out.println("Protocol options:");
         System.out.println(" [-D<OPTION_NAME>=<OPTION_VALUE>]");
-        System.out.println("                           define options specific to the protocol plugin. Muliple options can be specified");
+        System.out.println(
+                "                           define options specific to the protocol plugin. Muliple options can be specified");
         System.out.println("Server addresses:");
-        System.out.println(" <HOSTNAME>[:<PORT>]       server host and optional port. Muliple server addresses can be specified");
+        System.out.println(
+                " <HOSTNAME>[:<PORT>]       server host and optional port. Muliple server addresses can be specified");
     }
 }

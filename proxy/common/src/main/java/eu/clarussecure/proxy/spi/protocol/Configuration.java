@@ -84,7 +84,8 @@ public abstract class Configuration implements Configurable {
 
     @Override
     public void setServerAddresses(Set<InetAddress> serverAddresses) {
-        serverAddresses.stream().map(serverAddress -> new InetSocketAddress(serverAddress, getDefaultListenPort())).collect(Collectors.toSet());
+        serverAddresses.stream().map(serverAddress -> new InetSocketAddress(serverAddress, getDefaultListenPort()))
+                .collect(Collectors.toSet());
     }
 
     @Override
@@ -148,7 +149,8 @@ public abstract class Configuration implements Configurable {
     @Override
     public Mode getProcessingMode(boolean wholeDataset, Operation operation) {
         if (!capabilities.getSupportedCRUDOperations(wholeDataset).contains(operation)) {
-            throw new IllegalArgumentException(String.format("Operation '%s' is not supported on %s", operation, wholeDataset ? "dataset" : "record"));
+            throw new IllegalArgumentException(String.format("Operation '%s' is not supported on %s", operation,
+                    wholeDataset ? "dataset" : "record"));
         }
         return wholeDataset ? datasetProcessingModes.get(operation) : recordProcessingModes.get(operation);
     }
@@ -156,10 +158,13 @@ public abstract class Configuration implements Configurable {
     @Override
     public void setProcessingMode(boolean wholeDataset, Operation operation, Mode mode) {
         if (!capabilities.getSupportedCRUDOperations(wholeDataset).contains(operation)) {
-            throw new IllegalArgumentException(String.format("Operation '%s' is not supported on %s", operation, wholeDataset ? "dataset" : "record"));
+            throw new IllegalArgumentException(String.format("Operation '%s' is not supported on %s", operation,
+                    wholeDataset ? "dataset" : "record"));
         }
         if (mode != null && !capabilities.getSupportedProcessingModes(wholeDataset, operation).contains(mode)) {
-            throw new IllegalArgumentException(String.format("Processing mode '%s' is not supported for operation '%s' on %s", mode, operation, wholeDataset ? "dataset" : "record"));
+            throw new IllegalArgumentException(
+                    String.format("Processing mode '%s' is not supported for operation '%s' on %s", mode, operation,
+                            wholeDataset ? "dataset" : "record"));
         }
         if (wholeDataset) {
             datasetProcessingModes.put(operation, mode);
@@ -175,11 +180,14 @@ public abstract class Configuration implements Configurable {
 
     @Override
     public void setComputationCommands(Set<String> commands) {
-        if (!capabilities.getSupportedCRUDOperations(true).contains(Operation.READ) && !capabilities.getSupportedCRUDOperations(false).contains(Operation.READ)) {
+        if (!capabilities.getSupportedCRUDOperations(true).contains(Operation.READ)
+                && !capabilities.getSupportedCRUDOperations(false).contains(Operation.READ)) {
             throw new IllegalArgumentException("Operation 'READ' is not supported on dataset and on record");
         }
-        if (!capabilities.getSupportedProcessingModes(true, Operation.READ).contains(Mode.ORCHESTRATION) && !capabilities.getSupportedProcessingModes(false, Operation.READ).contains(Mode.ORCHESTRATION)) {
-            throw new IllegalArgumentException("Processing mode 'ORCHESTRATION' is not supported for operation 'READ' on dataset and on record");
+        if (!capabilities.getSupportedProcessingModes(true, Operation.READ).contains(Mode.ORCHESTRATION)
+                && !capabilities.getSupportedProcessingModes(false, Operation.READ).contains(Mode.ORCHESTRATION)) {
+            throw new IllegalArgumentException(
+                    "Processing mode 'ORCHESTRATION' is not supported for operation 'READ' on dataset and on record");
         }
         this.commands = commands;
     }

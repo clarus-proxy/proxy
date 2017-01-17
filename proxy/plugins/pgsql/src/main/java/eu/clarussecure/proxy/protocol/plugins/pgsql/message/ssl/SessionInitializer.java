@@ -41,7 +41,8 @@ public class SessionInitializer {
         sessionEncryptedOnBackendSide = false;
     }
 
-    public SessionMessageTransferMode<Void, Byte> processSSLRequest(ChannelHandlerContext ctx, int code) throws IOException {
+    public SessionMessageTransferMode<Void, Byte> processSSLRequest(ChannelHandlerContext ctx, int code)
+            throws IOException {
         LOGGER.debug("SSL request code: {}", code);
         TransferMode transferMode = TransferMode.FORWARD;
         Byte response = null;
@@ -72,12 +73,14 @@ public class SessionInitializer {
                 LOGGER.trace("Forward the SSL request (SSL is allowed or required on the backend side)");
             }
         }
-        SessionMessageTransferMode<Void, Byte> mode = new SessionMessageTransferMode<Void, Byte>(null, transferMode, response, errorDetails);
+        SessionMessageTransferMode<Void, Byte> mode = new SessionMessageTransferMode<Void, Byte>(null, transferMode,
+                response, errorDetails);
         LOGGER.debug("SSL request processed: transfer mode={}", mode);
         return mode;
     }
 
-    public SessionMessageTransferMode<Byte, Void> processSSLResponse(ChannelHandlerContext ctx, byte code) throws IOException {
+    public SessionMessageTransferMode<Byte, Void> processSSLResponse(ChannelHandlerContext ctx, byte code)
+            throws IOException {
         LOGGER.debug("SSL response code: {}", code);
         TransferMode transferMode = TransferMode.FORWARD;
         byte newCode = code;
@@ -132,9 +135,11 @@ public class SessionInitializer {
         if (sslRequestReceived) {
             LOGGER.trace("Session initialization completed");
             // Frontend side: nothing todo
-            LOGGER.trace("Session {} on the frontend side", sessionEncryptedOnFrontendSide ? "encrypted with SSL" : "not encrypted");
+            LOGGER.trace("Session {} on the frontend side",
+                    sessionEncryptedOnFrontendSide ? "encrypted with SSL" : "not encrypted");
             // Backend side: nothing todo
-            LOGGER.trace("Session {} on the backend side", sessionEncryptedOnBackendSide ? "encrypted with SSL" : "not encrypted");
+            LOGGER.trace("Session {} on the backend side",
+                    sessionEncryptedOnBackendSide ? "encrypted with SSL" : "not encrypted");
         } else {
             if (sslSessionInitializer.getClientMode() == SSLMode.REQUIRED) {
                 // Frontend side: reply SSL is required
@@ -153,9 +158,11 @@ public class SessionInitializer {
                 } else {
                     LOGGER.trace("Session initialization completed");
                     // Frontend side: nothing todo
-                    LOGGER.trace("Session {} on the frontend side", sessionEncryptedOnFrontendSide ? "encrypted with SSL" : "not encrypted");
+                    LOGGER.trace("Session {} on the frontend side",
+                            sessionEncryptedOnFrontendSide ? "encrypted with SSL" : "not encrypted");
                     // Backend side: nothing todo
-                    LOGGER.trace("Session {} on the backend side", sessionEncryptedOnBackendSide ? "encrypted with SSL" : "not encrypted");
+                    LOGGER.trace("Session {} on the backend side",
+                            sessionEncryptedOnBackendSide ? "encrypted with SSL" : "not encrypted");
                 }
             }
         }
@@ -167,14 +174,15 @@ public class SessionInitializer {
             // Configure PgsqlRawPartCodec to skip SSL response on the backend
             skipSSLResponse(ctx);
         }
-        SessionMessageTransferMode<Void, Void> mode = new SessionMessageTransferMode<>(null, transferMode, errorDetails);
+        SessionMessageTransferMode<Void, Void> mode = new SessionMessageTransferMode<>(null, transferMode,
+                errorDetails);
         LOGGER.debug("Start-up message processed: transfer mode={}", mode);
         return mode;
     }
 
     public void waitForResponse() throws IOException {
         while (!sslResponseReceived) {
-            synchronized(this) {
+            synchronized (this) {
                 try {
                     wait();
                 } catch (InterruptedException e) {
@@ -185,13 +193,14 @@ public class SessionInitializer {
     }
 
     private void addSSLHandlerOnFrontendSide(ChannelHandlerContext ctx) throws IOException {
-        Future<Channel> handshakeFuture = sslSessionInitializer.addSSLHandlerOnClientSide(ctx, getPsqlSession(ctx).getClientSideChannel().pipeline());
+        Future<Channel> handshakeFuture = sslSessionInitializer.addSSLHandlerOnClientSide(ctx,
+                getPsqlSession(ctx).getClientSideChannel().pipeline());
         handshakeFuture.addListener(new GenericFutureListener<Future<? super Channel>>() {
 
-                @Override
-                public void operationComplete(Future<? super Channel> future) throws Exception {
-                    sessionEncryptedOnFrontendSide = true;
-                    LOGGER.trace("SSL handshake for frontend side completed");
+            @Override
+            public void operationComplete(Future<? super Channel> future) throws Exception {
+                sessionEncryptedOnFrontendSide = true;
+                LOGGER.trace("SSL handshake for frontend side completed");
             }
         });
     }

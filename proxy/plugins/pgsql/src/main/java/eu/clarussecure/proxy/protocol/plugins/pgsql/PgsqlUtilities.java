@@ -12,7 +12,7 @@ public class PgsqlUtilities {
         CString str = null;
 
         if (buffer != null) {
-            int len = buffer.bytesBefore((byte)0);
+            int len = buffer.bytesBefore((byte) 0);
             if (len > -1) {
                 str = CString.valueOf(buffer.readSlice(len + 1), len);
             }

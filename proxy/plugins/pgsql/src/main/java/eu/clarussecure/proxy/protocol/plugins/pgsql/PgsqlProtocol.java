@@ -36,15 +36,14 @@ public class PgsqlProtocol extends ProtocolExecutor {
         // Duplicate data ids that refer to the public schema
         Pattern publicDataIdPattern = Pattern.compile("([^/]*/)(public\\.)?([^/\\.]*/[^/]*)");
         Stream<String> publicDataIds = Arrays.stream(dataIds)
-            .map(id -> id.indexOf('/') == -1 ? "*/*/" + id                  // prepend with */*/ if there is no /
-                     : id.indexOf('/') == id.lastIndexOf('/') ? "*/" + id   // prepend with */ if there is one /
-                     : id)                                                  // do nothing if there is two /
-            .map(id -> publicDataIdPattern.matcher(id))
-            .filter(Matcher::matches)
-            .map(m -> m.replaceAll(m.group(2) == null ? "$1public.$3" : "$1$3"))
-            .map(id -> id.startsWith("*/*/") ? id.substring("*/*/".length())    // remove */*/ if there is
-                     : id.startsWith("*/") ? id.substring("*/".length())        // remove */ if there is
-                     : id);                                                     // else do nothing
+                .map(id -> id.indexOf('/') == -1 ? "*/*/" + id // prepend with */*/ if there is no /
+                        : id.indexOf('/') == id.lastIndexOf('/') ? "*/" + id // prepend with */ if there is one /
+                                : id) // do nothing if there is two /
+                .map(id -> publicDataIdPattern.matcher(id)).filter(Matcher::matches)
+                .map(m -> m.replaceAll(m.group(2) == null ? "$1public.$3" : "$1$3"))
+                .map(id -> id.startsWith("*/*/") ? id.substring("*/*/".length()) // remove */*/ if there is
+                        : id.startsWith("*/") ? id.substring("*/".length()) // remove */ if there is
+                                : id); // else do nothing
         dataIds = Stream.concat(Arrays.stream(dataIds), publicDataIds).toArray(String[]::new);
         return dataIds;
     }

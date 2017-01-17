@@ -28,67 +28,67 @@ public class PgsqlMessageToQueryConverter {
 
     public static Query from(PgsqlQueryRequestMessage msg) {
         if (msg instanceof PgsqlQueryMessage) {
-            return from((PgsqlQueryMessage)msg);
+            return from((PgsqlQueryMessage) msg);
         } else if (msg instanceof PgsqlBindMessage) {
-            return from((PgsqlBindMessage)msg);
+            return from((PgsqlBindMessage) msg);
         } else if (msg instanceof PgsqlDescribeMessage) {
-            return from((PgsqlDescribeMessage)msg);
+            return from((PgsqlDescribeMessage) msg);
         } else if (msg instanceof PgsqlExecuteMessage) {
-            return from((PgsqlExecuteMessage)msg);
+            return from((PgsqlExecuteMessage) msg);
         } else if (msg instanceof PgsqlCloseMessage) {
-            return from((PgsqlCloseMessage)msg);
+            return from((PgsqlCloseMessage) msg);
         } else if (msg instanceof PgsqlSyncMessage) {
-            return from((PgsqlSyncMessage)msg);
+            return from((PgsqlSyncMessage) msg);
         } else if (msg instanceof PgsqlFlushMessage) {
-            return from((PgsqlFlushMessage)msg);
+            return from((PgsqlFlushMessage) msg);
         }
         throw new IllegalArgumentException(StringUtil.simpleClassName(msg) + " not supported");
     }
 
     public static PgsqlQueryRequestMessage to(Query query) {
         if (query instanceof SimpleQuery) {
-            return to((SimpleQuery)query);
+            return to((SimpleQuery) query);
         } else {
-            return to((ExtendedQuery)query);
+            return to((ExtendedQuery) query);
         }
     }
 
     public static PgsqlQueryRequestMessage to(SimpleQuery query) {
-        return to((SimpleSQLStatement)query);
+        return to((SimpleSQLStatement) query);
     }
 
     public static PgsqlQueryRequestMessage to(ExtendedQuery query) {
         if (query instanceof ParseStep) {
-            return to((ParseStep)query);
+            return to((ParseStep) query);
         } else if (query instanceof BindStep) {
-            return to((BindStep)query);
+            return to((BindStep) query);
         } else if (query instanceof DescribeStep) {
-            return to((DescribeStep)query);
+            return to((DescribeStep) query);
         } else if (query instanceof ExecuteStep) {
-            return to((ExecuteStep)query);
+            return to((ExecuteStep) query);
         } else if (query instanceof CloseStep) {
-            return to((CloseStep)query);
+            return to((CloseStep) query);
         } else if (query instanceof SynchronizeStep) {
-            return to((SynchronizeStep)query);
+            return to((SynchronizeStep) query);
         } else if (query instanceof FlushStep) {
-            return to((FlushStep)query);
+            return to((FlushStep) query);
         }
         throw new IllegalArgumentException(StringUtil.simpleClassName(query) + " not supported");
     }
 
     public static SQLStatement from(PgsqlQueryMessage msg) {
         if (msg instanceof PgsqlSimpleQueryMessage) {
-            return from((PgsqlSimpleQueryMessage)msg);
+            return from((PgsqlSimpleQueryMessage) msg);
         } else {
-            return from((PgsqlParseMessage)msg);
+            return from((PgsqlParseMessage) msg);
         }
     }
 
     public static PgsqlQueryMessage to(SQLStatement sqlStatement) {
         if (sqlStatement instanceof SimpleSQLStatement) {
-            return to((SimpleSQLStatement)sqlStatement);
+            return to((SimpleSQLStatement) sqlStatement);
         } else {
-            return to((ParseStep)sqlStatement);
+            return to((ParseStep) sqlStatement);
         }
     }
 
@@ -109,11 +109,13 @@ public class PgsqlMessageToQueryConverter {
     }
 
     public static BindStep from(PgsqlBindMessage msg) {
-        return new BindStep(msg.getPortal(), msg.getPreparedStatement(), msg.getParameterFormats(), msg.getParameterValues(), msg.getResultColumnFormats());
+        return new BindStep(msg.getPortal(), msg.getPreparedStatement(), msg.getParameterFormats(),
+                msg.getParameterValues(), msg.getResultColumnFormats());
     }
 
     public static PgsqlBindMessage to(BindStep query) {
-        return new PgsqlBindMessage(query.getName(), query.getPreparedStatement(), query.getParameterFormats(), query.getParameterValues(), query.getResultColumnFormats());
+        return new PgsqlBindMessage(query.getName(), query.getPreparedStatement(), query.getParameterFormats(),
+                query.getParameterValues(), query.getResultColumnFormats());
     }
 
     public static DescribeStep from(PgsqlDescribeMessage msg) {

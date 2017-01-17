@@ -20,8 +20,7 @@ public class MyErrorHandler implements ErrorHandler {
             systemId = "null";
         }
 
-        String info = "URI=" + systemId + " Line=" + spe.getLineNumber() +
-                      ": " + spe.getMessage();
+        String info = "URI=" + systemId + " Line=" + spe.getLineNumber() + ": " + spe.getMessage();
         return info;
     }
 

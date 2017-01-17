@@ -6,7 +6,8 @@ import java.util.Objects;
 import eu.clarussecure.proxy.spi.CString;
 import io.netty.util.internal.StringUtil;
 
-public class PgsqlRowDescriptionMessage extends PgsqlDetailedQueryResponseMessage<List<PgsqlRowDescriptionMessage.Field>> {
+public class PgsqlRowDescriptionMessage
+        extends PgsqlDetailedQueryResponseMessage<List<PgsqlRowDescriptionMessage.Field>> {
 
     public static final byte TYPE = (byte) 'T';
 
@@ -24,7 +25,8 @@ public class PgsqlRowDescriptionMessage extends PgsqlDetailedQueryResponseMessag
             this(name, 0, (short) 0, 0l, (short) 0, 0, (short) 0);
         }
 
-        public Field(CString name, int tableOID, short columnNumber, long typeID, short typeSize, int typeModifier, short format) {
+        public Field(CString name, int tableOID, short columnNumber, long typeID, short typeSize, int typeModifier,
+                short format) {
             this.name = name;
             this.tableOID = tableOID;
             this.columnNumber = columnNumber;
