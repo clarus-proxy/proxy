@@ -297,6 +297,30 @@ public class CString implements CharSequence, Cloneable {
         }
     }
 
+    public boolean startsWith(CharSequence prefix, int toffset) {
+        int to = toffset;
+        int po = 0;
+        int pc = prefix.length();
+        // Note: toffset might be near -1>>>1.
+        if ((toffset < 0) || (toffset > length() - prefix.length())) {
+            return false;
+        }
+        while (--pc >= 0) {
+            if (charAt(to++) != prefix.charAt(po++)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public boolean startsWith(CharSequence prefix) {
+        return startsWith(prefix, 0);
+    }
+
+    public boolean endsWith(CharSequence suffix) {
+        return startsWith(suffix, length() - suffix.length());
+    }
+
     public CString replace(char oldChar, char newChar) {
         CString cs = this;
         if (oldChar != newChar) {

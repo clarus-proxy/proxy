@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -172,18 +173,17 @@ public class PgsqlEventProcessor implements EventProcessor {
             CString completeTag = null;
             CString error = null;
             switch (type) {
-            case CLARUS_METADATA: {
+            case CLARUS_METADATA:
+            case CLARUS_PROTECTED: {
                 if (session.isProcessingQuery()) {
                     transferMode = TransferMode.ERROR;
                     error = CString.valueOf(String.format("%s is not supported while processing one or several queries",
                             type.getPattern()));
                 } else {
                     toProcess = true;
+                    operation = Operation.READ;
+                    session.setCurrentCommandOperation(operation);
                 }
-                break;
-            }
-            case CLARUS_PROTECTED: {
-                toProcess = true;
                 break;
             }
             case START_TRANSACTION: {
@@ -399,7 +399,6 @@ public class PgsqlEventProcessor implements EventProcessor {
                 newQueries = null;
                 response = new CommandResults();
                 response.setParseCompleteRequired(true);
-                //                session.addLastQueryResponseToIgnore(QueryResponseType.PARSE_COMPLETE);
             }
         } else if (transferMode == TransferMode.FORGET) {
             // Buffer sql statement
@@ -819,6 +818,9 @@ public class PgsqlEventProcessor implements EventProcessor {
             SQLSession session = getSession(ctx);
             if (session.getCurrentCommandOperation() == Operation.READ) {
                 session.setPromise(dataOperation.getPromise());
+                session.setResultProcessingEnabled(dataOperation.isResultProcessingEnabled());
+                session.setInvolvedCSPs(dataOperation.getInvolvedCSPs());
+                session.setDataIds(dataOperation.getDataIds());
             }
             result = Result.query(sqlStatement);
         } else {
@@ -965,13 +967,13 @@ public class PgsqlEventProcessor implements EventProcessor {
             schemaIds.add(schemaId);
             String datasetId = getDatasetId(ctx, null, schemaId);
             datasetIds.add(datasetId);
-            //            schemaIds.add("");
-            //            datasetIds.add("");
         }
         // Extract data ids
         List<CString> dataIds = new ArrayList<>();
         boolean metadata = false;
-        for (SelectItem selectItem : select.getSelectItems()) {
+        List<CString> involvedCSPs = null;
+        for (Iterator<SelectItem> iter = select.getSelectItems().iterator(); iter.hasNext();) {
+            SelectItem selectItem = iter.next();
             if (selectItem instanceof SelectExpressionItem) {
                 SelectExpressionItem selectExpressionItem = (SelectExpressionItem) selectItem;
                 if (selectExpressionItem.getExpression() instanceof Function) {
@@ -1006,6 +1008,25 @@ public class PgsqlEventProcessor implements EventProcessor {
                                     + " function requires at least one parameter (* or column name(s))");
                         }
                         break;
+                    } else if (FUNCTION_PROTECTED.equalsIgnoreCase(function.getName())) {
+                        if (function.getParameters() != null && function.getParameters().getExpressions() != null
+                                && !function.getParameters().getExpressions().isEmpty()) {
+                            involvedCSPs = new ArrayList<>(function.getParameters().getExpressions().size());
+                            for (Expression parameter : function.getParameters().getExpressions()) {
+                                if (parameter instanceof StringValue) {
+                                    involvedCSPs.add(CString.valueOf(StringUtilities.unquote(parameter.toString())));
+                                } else {
+                                    // Error: expected at least one parameter (csp names)
+                                    throw new ParseException(
+                                            FUNCTION_PROTECTED + " function requires string parameters (CSP names)");
+                                }
+                            }
+                        } else {
+                            // Error: expected at least one parameter (csp names)
+                            throw new ParseException(
+                                    FUNCTION_PROTECTED + " function requires at least one parameter (CSP names)");
+                        }
+                        iter.remove();
                     } else {
                         dataIds.add(CString.valueOf(function.getName()));
                     }
@@ -1049,6 +1070,12 @@ public class PgsqlEventProcessor implements EventProcessor {
                 }
             }
             // TODO Extract parameter ids and values (clause where)
+            // Disable result processing if needed
+            if (involvedCSPs != null) {
+                dataOperation.setResultProcessingEnabled(false);
+                dataOperation.setInvolvedCSPs(involvedCSPs);
+                dataOperation.setModified(true);
+            }
             moduleOperation = dataOperation;
         }
         return moduleOperation;
@@ -1703,6 +1730,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                 }
                 if (parseStepStatus.getOperation() == Operation.READ) {
                     session.setPromise(dataOperation.getPromise());
+                    session.setResultProcessingEnabled(dataOperation.isResultProcessingEnabled());
+                    session.setInvolvedCSPs(dataOperation.getInvolvedCSPs());
+                    session.setDataIds(dataOperation.getDataIds());
                 }
             }
         }
@@ -1948,7 +1978,37 @@ public class PgsqlEventProcessor implements EventProcessor {
             transferMode = TransferMode.FORWARD;
             newFields = fields;
             if (session.getCurrentCommandOperation() == Operation.READ) {
-                session.setRowDescription(fields);
+                if (!session.isResultProcessingEnabled()) {
+                    // Modify field names to be full qualified
+                    // Process metadata operation
+                    MetadataOperation metadataOperation = new MetadataOperation();
+                    metadataOperation.setDataIds(session.getDataIds());
+                    metadataOperation = newMetaDataOperation(ctx, metadataOperation);
+                    List<Pattern> involvedCSPPatterns = session.getInvolvedCSPs().stream() // for each involved CSP
+                            .map(csp -> csp.append("/.*")) // build regex
+                            .map(CString::toString) // transform to String
+                            .map(Pattern::compile) // compile pattern
+                            .collect(Collectors.toList()); // save patterns as list
+                    Map<CString, CString> protectedColumns = metadataOperation.getMetadata().values().stream() // for all protected data identifiers
+                            .flatMap(List::stream) // flatten the lists
+                            .filter(pc -> pc != null) // exclude null protected columns
+                            .map(CString::toString) // transform to String
+                            .filter(pc -> involvedCSPPatterns.stream().anyMatch(p -> p.matcher(pc).matches())) // filter protected columns with involved CSP patterns
+                            .map(pc -> pc.replace('/', '.')) // replace / by .
+                            .map(CString::valueOf) // transform to CString
+                            .filter(pc -> fields.stream().anyMatch(f -> pc.endsWith(f.getName()))) // filter protected columns that appear in fields
+                            .collect(Collectors.toMap(pc -> pc.substring(pc.lastIndexOf('.') + 1),
+                                    java.util.function.Function.identity()));
+                    newFields = fields.stream().map(f -> {
+                        CString protectedColumn = protectedColumns.get(f.getName());
+                        if (protectedColumn == null) {
+                            protectedColumn = (CString) f.getName().clone();
+                        }
+                        f.setName(protectedColumn);
+                        return f;
+                    }).collect(Collectors.toList());
+                }
+                session.setRowDescription(newFields);
                 // Modify promise in case query don't explicitly specify columns (e.g. '*')
                 if (session.getPromise() instanceof DefaultPromise && (session.getPromise().getAttributeNames() == null
                         || session.getPromise().getAttributeNames().length == 0)) {
@@ -1998,34 +2058,37 @@ public class PgsqlEventProcessor implements EventProcessor {
     }
 
     private List<ByteBuf> processDataResult(ChannelHandlerContext ctx, List<ByteBuf> values) {
-        // Extract data operation
-        DataOperation dataOperation = new DataOperation();
-        dataOperation.setOperation(Operation.READ);
-        int i = 0;
-        List<CString> dataValues = new ArrayList<>();
-        SQLSession session = getSession(ctx);
-        for (PgsqlRowDescriptionMessage.Field field : session.getRowDescription()) {
-            dataOperation.addDataId(field.getName());
-            CString dataValue = convertToText(field.getTypeOID(), field.getFormat(), values.get(i));
-            dataValues.add(dataValue);
-            i++;
-        }
-        dataOperation.addDataValues(dataValues);
-        dataOperation.setPromise(session.getPromise());
-        // Process data operation
-        List<DataOperation> newDataOperations = getProtocolService(ctx).newDataOperation(dataOperation);
-        dataOperation = newDataOperations.get(0);
         List<ByteBuf> newValues = values;
-        if (dataOperation.isModified()) {
-            // Modify data
-            for (i = 0; i < values.size(); i++) {
-                CString dataValue = dataValues.get(i);
-                CString newDataValue = dataOperation.getDataValues().get(0).get(i);
-                if (newDataValue != dataValue && (newDataValue == null || !newDataValue.equals(dataValue))) {
-                    if (newValues == values) {
-                        newValues = new ArrayList<>(values);
+        SQLSession session = getSession(ctx);
+        if (session.isResultProcessingEnabled()) {
+            // Extract data operation
+            DataOperation dataOperation = new DataOperation();
+            dataOperation.setOperation(Operation.READ);
+            int i = 0;
+            List<CString> dataValues = new ArrayList<>();
+            for (PgsqlRowDescriptionMessage.Field field : session.getRowDescription()) {
+                dataOperation.addDataId(field.getName());
+                CString dataValue = convertToText(field.getTypeOID(), field.getFormat(), values.get(i));
+                dataValues.add(dataValue);
+                i++;
+            }
+            dataOperation.addDataValues(dataValues);
+            dataOperation.setPromise(session.getPromise());
+            // Process data operation
+            List<DataOperation> newDataOperations = getProtocolService(ctx).newDataOperation(dataOperation);
+            dataOperation = newDataOperations.get(0);
+            newValues = values;
+            if (dataOperation.isModified()) {
+                // Modify data
+                for (i = 0; i < values.size(); i++) {
+                    CString dataValue = dataValues.get(i);
+                    CString newDataValue = dataOperation.getDataValues().get(0).get(i);
+                    if (newDataValue != dataValue && (newDataValue == null || !newDataValue.equals(dataValue))) {
+                        if (newValues == values) {
+                            newValues = new ArrayList<>(values);
+                        }
+                        newValues.set(i, newDataValue == null ? null : newDataValue.getByteBuf());
                     }
-                    newValues.set(i, newDataValue == null ? null : newDataValue.getByteBuf());
                 }
             }
         }

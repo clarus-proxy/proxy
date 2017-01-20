@@ -13,6 +13,8 @@ public class DataOperation extends ModuleOperation {
     private List<List<CString>> dataValues;
     private List<CString> parameterValues;
     private Promise promise;
+    private boolean resultProcessingEnabled = true;
+    private List<CString> involvedCSPs;
 
     public int getRequestId() {
         return requestId;
@@ -104,5 +106,21 @@ public class DataOperation extends ModuleOperation {
 
     public void setPromise(Promise promise) {
         this.promise = promise;
+    }
+
+    public boolean isResultProcessingEnabled() {
+        return resultProcessingEnabled;
+    }
+
+    public void setResultProcessingEnabled(boolean resultProcessingEnabled) {
+        this.resultProcessingEnabled = resultProcessingEnabled;
+    }
+
+    public List<CString> getInvolvedCSPs() {
+        return involvedCSPs;
+    }
+
+    public void setInvolvedCSPs(List<CString> involvedCSPs) {
+        this.involvedCSPs = involvedCSPs;
     }
 }

@@ -71,6 +71,9 @@ public class SQLSession {
     private boolean inDatasetCreation;
     private Operation currentCommandOperation;
     private Promise promise;
+    private boolean resultProcessingEnabled = true;
+    private List<CString> involvedCSPs;
+    private List<CString> dataIds;
     private TransferMode transferMode;
     private List<Query> bufferedQueries;
     private List<PgsqlRowDescriptionMessage.Field> rowDescription;
@@ -198,6 +201,30 @@ public class SQLSession {
         return transferMode;
     }
 
+    public boolean isResultProcessingEnabled() {
+        return resultProcessingEnabled;
+    }
+
+    public void setResultProcessingEnabled(boolean resultProcessingEnabled) {
+        this.resultProcessingEnabled = resultProcessingEnabled;
+    }
+
+    public List<CString> getInvolvedCSPs() {
+        return involvedCSPs;
+    }
+
+    public void setInvolvedCSPs(List<CString> involvedCSPs) {
+        this.involvedCSPs = involvedCSPs;
+    }
+
+    public List<CString> getDataIds() {
+        return dataIds;
+    }
+
+    public void setDataIds(List<CString> dataIds) {
+        this.dataIds = dataIds;
+    }
+
     public void setTransferMode(TransferMode transferMode) {
         this.transferMode = transferMode;
     }
@@ -240,9 +267,10 @@ public class SQLSession {
         // Retain internal buffer of each field name
         if (rowDescription != null) {
             for (PgsqlRowDescriptionMessage.Field field : rowDescription) {
-                if (field.getName().isBuffered()) {
-                    field.getName().retain();
+                if (!field.getName().isBuffered()) {
+                    field.getName().getByteBuf();
                 }
+                field.getName().retain();
             }
         }
         this.rowDescription = rowDescription;
@@ -252,8 +280,10 @@ public class SQLSession {
         if (rowDescription != null) {
             synchronized (rowDescription) {
                 for (PgsqlRowDescriptionMessage.Field field : rowDescription) {
-                    if (field.getName().release()) {
-                        field.setName(null);
+                    if (field.getName() != null && field.getName().isBuffered()) {
+                        if (field.getName().release()) {
+                            field.setName(null);
+                        }
                     }
                 }
             }
@@ -333,10 +363,7 @@ public class SQLSession {
         getBindStepStatuses().values().stream() // iterate over bind step status
                 .map(ExtendedQueryStatus<BindStep>::getQuery) // retrieve bind
                 // step
-                .filter(q -> name.equals(q.getPreparedStatement())) // filter on
-                // prepared
-                // statement
-                // name
+                .filter(q -> name.equals(q.getPreparedStatement())) // filter on prepared statement name
                 .forEach(q -> removeBindStep(q.getName())); // remove the bind
         // step
         // Remove parse step status
@@ -466,6 +493,9 @@ public class SQLSession {
     public void resetCurrentCommand() {
         setCurrentCommandOperation(null);
         setPromise(null);
+        setResultProcessingEnabled(true);
+        setInvolvedCSPs(null);
+        setDataIds(null);
         resetRowDescription();
     }
 
