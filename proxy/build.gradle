@@ -32,7 +32,13 @@ allprojects {
             }
             withXml {
                 String templateFilename = !subprojects.isEmpty() ? "pom-parent.xml" : "pom-module.xml"
-                Node root = new XmlParser().parse(new File("$mainProject/src/main/maven/$templateFilename"))
+                String cnt = new File("$mainProject/src/main/maven/$templateFilename").text
+                if (project.hasProperty('mainClassName')) {
+                    cnt = cnt.replace("@MAIN_CLASS@", project.ext.mainClassName)
+                } else {
+                    cnt = cnt.replace("@MAIN_CLASS@", "")
+                }
+                Node root = new XmlParser().parseText(cnt)
                 Node node = asNode()
                 for (child in root.children()) {
                     node.append(child)
