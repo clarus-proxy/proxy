@@ -13,8 +13,7 @@ public class DataOperation extends ModuleOperation {
     private List<List<CString>> dataValues;
     private List<CString> parameterValues;
     private Promise promise;
-    private boolean resultProcessingEnabled = true;
-    private List<CString> involvedCSPs;
+    private boolean unprotectingDataEnabled = true;
 
     public int getRequestId() {
         return requestId;
@@ -51,8 +50,13 @@ public class DataOperation extends ModuleOperation {
     }
 
     @Override
-    public void removeDataId(CString dataId) {
-        getDataIds().remove(dataId);
+    public void addDataIds(List<CString> dataIds) {
+        dataIds.forEach(dataId -> getDataIds().add(dataId));
+    }
+
+    @Override
+    public void removeDataId(int index) {
+        getDataIds().remove(index);
     }
 
     public List<CString> getParameterIds() {
@@ -108,19 +112,11 @@ public class DataOperation extends ModuleOperation {
         this.promise = promise;
     }
 
-    public boolean isResultProcessingEnabled() {
-        return resultProcessingEnabled;
+    public boolean isUnprotectingDataEnabled() {
+        return unprotectingDataEnabled;
     }
 
-    public void setResultProcessingEnabled(boolean resultProcessingEnabled) {
-        this.resultProcessingEnabled = resultProcessingEnabled;
-    }
-
-    public List<CString> getInvolvedCSPs() {
-        return involvedCSPs;
-    }
-
-    public void setInvolvedCSPs(List<CString> involvedCSPs) {
-        this.involvedCSPs = involvedCSPs;
+    public void setUnprotectingDataEnabled(boolean unprotectingDataEnabled) {
+        this.unprotectingDataEnabled = unprotectingDataEnabled;
     }
 }

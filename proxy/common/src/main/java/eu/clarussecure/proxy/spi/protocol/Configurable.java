@@ -2,10 +2,13 @@ package eu.clarussecure.proxy.spi.protocol;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import eu.clarussecure.proxy.spi.Mode;
 import eu.clarussecure.proxy.spi.Operation;
+import eu.clarussecure.proxy.spi.security.policy.SecurityPolicy;
 
 public interface Configurable {
 
@@ -17,17 +20,33 @@ public interface Configurable {
 
     void setListenPort(int listenPort);
 
-    InetSocketAddress getServerEndpoint();
+    default InetSocketAddress getServerEndpoint() {
+        return getServerEndpoint(0);
+    }
 
-    Set<InetSocketAddress> getServerEndpoints();
+    InetSocketAddress getServerEndpoint(int index);
+
+    List<InetSocketAddress> getServerEndpoints();
 
     void setServerAddress(InetAddress serverAddress);
 
     void setServerEndpoint(InetSocketAddress serverEndpoint);
 
-    void setServerAddresses(Set<InetAddress> serverAddresss);
+    void setServerAddresses(List<InetAddress> serverAddresses);
 
-    void setServerEndpoints(Set<InetSocketAddress> serverEndpoints);
+    void setServerAddresses(InetAddress... serverAddresses);
+
+    void setServerEndpoints(List<InetSocketAddress> serverEndpoints);
+
+    void setServerEndpoints(InetSocketAddress... serverEndpoints);
+
+    Map<String, String> getParameters();
+
+    void setParameters(Map<String, String> parameters);
+
+    default void setParameters(SecurityPolicy securityPolicy) {
+        setParameters(securityPolicy.getProtocolParameters());
+    }
 
     int getNbListenThreads();
 

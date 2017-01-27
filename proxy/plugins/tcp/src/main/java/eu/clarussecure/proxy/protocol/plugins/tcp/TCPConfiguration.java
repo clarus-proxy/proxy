@@ -7,7 +7,7 @@ public class TCPConfiguration extends Configuration {
 
     public static final String PROTOCOL_NAME = "TCP/IP";
 
-    public static final int DEFAULT_LISTEN_PORT = -1;
+    public static final int DEFAULT_PROTOCOL_PORT = -1;
 
     public TCPConfiguration(ProtocolCapabilities capabilities) {
         super(capabilities);
@@ -20,7 +20,7 @@ public class TCPConfiguration extends Configuration {
 
     @Override
     public int getDefaultProtocolPort() {
-        return DEFAULT_LISTEN_PORT;
+        return DEFAULT_PROTOCOL_PORT;
     }
 
 }

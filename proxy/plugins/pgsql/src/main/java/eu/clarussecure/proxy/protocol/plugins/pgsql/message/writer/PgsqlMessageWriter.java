@@ -57,8 +57,11 @@ public interface PgsqlMessageWriter<T extends PgsqlMessage> {
                 List<ByteBuf> components = new ArrayList<>(2 * offsets.size());
                 int previousOffset = 0;
                 for (Map.Entry<Integer, ByteBuf> entry : offsets.entrySet()) {
-                    int offset = entry.getKey();
                     ByteBuf msgBuffer = entry.getValue();
+                    if (msgBuffer.capacity() == 0) {
+                        continue;
+                    }
+                    int offset = entry.getKey();
                     int intermediateSize = offset - previousOffset;
                     if (intermediateSize > 0) {
                         // Allocate intermediate buffer

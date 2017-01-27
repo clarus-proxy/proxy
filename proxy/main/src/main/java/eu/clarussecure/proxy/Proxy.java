@@ -90,17 +90,19 @@ public class Proxy {
         // Configure listen port
         Integer listenPort = securityPolicy.getProtocolListenPort();
         if (listenPort != null) {
-            protocolConfiguration.setListenPort(securityPolicy.getProtocolListenPort());
+            protocolConfiguration.setListenPort(listenPort);
         }
         // Configure server addresses
-        Set<InetSocketAddress> serverEndpoints = serverAddresses.stream().map(serverAddress -> {
+        List<InetSocketAddress> serverEndpoints = serverAddresses.stream().map(serverAddress -> {
             String[] tokens = serverAddress.split(":");
             String hostname = tokens[0];
             int port = tokens.length == 1 ? protocolConfiguration.getListenPort() : Integer.parseInt(tokens[1]);
             return new InetSocketAddress(hostname, port);
-        }).collect(Collectors.toSet());
+        }).collect(Collectors.toList());
         protocolConfiguration.setServerEndpoints(serverEndpoints);
         LOGGER.debug("Internal and external endpoints configured");
+        // Configure protocol parameters
+        protocolConfiguration.setParameters(securityPolicy);
         // Configure the frame length
         if (maxFrameLen != null) {
             protocolConfiguration.setFramePartMaxLength(maxFrameLen);
@@ -117,10 +119,12 @@ public class Proxy {
         }
         // Adapt data identifiers
         String[] dataIds = protocol.adaptDataIds(securityPolicy.getDataIds());
+        // Get dataset prefix for each server
+        String[] datasetPrefixByServer = protocol.getDatasetPrefixByServer();
         // Initialize the protection module
         if (protectionModule != null) {
             LOGGER.trace("Initializing the protection module...");
-            protectionModule.initialize(securityPolicy.getDocument(), dataIds);
+            protectionModule.initialize(securityPolicy.getDocument(), dataIds, datasetPrefixByServer);
             LOGGER.debug("Protection module initialized");
         }
         // Register the protocol service

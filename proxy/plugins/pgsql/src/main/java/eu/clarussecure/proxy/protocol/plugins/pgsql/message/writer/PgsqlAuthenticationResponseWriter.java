@@ -51,7 +51,7 @@ public class PgsqlAuthenticationResponseWriter implements PgsqlMessageWriter<Pgs
 
         // Write specific bytes if exist.
         if (msg.getAuthenticationParameters() != null) {
-            buffer.writeBytes(msg.getAuthenticationParameters());
+            writeBytes(buffer, msg.getAuthenticationParameters());
         }
     }
 

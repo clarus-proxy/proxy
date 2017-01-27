@@ -3,9 +3,9 @@
  */
 package eu.clarussecure.proxy.protocol.plugins.http;
 
-import eu.clarussecure.proxy.protocol.plugins.http.message.SessionInitializationRequestHandler;
 import eu.clarussecure.proxy.protocol.plugins.http.handler.codec.HttpHeaderCodec;
 import eu.clarussecure.proxy.protocol.plugins.http.handler.forwarder.HttpRequestForwarder;
+import eu.clarussecure.proxy.protocol.plugins.http.message.SessionInitializationRequestHandler;
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
 import eu.clarussecure.proxy.spi.protocol.Configuration;
 import io.netty.channel.Channel;
@@ -21,19 +21,22 @@ import io.netty.util.concurrent.EventExecutorGroup;
  */
 public class HttpClientPipelineInitializer extends ChannelInitializer<Channel> {
 
-	/* (non-Javadoc)
-	 * @see io.netty.channel.ChannelInitializer#initChannel(io.netty.channel.Channel)
-	 */
-	@Override
-	protected void initChannel(Channel ch) throws Exception {
-		Configuration configuration = ch.attr(TCPConstants.CONFIGURATION_KEY).get();
-		ChannelPipeline pipeline = ch.pipeline();
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
+     * io.netty.channel.ChannelInitializer#initChannel(io.netty.channel.Channel)
+     */
+    @Override
+    protected void initChannel(Channel ch) throws Exception {
+        Configuration configuration = ch.attr(TCPConstants.CONFIGURATION_KEY).get();
+        ChannelPipeline pipeline = ch.pipeline();
 
-		EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
-		pipeline.addLast(parserGroup, "SessionInitializationRequestHandler", new SessionInitializationRequestHandler());
-		pipeline.addLast(parserGroup, "HttpServerCodec", new HttpServerCodec());
-		pipeline.addLast(parserGroup, "HttpHeaderCodec", new HttpHeaderCodec());
-		pipeline.addLast(parserGroup, "HttpRequestForwarder", new HttpRequestForwarder());
-	}
+        EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
+        pipeline.addLast(parserGroup, "SessionInitializationRequestHandler", new SessionInitializationRequestHandler());
+        pipeline.addLast(parserGroup, "HttpServerCodec", new HttpServerCodec());
+        pipeline.addLast(parserGroup, "HttpHeaderCodec", new HttpHeaderCodec());
+        pipeline.addLast(parserGroup, "HttpRequestForwarder", new HttpRequestForwarder());
+    }
 
 }

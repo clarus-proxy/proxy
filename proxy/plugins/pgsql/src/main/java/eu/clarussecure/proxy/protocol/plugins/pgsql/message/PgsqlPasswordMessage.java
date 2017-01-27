@@ -3,7 +3,7 @@ package eu.clarussecure.proxy.protocol.plugins.pgsql.message;
 import eu.clarussecure.proxy.spi.CString;
 import io.netty.util.internal.StringUtil;
 
-public class PgsqlPasswordMessage implements PgsqlAuthenticationMessage {
+public class PgsqlPasswordMessage implements PgsqlAuthenticationRequest {
 
     public static final byte TYPE = (byte) 'p';
     public static final int HEADER_SIZE = Byte.BYTES + Integer.BYTES;

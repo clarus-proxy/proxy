@@ -15,4 +15,8 @@ public interface Protocol {
     default String[] adaptDataIds(String[] dataIds) {
         return dataIds;
     }
+
+    default String[] getDatasetPrefixByServer() {
+        return new String[0];
+    }
 }

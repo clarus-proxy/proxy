@@ -1,7 +1,6 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql;
 
 import java.io.IOException;
-import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Map;
 
@@ -12,13 +11,14 @@ import io.netty.channel.ChannelHandlerContext;
 
 public interface EventProcessor {
 
-    CString processUserAuthentication(ChannelHandlerContext ctx, Map<CString, CString> parameters) throws IOException;
+    MessageTransferMode<Map<CString, CString>, Void> processUserIdentification(ChannelHandlerContext ctx,
+            Map<CString, CString> parameters) throws IOException;
 
-    int processAuthenticationParameters(ChannelHandlerContext ctx, int authenticationType, ByteBuf specificField)
+    MessageTransferMode<AuthenticationResponse, Void> processAuthenticationResponse(ChannelHandlerContext ctx,
+            AuthenticationResponse response) throws IOException;
+
+    MessageTransferMode<CString, Void> processUserAuthentication(ChannelHandlerContext ctx, CString password)
             throws IOException;
-
-    CString processAuthentication(ChannelHandlerContext ctx, CString password)
-            throws IOException, NoSuchAlgorithmException;
 
     QueriesTransferMode<SQLStatement, CommandResults> processStatement(ChannelHandlerContext ctx,
             SQLStatement sqlStatement) throws IOException;
@@ -41,34 +41,34 @@ public interface EventProcessor {
     QueriesTransferMode<FlushStep, Void> processFlushStep(ChannelHandlerContext ctx, FlushStep flushStep)
             throws IOException;
 
-    MessageTransferMode<Void> processParseCompleteResponse(ChannelHandlerContext ctx) throws IOException;
+    MessageTransferMode<Void, Void> processParseCompleteResponse(ChannelHandlerContext ctx) throws IOException;
 
-    MessageTransferMode<Void> processBindCompleteResponse(ChannelHandlerContext ctx) throws IOException;
+    MessageTransferMode<Void, Void> processBindCompleteResponse(ChannelHandlerContext ctx) throws IOException;
 
-    MessageTransferMode<List<Long>> processParameterDescriptionResponse(ChannelHandlerContext ctx, List<Long> types)
+    MessageTransferMode<List<Long>, Void> processParameterDescriptionResponse(ChannelHandlerContext ctx,
+            List<Long> types) throws IOException;
+
+    MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>, Void> processRowDescriptionResponse(
+            ChannelHandlerContext ctx, List<PgsqlRowDescriptionMessage.Field> fields) throws IOException;
+
+    MessageTransferMode<List<ByteBuf>, Void> processDataRowResponse(ChannelHandlerContext ctx, List<ByteBuf> values)
             throws IOException;
 
-    MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>> processRowDescriptionResponse(ChannelHandlerContext ctx,
-            List<PgsqlRowDescriptionMessage.Field> fields) throws IOException;
+    MessageTransferMode<Void, Void> processNoDataResponse(ChannelHandlerContext ctx) throws IOException;
 
-    MessageTransferMode<List<ByteBuf>> processDataRowResponse(ChannelHandlerContext ctx, List<ByteBuf> values)
+    MessageTransferMode<CString, Void> processCommandCompleteResult(ChannelHandlerContext ctx, CString tag)
             throws IOException;
 
-    MessageTransferMode<Void> processNoDataResponse(ChannelHandlerContext ctx) throws IOException;
+    MessageTransferMode<Void, Void> processEmptyQueryResponse(ChannelHandlerContext ctx) throws IOException;
 
-    MessageTransferMode<CString> processCommandCompleteResult(ChannelHandlerContext ctx, CString tag)
-            throws IOException;
+    MessageTransferMode<Void, Void> processPortalSuspendedResponse(ChannelHandlerContext ctx) throws IOException;
 
-    MessageTransferMode<Void> processEmptyQueryResponse(ChannelHandlerContext ctx) throws IOException;
+    MessageTransferMode<Map<Byte, CString>, Void> processErrorResult(ChannelHandlerContext ctx,
+            Map<Byte, CString> fields) throws IOException;
 
-    MessageTransferMode<Void> processPortalSuspendedResponse(ChannelHandlerContext ctx) throws IOException;
+    MessageTransferMode<Void, Void> processCloseCompleteResponse(ChannelHandlerContext ctx) throws IOException;
 
-    MessageTransferMode<Map<Byte, CString>> processErrorResult(ChannelHandlerContext ctx, Map<Byte, CString> fields)
-            throws IOException;
-
-    MessageTransferMode<Void> processCloseCompleteResponse(ChannelHandlerContext ctx) throws IOException;
-
-    MessageTransferMode<Byte> processReadyForQueryResponse(ChannelHandlerContext ctx, Byte transactionStatus)
+    MessageTransferMode<Byte, Void> processReadyForQueryResponse(ChannelHandlerContext ctx, Byte transactionStatus)
             throws IOException;
 
 }

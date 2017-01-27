@@ -1,0 +1,16 @@
+description = 'Splitting module for the CLARUS proxy'
+
+dependencies {
+    repositories {
+        maven {
+            url 'http://repo.boundlessgeo.com/main'
+        }
+    }
+
+    // CLARUS
+    compile project(':proxy-common')
+
+    // Geotools
+    compile group: 'org.geotools', name: 'gt-main', version: '17.0'
+    compile group: 'org.geotools', name: 'gt-epsg-hsql', version: '17.0'
+}

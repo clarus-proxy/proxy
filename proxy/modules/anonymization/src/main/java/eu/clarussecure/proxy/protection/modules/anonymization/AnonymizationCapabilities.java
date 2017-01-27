@@ -62,6 +62,9 @@ public class AnonymizationCapabilities implements ProtectionModuleCapabilities {
                                             break;
                                         }
                                     }
+                                } else if ("k-anonymity".equals(protection) || "t-closeness".equals(protection)) {
+                                    preferredMode = Mode.BUFFERING;
+                                    break;
                                 }
                             }
                         }

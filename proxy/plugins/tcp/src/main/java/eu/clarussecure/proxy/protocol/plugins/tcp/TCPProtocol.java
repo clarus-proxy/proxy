@@ -24,8 +24,9 @@ public class TCPProtocol extends ProtocolExecutor {
     }
 
     @Override
-    protected TCPServer<? extends ChannelInitializer<Channel>> buildServer() {
-        return new TCPServer<>(getConfiguration(), ClientSidePipelineInitializer.class);
+    protected TCPServer<? extends ChannelInitializer<Channel>, ? extends ChannelInitializer<Channel>> buildServer() {
+        return new TCPServer<>(getConfiguration(), ClientSidePipelineInitializer.class,
+                ServerSidePipelineInitializer.class, 0);
     }
 
 }

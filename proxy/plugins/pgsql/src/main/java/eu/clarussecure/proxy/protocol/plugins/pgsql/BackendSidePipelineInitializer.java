@@ -1,6 +1,7 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql;
 
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.AuthenticationHandler;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.AuthenticationResponseHandler;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlBackendKeyDataMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlBindCompleteMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlCloseCompleteMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlCommandCompleteMessage;
@@ -43,6 +44,8 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
                 || "on".equalsIgnoreCase(queryProcessing);
     }
 
+    private EventExecutorGroup parserGroup = null;
+
     public BackendSidePipelineInitializer() {
         super();
     }
@@ -56,16 +59,18 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
         ChannelPipeline pipeline = ch.pipeline();
         pipeline.addLast("PgsqlPartCodec",
                 new PgsqlRawPartCodec(false, configuration.getFramePartMaxLength(), clientSideCodec));
-        EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
+        if (parserGroup == null) {
+            parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
+        }
         if (MESSAGE_PROCESSING_ACTIVATED) {
             pipeline.addLast("PgsqlPartAggregator",
                     new PgsqlRawPartAggregator(PgsqlParseCompleteMessage.TYPE, PgsqlBindCompleteMessage.TYPE,
                             PgsqlParameterDescriptionMessage.TYPE, PgsqlParameterStatusMessage.TYPE,
-                            PgsqlRowDescriptionMessage.TYPE, PgsqlDataRowMessage.TYPE, PgsqlNoDataMessage.TYPE,
-                            PgsqlCommandCompleteMessage.TYPE, PgsqlEmptyQueryMessage.TYPE,
+                            PgsqlBackendKeyDataMessage.TYPE, PgsqlRowDescriptionMessage.TYPE, PgsqlDataRowMessage.TYPE,
+                            PgsqlNoDataMessage.TYPE, PgsqlCommandCompleteMessage.TYPE, PgsqlEmptyQueryMessage.TYPE,
                             PgsqlPortalSuspendedMessage.TYPE, PgsqlErrorMessage.TYPE, PgsqlCloseCompleteMessage.TYPE,
                             PgsqlReadyForQueryMessage.TYPE, PgsqlNoticeMessage.TYPE));
-            pipeline.addLast(parserGroup, "PgsqlAuthenticationHandler", new AuthenticationHandler());
+            pipeline.addLast(parserGroup, "PgsqlAuthenticationResponseHandler", new AuthenticationResponseHandler());
         }
         // Session initialization consists of dealing with optional initialization of SSL encryption: a specific SSL handler will be added as first handler in the pipeline if necessary
         // The session initialization handler will be removed while dealing with the startup message (by the SessionInitializationRequestHandler running on the frontend side).

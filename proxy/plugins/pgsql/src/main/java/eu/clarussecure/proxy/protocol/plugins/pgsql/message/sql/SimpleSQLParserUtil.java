@@ -3,28 +3,57 @@ package eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
+
+import org.apache.commons.lang3.mutable.MutableInt;
 
 import eu.clarussecure.proxy.spi.CString;
 
 public class SimpleSQLParserUtil {
+    private static final Pattern INTEGER_PATTERN = Pattern.compile("\\d+");
+    private static final Pattern WORD_PATTERN = Pattern.compile("[\\w_]+");
 
     public static SQLCommandType parse(CString sql) {
         SQLCommandType[] types = SQLCommandType.values();
-        int i = 0;
+        MutableInt index = new MutableInt(0);
         int start = 0;
         int end = 0;
-        while (types.length > 1) {
-            start = nextTokenStartPosition(sql, end);
+        while (types.length > 1 || (types.length == 1 && index.getValue() < getTokens(types[0]).length)) {
+            start = nextUncommentedLinePosition(sql, end);
+            start = nextTokenStartPosition(sql, start);
             end = nextTokenEndPosition(sql, start);
-            CString nextStmtToken = sql.subSequence(start, end);
-            final int index = i++;
-            SQLCommandType[] res = Arrays.stream(types)
-                    .filter(type -> nextStmtToken.equalsIgnoreCase(getToken(type, index)))
-                    .toArray(SQLCommandType[]::new);
-            if (res.length == 0) {
-                res = Arrays.stream(types).filter(type -> getToken(type, index) == null).toArray(SQLCommandType[]::new);
+            if (end > start) {
+                CString nextStmtToken = sql.subSequence(start, end);
+                SQLCommandType[] res = Arrays.stream(types).filter(type -> {
+                    while (true) {
+                        String token = getToken(type, index.getValue());
+                        if (token != null) {
+                            if (token.length() == 1 && token.charAt(0) == '*') {
+                                return WORD_PATTERN.matcher(nextStmtToken).matches();
+                            } else if (token.equals("\\d*")) {
+                                return INTEGER_PATTERN.matcher(nextStmtToken).matches();
+                            } else if (token.length() > 2 && token.charAt(0) == '['
+                                    && token.charAt(token.length() - 1) == ']') {
+                                token = token.substring(1, token.length() - 1);
+                                if (!nextStmtToken.equalsIgnoreCase(token)) {
+                                    index.increment();
+                                    continue;
+                                }
+                                return true;
+                            }
+                        }
+                        return nextStmtToken.equalsIgnoreCase(token);
+                    }
+                }).toArray(SQLCommandType[]::new);
+                if (res.length == 0) {
+                    res = Arrays.stream(types).filter(type -> getToken(type, index.getValue()) == null)
+                            .toArray(SQLCommandType[]::new);
+                }
+                types = res;
+                index.increment();
+            } else {
+                types = new SQLCommandType[0];
             }
-            types = res;
         }
         if (types.length == 1) {
             return types[0];
@@ -32,28 +61,41 @@ public class SimpleSQLParserUtil {
         return null;
     }
 
+    private static int nextUncommentedLinePosition(CString statement, int offset) {
+        while (statement.startsWith("--", offset)) {
+            offset++;
+            boolean eol = false;
+            while (!eol && (++offset) < statement.length()) {
+                char c = statement.charAt(offset);
+                while (c == '\r' || c == '\n' || c == '\f' || Character.getType(c) == Character.LINE_SEPARATOR) {
+                    eol = true;
+                    c = (++offset) < statement.length() ? statement.charAt(offset) : 0;
+                }
+            }
+        }
+        return offset;
+    }
+
     private static int nextTokenStartPosition(CString statement, int offset) {
-        int i = offset;
-        while (i < statement.length()) {
-            char c = statement.charAt(i);
+        while (offset < statement.length()) {
+            char c = statement.charAt(offset);
             if (!Character.isWhitespace(c)) {
                 break;
             }
-            i++;
+            offset++;
         }
-        return i;
+        return offset;
     }
 
     private static int nextTokenEndPosition(CString statement, int offset) {
-        int i = offset;
-        while (i < statement.length()) {
-            char c = statement.charAt(i);
+        while (offset < statement.length()) {
+            char c = statement.charAt(offset);
             if (Character.isWhitespace(c) || c == ';' || c == '(') {
                 break;
             }
-            i++;
+            offset++;
         }
-        return i;
+        return offset;
     }
 
     private static Map<SQLCommandType, String[]> typeTokens = new HashMap<>();
@@ -66,7 +108,8 @@ public class SimpleSQLParserUtil {
     private static String[] getTokens(SQLCommandType type) {
         String[] tokens = typeTokens.get(type);
         if (tokens == null) {
-            tokens = type.getPattern().split(" ");
+            String pattern = type.getPattern();
+            tokens = pattern.split(" ");
             typeTokens.put(type, tokens);
         }
         return tokens;

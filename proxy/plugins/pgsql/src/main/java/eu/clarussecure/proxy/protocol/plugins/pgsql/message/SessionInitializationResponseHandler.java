@@ -55,7 +55,7 @@ public class SessionInitializationResponseHandler
     }
 
     private SessionInitializer getSessionInitializer(ChannelHandlerContext ctx) {
-        return getPsqlSession(ctx).getSessionInitializer();
+        return getPgsqlSession(ctx).getSessionInitializer();
     }
 
 }

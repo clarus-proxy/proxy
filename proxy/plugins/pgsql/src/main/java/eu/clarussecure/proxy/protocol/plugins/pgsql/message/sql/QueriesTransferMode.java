@@ -7,46 +7,42 @@ import java.util.Map;
 import eu.clarussecure.proxy.spi.CString;
 
 public class QueriesTransferMode<Q extends Query, R> {
-    private List<Query> newQueries;
     private TransferMode transferMode;
+    private Map<Integer, List<Query>> newQueries;
     private R response;
     private Map<Byte, CString> errorDetails;
 
-    public QueriesTransferMode(Q newQuery, TransferMode transferMode) {
-        this(Collections.singletonList(newQuery), transferMode);
+    public QueriesTransferMode(TransferMode transferMode, Q newQuery) {
+        this(transferMode, Collections.singletonList(newQuery));
     }
 
-    public QueriesTransferMode(List<Query> newQueries, TransferMode transferMode) {
-        this(newQueries, transferMode, null, null);
+    public QueriesTransferMode(TransferMode transferMode, List<Query> newQueries) {
+        this(transferMode, newQueries, null, null);
     }
 
-    public QueriesTransferMode(List<Query> newQueries, TransferMode transferMode, R response) {
-        this(newQueries, transferMode, response, null);
+    public QueriesTransferMode(TransferMode transferMode, List<Query> newQueries, R response) {
+        this(transferMode, newQueries, response, null);
     }
 
-    public QueriesTransferMode(List<Query> newQueries, TransferMode transferMode, Map<Byte, CString> errorDetails) {
-        this(newQueries, transferMode, null, errorDetails);
-    }
-
-    public QueriesTransferMode(List<Query> newQueries, TransferMode transferMode, R response,
+    public QueriesTransferMode(TransferMode transferMode, List<Query> newQueries, R response,
             Map<Byte, CString> errorDetails) {
-        this.newQueries = newQueries;
+        this(transferMode, Collections.singletonMap(0, newQueries), response, errorDetails);
+    }
+
+    public QueriesTransferMode(TransferMode transferMode, Map<Integer, List<Query>> newDirectedQueries) {
+        this(transferMode, newDirectedQueries, null, null);
+    }
+
+    public QueriesTransferMode(TransferMode transferMode, Map<Integer, List<Query>> newDirectedQueries, R response) {
+        this(transferMode, newDirectedQueries, response, null);
+    }
+
+    public QueriesTransferMode(TransferMode transferMode, Map<Integer, List<Query>> newQueries, R response,
+            Map<Byte, CString> errorDetails) {
         this.transferMode = transferMode;
+        this.newQueries = newQueries;
         this.response = response;
         this.errorDetails = errorDetails;
-    }
-
-    public List<Query> getNewQueries() {
-        return newQueries;
-    }
-
-    public void setNewQueries(List<Query> newQueries) {
-        this.newQueries = newQueries;
-    }
-
-    @SuppressWarnings("unchecked")
-    public Q getLastNewQuery() {
-        return newQueries.size() > 0 ? (Q) newQueries.get(newQueries.size() - 1) : null;
     }
 
     public TransferMode getTransferMode() {
@@ -55,6 +51,28 @@ public class QueriesTransferMode<Q extends Query, R> {
 
     public void setTransferMode(TransferMode transferMode) {
         this.transferMode = transferMode;
+    }
+
+    public List<Query> getNewQueries() {
+        return newQueries == null ? Collections.emptyList() : newQueries.get(0);
+    }
+
+    @SuppressWarnings("unchecked")
+    public Q getLastNewQuery() {
+        return newQueries == null || newQueries.isEmpty() || newQueries.get(0).isEmpty() ? null
+                : (Q) newQueries.get(0).get(newQueries.get(0).size() - 1);
+    }
+
+    public void setNewQueries(List<Query> newQueries) {
+        setNewDirectedQueries(Collections.singletonMap(0, newQueries));
+    }
+
+    public Map<Integer, List<Query>> getNewDirectedQueries() {
+        return newQueries;
+    }
+
+    public void setNewDirectedQueries(Map<Integer, List<Query>> newDirectedQueries) {
+        this.newQueries = newDirectedQueries;
     }
 
     public R getResponse() {

@@ -16,17 +16,25 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 
-public class TCPServer<CI extends ChannelInitializer<Channel>> implements Callable<Void> {
+public class TCPServer<CI extends ChannelInitializer<Channel>, SI extends ChannelInitializer<Channel>>
+        implements Callable<Void> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TCPServer.class);
 
     private final Configuration configuration;
 
-    private final Class<CI> channelInitializerType;
+    private final Class<CI> clientSideChannelInitializerType;
 
-    public TCPServer(Configuration configuration, Class<CI> channelInitializerType) {
+    private final Class<SI> serverSideChannelInitializerType;
+
+    private final int preferredServerEndpoint;
+
+    public TCPServer(Configuration configuration, Class<CI> clientSideChannelInitializerType,
+            Class<SI> serverSideChannelInitializerType, int preferredServerEndpoint) {
         this.configuration = configuration;
-        this.channelInitializerType = channelInitializerType;
+        this.clientSideChannelInitializerType = clientSideChannelInitializerType;
+        this.serverSideChannelInitializerType = serverSideChannelInitializerType;
+        this.preferredServerEndpoint = preferredServerEndpoint;
     }
 
     @Override
@@ -34,11 +42,15 @@ public class TCPServer<CI extends ChannelInitializer<Channel>> implements Callab
         EventLoopGroup acceptorGroup = new NioEventLoopGroup(configuration.getNbListenThreads());
         EventLoopGroup childGroup = new NioEventLoopGroup(configuration.getNbSessionThreads());
         try {
+            ChannelInitializer<Channel> clientSidePipelineInitializer = buildClientSidePipelineInitializer();
+            ChannelInitializer<Channel> serverSidePipelineInitializer = buildServerSidePipelineInitializer();
             ServerBootstrap bootstrap = new ServerBootstrap();
             bootstrap.group(acceptorGroup, childGroup).channel(NioServerSocketChannel.class)
                     .localAddress(new InetSocketAddress(configuration.getListenPort()))
                     .childAttr(TCPConstants.CONFIGURATION_KEY, configuration)
-                    .childHandler(buildClientSidePipelineInitializer()).childOption(ChannelOption.AUTO_READ, false);
+                    .childAttr(TCPConstants.PREFERRED_SERVER_ENDPOINT_KEY, preferredServerEndpoint)
+                    .childAttr(TCPConstants.SERVER_INITIALIZER_KEY, serverSidePipelineInitializer)
+                    .childHandler(clientSidePipelineInitializer).childOption(ChannelOption.AUTO_READ, false);
             ChannelFuture f = bootstrap.bind().sync();
             LOGGER.info("Server ready to serve requests at:" + f.channel().localAddress());
             f.channel().closeFuture().sync();
@@ -51,12 +63,24 @@ public class TCPServer<CI extends ChannelInitializer<Channel>> implements Callab
 
     protected ChannelInitializer<Channel> buildClientSidePipelineInitializer() {
         try {
-            return channelInitializerType.newInstance();
+            return clientSideChannelInitializerType.newInstance();
         } catch (InstantiationException | IllegalAccessException e) {
             // Should not occur
-            LOGGER.error("Cannot create instance of class {}: ", channelInitializerType.getSimpleName(), e);
-            throw new IllegalArgumentException(
-                    String.format("Cannot create instance of class %s: ", channelInitializerType.getSimpleName(), e));
+            LOGGER.error("Cannot create instance of class {}: ", clientSideChannelInitializerType.getSimpleName(), e);
+            throw new IllegalArgumentException(String.format("Cannot create instance of class %s: ",
+                    clientSideChannelInitializerType.getSimpleName(), e));
         }
     }
+
+    protected ChannelInitializer<Channel> buildServerSidePipelineInitializer() {
+        try {
+            return serverSideChannelInitializerType.newInstance();
+        } catch (InstantiationException | IllegalAccessException e) {
+            // Should not occur
+            LOGGER.error("Cannot create instance of class {}: ", serverSideChannelInitializerType.getSimpleName(), e);
+            throw new IllegalArgumentException(String.format("Cannot create instance of class %s: ",
+                    serverSideChannelInitializerType.getSimpleName(), e));
+        }
+    }
+
 }

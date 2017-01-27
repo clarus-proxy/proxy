@@ -9,6 +9,7 @@ public class ParserTest {
 
     @Test
     public void testQueries() throws Exception {
+        @SuppressWarnings("unused")
         Statement statement = null;
         statement = CCJSqlParserUtil.parse("SET CLIENT_ENCODING TO UTF8;");
         statement = CCJSqlParserUtil.parse("SET STANDARD_CONFORMING_STRINGS TO ON;");

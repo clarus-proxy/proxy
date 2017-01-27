@@ -84,13 +84,13 @@ public class QueryResponseHandler extends PgsqlMessageHandler<PgsqlQueryResponse
             return newMsg;
         }
         default:
-            throw new IllegalArgumentException("msg");
+            throw new IllegalArgumentException(String.format("msg type %c", (char) msg.getType()));
         }
     }
 
     private void responseReceived(ChannelHandlerContext ctx) {
         // Signal response is received
-        PgsqlSession psqlSession = getPsqlSession(ctx);
+        PgsqlSession psqlSession = getPgsqlSession(ctx);
         synchronized (psqlSession) {
             psqlSession.notifyAll();
         }
@@ -102,7 +102,7 @@ public class QueryResponseHandler extends PgsqlMessageHandler<PgsqlQueryResponse
     }
 
     private <M extends PgsqlQueryResponseMessage> M process(ChannelHandlerContext ctx, M msg, String prefix,
-            CheckedSupplier<MessageTransferMode<Void>> processor) throws IOException {
+            CheckedSupplier<MessageTransferMode<Void, Void>> processor) throws IOException {
         M newMsg = msg;
         LOGGER.debug("{}:", prefix);
         if (!process(ctx, processor)) {
@@ -112,9 +112,9 @@ public class QueryResponseHandler extends PgsqlMessageHandler<PgsqlQueryResponse
         return newMsg;
     }
 
-    private boolean process(ChannelHandlerContext ctx, CheckedSupplier<MessageTransferMode<Void>> processor)
+    private boolean process(ChannelHandlerContext ctx, CheckedSupplier<MessageTransferMode<Void, Void>> processor)
             throws IOException {
-        MessageTransferMode<Void> transferMode = processor.get();
+        MessageTransferMode<Void, Void> transferMode = processor.get();
         switch (transferMode.getTransferMode()) {
         case FORWARD:
             return true;
@@ -135,7 +135,7 @@ public class QueryResponseHandler extends PgsqlMessageHandler<PgsqlQueryResponse
     }
 
     private <M extends PgsqlDetailedQueryResponseMessage<D>, D> M processDetails(ChannelHandlerContext ctx, M msg,
-            String prefix, CheckedFunction<D, MessageTransferMode<D>> processor, Function<D, M> builder)
+            String prefix, CheckedFunction<D, MessageTransferMode<D, Void>> processor, Function<D, M> builder)
             throws IOException {
         D details = msg.getDetails();
         M newMsg = msg;
@@ -157,9 +157,9 @@ public class QueryResponseHandler extends PgsqlMessageHandler<PgsqlQueryResponse
     }
 
     private <D> D processDetails(ChannelHandlerContext ctx, D details,
-            CheckedFunction<D, MessageTransferMode<D>> processor) throws IOException {
+            CheckedFunction<D, MessageTransferMode<D, Void>> processor) throws IOException {
         D newDetails;
-        MessageTransferMode<D> transferMode = processor.apply(details);
+        MessageTransferMode<D, Void> transferMode = processor.apply(details);
         switch (transferMode.getTransferMode()) {
         case FORWARD:
             newDetails = transferMode.getNewContent();

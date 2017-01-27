@@ -12,19 +12,19 @@ import eu.clarussecure.proxy.protocol.plugins.tcp.TCPSession;
  */
 public class HttpSession extends TCPSession {
 
-	/** The session initializer. */
-	private HttpSessionInitializer sessionInitializer;
-	
-	/**
-	 * Gets the session initializer.
-	 *
-	 * @return the session initializer
-	 */
-	public HttpSessionInitializer getSessionInitializer() {
-		if (sessionInitializer == null) {
-			sessionInitializer = new HttpSessionInitializer();
-		}
-		return sessionInitializer;
-	}
-	
+    /** The session initializer. */
+    private HttpSessionInitializer sessionInitializer;
+
+    /**
+     * Gets the session initializer.
+     *
+     * @return the session initializer
+     */
+    public HttpSessionInitializer getSessionInitializer() {
+        if (sessionInitializer == null) {
+            sessionInitializer = new HttpSessionInitializer();
+        }
+        return sessionInitializer;
+    }
+
 }

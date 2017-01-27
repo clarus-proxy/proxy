@@ -19,7 +19,7 @@ public class AnonymizeModule implements DataOperation {
 	}
 
 	@Override
-	public Promise get(String[] strings, String[] strings1, Operation operation) {
+	public Promise get(String[] strings, String[] strings1, Operation operation, boolean dispatch) {
 		//TODO: not yet implemented
 		return null;
 	}
@@ -31,23 +31,22 @@ public class AnonymizeModule implements DataOperation {
 	}
 
 	@Override
-	public String[][] post(String[] attributes, String[][] content) {
+	public String[][][] post(String[] attributes, String[][] content) {
 		String[][] plainDataAnom;
-		
+
 		plainDataAnom = Functions.anonymize(attributes, content);
-		
-		return plainDataAnom;
+
+		return new String[][][] { plainDataAnom };
 	}
 
 	@Override
-	public String[][] put(String[] strings, String[] strings1, String[][] strings2) {
-		//TODO: not yet implemented
-		return new String[0][];
+	public String[][][] put(String[] strings, String[] strings1, String[][] strings2) {
+            return new String[][][] { strings2 };
 	}
 
 	@Override
-	public void delete(String[] strings, String[] strings1) {
-		//TODO: not yet implemented
+	public String[][] delete(String[] strings, String[] strings1) {
+            return new String[][] { strings };
 	}
 
 }

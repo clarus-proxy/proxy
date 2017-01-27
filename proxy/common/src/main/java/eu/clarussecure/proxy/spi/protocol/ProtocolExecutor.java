@@ -1,11 +1,13 @@
 package eu.clarussecure.proxy.spi.protocol;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-public abstract class ProtocolExecutor implements Protocol {
+public abstract class ProtocolExecutor implements Protocol, Closeable {
 
     private Future<Void> future;
 
@@ -36,4 +38,8 @@ public abstract class ProtocolExecutor implements Protocol {
         future.cancel(true);
     }
 
+    @Override
+    public void close() throws IOException {
+        stop();
+    }
 }

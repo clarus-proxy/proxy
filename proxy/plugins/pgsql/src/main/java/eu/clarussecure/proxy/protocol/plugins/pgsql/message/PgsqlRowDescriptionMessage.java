@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Objects;
 
 import eu.clarussecure.proxy.spi.CString;
+import io.netty.util.ReferenceCounted;
 import io.netty.util.internal.StringUtil;
 
 public class PgsqlRowDescriptionMessage
@@ -11,7 +12,7 @@ public class PgsqlRowDescriptionMessage
 
     public static final byte TYPE = (byte) 'T';
 
-    public static class Field {
+    public static class Field implements ReferenceCounted {
 
         private CString name;
         private int tableOID;
@@ -25,12 +26,12 @@ public class PgsqlRowDescriptionMessage
             this(name, 0, (short) 0, 0l, (short) 0, 0, (short) 0);
         }
 
-        public Field(CString name, int tableOID, short columnNumber, long typeID, short typeSize, int typeModifier,
+        public Field(CString name, int tableOID, short columnNumber, long typeOID, short typeSize, int typeModifier,
                 short format) {
-            this.name = name;
+            this.name = Objects.requireNonNull(name, "field name is required");
             this.tableOID = tableOID;
             this.columnNumber = columnNumber;
-            this.typeOID = typeID;
+            this.typeOID = typeOID;
             this.typeSize = typeSize;
             this.typeModifier = typeModifier;
             this.format = format;
@@ -143,6 +144,69 @@ public class PgsqlRowDescriptionMessage
                 return false;
             }
             return true;
+        }
+
+        @Override
+        public int refCnt() {
+            return name != null ? name.refCnt() : 0;
+        }
+
+        @Override
+        public ReferenceCounted retain() {
+            if (name != null) {
+                if (!name.isBuffered()) {
+                    // force buffering
+                    name.getByteBuf();
+                }
+                name.retain();
+            }
+            return this;
+        }
+
+        @Override
+        public ReferenceCounted retain(int increment) {
+            if (name != null) {
+                if (!name.isBuffered()) {
+                    // force buffering
+                    name.getByteBuf();
+                }
+                return retain(increment);
+            }
+            return this;
+        }
+
+        @Override
+        public ReferenceCounted touch() {
+            if (name != null) {
+                name.touch();
+            }
+            return this;
+        }
+
+        @Override
+        public ReferenceCounted touch(Object hint) {
+            if (name != null) {
+                name.touch(hint);
+            }
+            return this;
+        }
+
+        @Override
+        public boolean release() {
+            boolean released = name == null || name.release();
+            if (released) {
+                name = null;
+            }
+            return released;
+        }
+
+        @Override
+        public boolean release(int decrement) {
+            boolean released = name == null || name.release(decrement);
+            if (released) {
+                name = null;
+            }
+            return released;
         }
     }
 

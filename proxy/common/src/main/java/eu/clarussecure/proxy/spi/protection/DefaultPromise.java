@@ -5,6 +5,10 @@ import eu.clarussecure.dataoperations.Promise;
 public class DefaultPromise implements Promise {
     private int id;
     private String[] attributeNames;
+    private String[] criteria;
+    private String[][] protectedAttributeNames;
+    private int[][][] attributeMapping;
+    private String[][] protectedCriteria;
     private String operation;
     private String[][] call;
 
@@ -24,6 +28,38 @@ public class DefaultPromise implements Promise {
 
     public void setAttributeNames(String[] attributeNames) {
         this.attributeNames = attributeNames;
+    }
+
+    public String[] getCriteria() {
+        return criteria;
+    }
+
+    public void setCriteria(String[] criteria) {
+        this.criteria = criteria;
+    }
+
+    public String[][] getProtectedAttributeNames() {
+        return protectedAttributeNames;
+    }
+
+    public void setProtectedAttributeNames(String[][] protectedAttributeNames) {
+        this.protectedAttributeNames = protectedAttributeNames;
+    }
+
+    public int[][][] getAttributeMapping() {
+        return this.attributeMapping;
+    }
+
+    public void setAttributeMapping(int[][][] attributeMapping) {
+        this.attributeMapping = attributeMapping;
+    }
+
+    public String[][] getProtectedCriteria() {
+        return protectedCriteria;
+    }
+
+    public void setProtectedCriteria(String[][] protectedCriteria) {
+        this.protectedCriteria = protectedCriteria;
     }
 
     @Override

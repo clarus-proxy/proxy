@@ -5,7 +5,9 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -22,6 +24,9 @@ public class SecurityPolicy {
     public static final String ATTRIBUTE_ELT = "attribute";
     public static final String NAME_ATTR = "name";
     public static final String PROTOCOL_ELT = "protocol";
+    public static final String PARAMETER_ELT = "parameter";
+    public static final String PARAM_ATTR = "param";
+    public static final String VALUE_ATTR = "value";
     public static final String PLUGIN_ATTR = "plugin";
     public static final String PORT_ATTR = "listen";
     public static final String PROTECTION_ELT = "protection";
@@ -62,6 +67,28 @@ public class SecurityPolicy {
                 }
             }
             return names.toArray(new String[names.size()]);
+        }
+        return null;
+    }
+
+    public Map<String, String> getProtocolParameters() {
+        Node root = document.getFirstChild();
+        Node protocol = findSubNode(PROTOCOL_ELT, root);
+        if (protocol != null) {
+            List<Node> parameters = findSubNodes(PARAMETER_ELT, protocol);
+            if (parameters != null) {
+                Map<String, String> params = new HashMap<>(parameters.size());
+                for (Node parameter : parameters) {
+                    if (parameter != null) {
+                        Node param = parameter.getAttributes().getNamedItem(PARAM_ATTR);
+                        Node value = parameter.getAttributes().getNamedItem(VALUE_ATTR);
+                        if (param != null && value != null) {
+                            params.put(param.getNodeValue(), value.getNodeValue());
+                        }
+                    }
+                }
+                return params;
+            }
         }
         return null;
     }

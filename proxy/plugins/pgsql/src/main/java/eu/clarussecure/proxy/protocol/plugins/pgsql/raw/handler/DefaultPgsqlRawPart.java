@@ -5,6 +5,7 @@ import io.netty.buffer.ByteBuf;
 public abstract class DefaultPgsqlRawPart<T extends PgsqlRawPart> implements PgsqlRawPart {
 
     private final ByteBuf bytes;
+    private boolean filter = true;
 
     /**
      * Creates a new instance with the specified chunk bytes.
@@ -28,12 +29,12 @@ public abstract class DefaultPgsqlRawPart<T extends PgsqlRawPart> implements Pgs
 
     @Override
     public T duplicate() {
-        return replace(bytes.duplicate());
+        return replace(bytes.duplicate().readerIndex(0));
     }
 
     @Override
     public T retainedDuplicate() {
-        return replace(bytes.retainedDuplicate());
+        return replace(bytes.retainedDuplicate().readerIndex(0));
     }
 
     @Override
@@ -82,4 +83,12 @@ public abstract class DefaultPgsqlRawPart<T extends PgsqlRawPart> implements Pgs
         return bytes.release(decrement);
     }
 
+    @Override
+    public boolean filter() {
+        return filter;
+    }
+
+    public void filter(boolean filter) {
+        this.filter = filter;
+    }
 }

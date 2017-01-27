@@ -10,8 +10,9 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.UnpooledByteBufAllocator;
+import io.netty.util.ReferenceCounted;
 
-public class CString implements CharSequence, Cloneable {
+public class CString implements CharSequence, Cloneable, Comparable<CharSequence>, ReferenceCounted {
 
     private ByteBuf buffer;
     private int strLen;
@@ -78,6 +79,47 @@ public class CString implements CharSequence, Cloneable {
         return new CString(newBuffer, strLen, str, hash);
     }
 
+    @Override
+    public int refCnt() {
+        if (buffer != null) {
+            return buffer.refCnt();
+        }
+        return 0;
+    }
+
+    @Override
+    public ReferenceCounted retain() {
+        if (buffer != null) {
+            buffer.retain();
+        }
+        return this;
+    }
+
+    @Override
+    public ReferenceCounted retain(int increment) {
+        if (buffer != null) {
+            buffer.retain(increment);
+        }
+        return this;
+    }
+
+    @Override
+    public ReferenceCounted touch() {
+        if (buffer != null) {
+            buffer.touch();
+        }
+        return this;
+    }
+
+    @Override
+    public ReferenceCounted touch(Object hint) {
+        if (buffer != null) {
+            buffer.touch(hint);
+        }
+        return this;
+    }
+
+    @Override
     public boolean release() {
         if (buffer != null) {
             if (buffer.release()) {
@@ -89,10 +131,16 @@ public class CString implements CharSequence, Cloneable {
         return buffer == null;
     }
 
-    public void retain() {
+    @Override
+    public boolean release(int decrement) {
         if (buffer != null) {
-            buffer.retain();
+            if (buffer.release(decrement)) {
+                buffer = null;
+                strLen = 0;
+                hash = 0;
+            }
         }
+        return buffer == null;
     }
 
     public boolean isBuffered() {
@@ -211,16 +259,16 @@ public class CString implements CharSequence, Cloneable {
         for (int i = sourceOffset + fromIndex; i <= max; i++) {
             /* Look for first character. */
             if (source.charAt(i) != first) {
-                while (++i <= max && source.charAt(i) != first)
-                    ;
+                while (++i <= max && source.charAt(i) != first) {
+                }
             }
 
             /* Found first character, now look at the rest of v2 */
             if (i <= max) {
                 int j = i + 1;
                 int end = j + targetCount - 1;
-                for (int k = targetOffset + 1; j < end && source.charAt(j) == target.charAt(k); j++, k++)
-                    ;
+                for (int k = targetOffset + 1; j < end && source.charAt(j) == target.charAt(k); j++, k++) {
+                }
 
                 if (j == end) {
                     /* Found whole string. */
@@ -711,6 +759,65 @@ public class CString implements CharSequence, Cloneable {
             return false;
         }
         return true;
+    }
+
+    /**
+     * Compares this {@code CString} with a {@code CharSequence} lexicographically.
+     * The comparison is based on the Unicode value of each character in
+     * the strings. The character sequence represented by this
+     * {@code CString} object is compared lexicographically to the argument
+     * character sequence. The result is
+     * a negative integer if this {@code CString} object
+     * lexicographically precedes the argument character sequence. The result is a
+     * positive integer if this {@code CString} object lexicographically
+     * follows the argument character sequence. The result is zero if the strings
+     * are equal; {@code compareTo} returns {@code 0} exactly when
+     * the {@link #equals(Object)} method would return {@code true}.
+     * <p>
+     * This is the definition of lexicographic ordering. If two strings are
+     * different, then either they have different characters at some index
+     * that is a valid index for both strings, or their lengths are different,
+     * or both. If they have different characters at one or more index
+     * positions, let <i>k</i> be the smallest such index; then the string
+     * whose character at position <i>k</i> has the smaller value, as
+     * determined by using the &lt; operator, lexicographically precedes the
+     * other string. In this case, {@code compareTo} returns the
+     * difference of the two character values at position {@code k} in
+     * the two string -- that is, the value:
+     * <blockquote><pre>
+     * this.charAt(k)-other.charAt(k)
+     * </pre></blockquote>
+     * If there is no index position at which they differ, then the shorter
+     * string lexicographically precedes the longer string. In this case,
+     * {@code compareTo} returns the difference of the lengths of the
+     * strings -- that is, the value:
+     * <blockquote><pre>
+     * this.length()-other.length()
+     * </pre></blockquote>
+     *
+     * @param   other the {@code CharSequence} to be compared.
+     * @return  the value {@code 0} if the argument string is equal to
+     *          this string; a value less than {@code 0} if this string
+     *          is lexicographically less than the string argument; and a
+     *          value greater than {@code 0} if this string is
+     *          lexicographically greater than the char sequence argument.
+     */
+    @Override
+    public int compareTo(CharSequence other) {
+        int len1 = length();
+        int len2 = other.length();
+        int lim = Math.min(len1, len2);
+
+        int k = 0;
+        while (k < lim) {
+            char c1 = charAt(k);
+            char c2 = other.charAt(k);
+            if (c1 != c2) {
+                return c1 - c2;
+            }
+            k++;
+        }
+        return len1 - len2;
     }
 
 }

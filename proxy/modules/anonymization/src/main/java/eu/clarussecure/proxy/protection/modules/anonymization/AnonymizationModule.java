@@ -1,11 +1,12 @@
 package eu.clarussecure.proxy.protection.modules.anonymization;
 
+import java.util.AbstractMap.SimpleEntry;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import org.w3c.dom.Document;
@@ -21,10 +22,14 @@ import eu.clarussecure.proxy.spi.protection.ProtectionModuleCapabilities;
 public class AnonymizationModule implements ProtectionModule, DataOperation {
 
     private static final String PROTECTION_MODULE_NAME = "Anonymization";
+    private static final String CSP = "csp";
+    private static final Pattern START_WITH_DOUBLE_ASTERISKS = Pattern.compile("^([^/*]*\\*/[^/*]*\\*/)([^/*]*)");
+    private static final Pattern START_WITH_SINGLE_ASTERISK = Pattern.compile("^([^/*]*\\*/)([^/*]*/[^/*]*)");
+
     private AnonymizeModule anonymizeModule;
     private String[] dataIds;
-    private Pattern[] dataIdPatterns;
     private Pattern[] fqDataIdPatterns;
+    private String[] datasetPrefixByServer;
 
     private static class CapabilitiesHelper {
         private static final AnonymizationCapabilities INSTANCE = new AnonymizationCapabilities();
@@ -41,20 +46,26 @@ public class AnonymizationModule implements ProtectionModule, DataOperation {
     }
 
     @Override
-    public void initialize(Document document, String[] dataIds) {
+    public void initialize(Document document, String[] dataIds, String[] datasetPrefixByServer) {
         anonymizeModule = new AnonymizeModule(document);
         if (dataIds != null) {
-            // Replace unqualified data ids by a generic qualified id (with asterisks): an1 -> */*/an1, d/an2 -> */d/an2, ds/d/an3 -> ds/d/an3
+            // Replace unqualified data ids by a generic qualified id (with
+            // asterisks): an1 -> */*/an1, d/an2 -> */d/an2, ds/d/an3 ->
+            // ds/d/an3
             dataIds = Arrays.stream(dataIds)
-                    .map(id -> id.indexOf('/') == -1 ? "*/*/" + id // prepend with */*/ if there is no /
-                            : id.indexOf('/') == id.lastIndexOf('/') ? "*/" + id // prepend with */ if there is one /
-                                    : id) // do nothing if there is two /
+                    .map(id -> id.indexOf('/') == -1
+                            // prepend with */*/ if there is no /
+                            ? "*/*/" + id
+                            : id.indexOf('/') == id.lastIndexOf('/')
+                                    // prepend with */ if there is one /
+                                    ? "*/" + id
+                                    // do nothing if there is two /
+                                    : id)
                     .toArray(String[]::new);
             this.dataIds = dataIds;
-            this.dataIdPatterns = Arrays.stream(dataIds).map(s -> s.replace(".", "\\.").replace("*/", "([^/]*/)?"))
-                    .map(Pattern::compile).toArray(Pattern[]::new);
-            this.fqDataIdPatterns = Arrays.stream(dataIds).map(s -> s.replace(".", "\\.").replace("*", "[^/]*"))
-                    .map(Pattern::compile).toArray(Pattern[]::new);
+            this.fqDataIdPatterns = Arrays.stream(dataIds).map(s -> escapeRegex(s)).map(Pattern::compile)
+                    .toArray(Pattern[]::new);
+            this.datasetPrefixByServer = datasetPrefixByServer;
         }
     }
 
@@ -63,66 +74,100 @@ public class AnonymizationModule implements ProtectionModule, DataOperation {
         return this;
     }
 
+    private String escapeRegex(String regex) {
+        return regex.replace(".", "\\.").replace("[", "\\[").replace("]", "\\]").replace("(", "\\(").replace(")", "\\)")
+                .replace("*", "[^/]*");
+    }
+
+    private List<String> resolveAttributes(String[] fqAttributeNames) {
+        List<String> attributeNames;
+        if (Arrays.stream(fqAttributeNames).filter(an -> an.indexOf('*') != -1).count() == 0) {
+            // Attribute names don't contain asterisk (*)
+            attributeNames = Arrays.stream(fqAttributeNames).collect(Collectors.toList());
+        } else {
+            // Replace attribute names that contain asterisk (*) by the matching
+            // data identifiers
+            List<Map.Entry<String, Pattern>> attributeNamePatterns = Arrays.stream(fqAttributeNames)
+                    .map(an -> new SimpleEntry<>(an, Pattern.compile(escapeRegex(an)))).collect(Collectors.toList());
+            Stream<String> retainedDataIds = Arrays.stream(dataIds).filter(id -> id.indexOf('*') == -1);
+            Stream<String> missingDataIds1 = Arrays.stream(dataIds).map(id -> START_WITH_DOUBLE_ASTERISKS.matcher(id))
+                    .filter(m -> m.matches()).map(m -> new String[] { m.group(1), m.group(2) }).flatMap(groups -> {
+                        Pattern firstPartPattern = Pattern.compile(escapeRegex(groups[0]));
+                        String lastPart = groups[1];
+                        return Arrays.stream(fqAttributeNames).map(an -> an.substring(0, an.lastIndexOf('/') + 1))
+                                .filter(an -> firstPartPattern.matcher(an).matches()).map(an -> an + lastPart);
+                    });
+            Stream<String> missingDataIds2 = Arrays.stream(dataIds).map(id -> START_WITH_SINGLE_ASTERISK.matcher(id))
+                    .filter(m -> m.matches()).map(m -> new String[] { m.group(1), m.group(2) }).flatMap(groups -> {
+                        Pattern firstPartPattern = Pattern.compile(escapeRegex(groups[0]));
+                        String lastPart = groups[1];
+                        return Arrays.stream(fqAttributeNames).map(an -> an.substring(0, an.indexOf('/') + 1))
+                                .filter(an -> firstPartPattern.matcher(an).matches()).map(an -> an + lastPart);
+                    });
+            List<String> dataIds = Stream.concat(retainedDataIds, Stream.concat(missingDataIds1, missingDataIds2))
+                    .distinct().collect(Collectors.toList());
+            List<Map.Entry<String, Stream<String>>> resolvedDataIds = attributeNamePatterns.stream()
+                    .map(e -> new SimpleEntry<>(e.getKey(),
+                            dataIds.stream().filter(id -> e.getValue().matcher(id).matches())))
+                    .collect(Collectors.toList());
+            List<Map.Entry<String, Stream<String>>> unresolvedAttributeNames = attributeNamePatterns.stream()
+                    .filter(e -> dataIds.stream().noneMatch(id -> e.getValue().matcher(id).matches()))
+                    .map(e -> new SimpleEntry<>(e.getKey(), Stream.of(e.getKey()))).collect(Collectors.toList());
+            // Concatenate all found attributes
+            List<Map.Entry<String, Stream<String>>> resolvedAttributeNames = Stream
+                    .concat(resolvedDataIds.stream(), unresolvedAttributeNames.stream()).collect(Collectors.toList());
+            attributeNames = resolvedAttributeNames.stream().flatMap(Map.Entry::getValue).collect(Collectors.toList());
+        }
+        return attributeNames;
+    }
+
+    private String buildProtectedAttributeName(int csp, String attributeName) {
+        if (attributeName.chars().filter(c -> c == '/').count() == 2) {
+            if (datasetPrefixByServer != null && csp < datasetPrefixByServer.length) {
+                attributeName = datasetPrefixByServer[csp] + attributeName.substring(attributeName.indexOf('/'));
+            }
+        }
+        attributeName = CSP + (csp + 1) + "/" + attributeName;
+        return attributeName;
+    }
+
+    private List<Map.Entry<String, String>> resolveProtectedAttributes(List<String> attributes) {
+        List<Map.Entry<String, String>> mapping = attributes.stream().map(attr -> {
+            String protectedAttributeName = Arrays.stream(fqDataIdPatterns).anyMatch(p -> p.matcher(attr).matches())
+                    /*|| attr.startsWith("AddGeometryColumn")*/ ? buildProtectedAttributeName(0, attr) : null;
+            return new SimpleEntry<>(attr, protectedAttributeName);
+        }).collect(Collectors.toList());
+        return mapping;
+    }
+
     @Override
-    public String[][] head(String[] attributeNames) {
+    public String[][] head(String[] fqAttributeNames) {
         // TODO workaround (not yet implemented in module)
-        //return anonymizeModule.head(attributeNames);
-        // Replace unqualified attribute names by a generic qualified name (with asterisks): an1 -> */*/an1, d/an2 -> */d/an2, ds/d/an3 -> ds/d/an3
-        String[] fqAttributeNames = Arrays.stream(attributeNames)
-                .map(an -> an.indexOf('/') == -1 ? "*/*/" + an // prepend with */*/ if there is no /
-                        : an.indexOf('/') == an.lastIndexOf('/') ? "*/" + an // prepend with */ if there is one /
-                                : an) // do nothing if there is two /
-                .toArray(String[]::new);
-        // Retain attribute names that don't contain asterisk (*)
-        Stream<String> retainedAttributeNames = Arrays.stream(fqAttributeNames)
-                .filter(an -> an.indexOf('*') == -1 && an.indexOf('?') == -1);
-        // Replace attribute names that contain asterisk (*) by the matching data identifiers
-        Map<String, Pattern> attributeNamePatterns = Arrays.stream(fqAttributeNames).filter(an -> an.indexOf('*') != -1)
-                .collect(Collectors.toMap(Function.identity(),
-                        an -> Pattern.compile(an.replace(".", "\\.").replace("*", "[^/]*"))));
-        Stream<String> retainedDataIds = Arrays.stream(dataIds).filter(id -> id.indexOf('*') == -1);
-        Stream<String> missingDataIds1 = Arrays.stream(dataIds).filter(id -> id.startsWith("*/*/"))
-                .flatMap(id -> Arrays.stream(fqAttributeNames)
-                        .map(an -> an.substring(0, an.lastIndexOf('/') + 1) + id.substring("*/*/".length())));
-        Stream<String> missingDataIds2 = Arrays.stream(dataIds)
-                .filter(id -> id.startsWith("*/") && !id.startsWith("*/*/"))
-                .flatMap(id -> Arrays.stream(fqAttributeNames)
-                        .map(an -> an.substring(0, an.indexOf('/') + 1) + id.substring("*/".length())));
-        List<String> dataIds = Stream.concat(retainedDataIds, Stream.concat(missingDataIds1, missingDataIds2))
-                .distinct().collect(Collectors.toList());
-        Stream<String> resolvedAttributeNames = dataIds.stream()
-                .filter(id -> attributeNamePatterns.values().stream().anyMatch(p -> p.matcher(id).matches()));
-        Stream<String> unresolvedAttributeNames = attributeNamePatterns.entrySet().stream()
-                .filter(e -> dataIds.stream().noneMatch(id -> e.getValue().matcher(id).matches()))
-                .map(Map.Entry::getKey);
-        // Concatenate all found attributes
-        List<String> attributes = Stream
-                .concat(retainedAttributeNames, Stream.concat(resolvedAttributeNames, unresolvedAttributeNames))
-                .sorted().collect(Collectors.toList());
-        // Remove redundant attributes
-        Map<String, Pattern> attributePatterns = attributes.stream().collect(Collectors.toMap(Function.identity(),
-                a -> Pattern.compile(a.replace(".", "\\.").replace("*", "[^/]*"))));
-        attributes = attributes.stream().filter(a -> attributePatterns.entrySet().stream().filter(e -> a != e.getKey())
-                .noneMatch(e -> e.getValue().matcher(a).matches())).collect(Collectors.toList());
-        // A protected attribute name is the clear attribute name prefixed by cps1/
-        String[][] mapping = attributes.stream()
-                .map(a -> new String[] { a,
-                        Arrays.stream(fqDataIdPatterns).anyMatch(t -> t.matcher(a).matches()) ? "csp1/" + a : null })
+        // Assume attribute names are fully qualified (ds/d/a)
+        List<String> attributeNames = resolveAttributes(fqAttributeNames);
+        List<Map.Entry<String, String>> protectedAttributeNames = resolveProtectedAttributes(attributeNames);
+        String[][] mapping = protectedAttributeNames.stream()
+                .map(e -> Stream.concat(Stream.of(e.getKey()), Stream.of(e.getValue())).toArray(String[]::new))
                 .toArray(String[][]::new);
         return mapping;
     }
 
     @Override
-    public Promise get(String[] attributeNames, String[] criteria, Operation operation) {
-        // TODO workaround to fix type of geometry with coarsening
-        int index = Arrays.asList(attributeNames).indexOf("AddGeometryColumn");
-        if (index != -1) {
-            criteria[index] = criteria[index].replaceAll("POINT", "POLYGON");
-        }
+    public Promise get(String[] attributeNames, String[] criteria, Operation operation, boolean dispatch) {
+        // By default, protected attribute names are the same as clear attribute names
+        String[][] protectedAttributeNames = new String[][] { attributeNames };
+        // By default, protected criteria are the same as clear criteria
+        String[][] protectedCriteria = new String[][] { criteria };
         // TODO workaround (promise not yet implemented in module)
-        //Promise promise = anonymizeModule.get(attributeNames, criteria, operation);
+        //Promise promise = anonymizeModule.get(attributeNames, criteria, operation, dispatch);
         DefaultPromise promise = new DefaultPromise();
         promise.setAttributeNames(attributeNames);
+        promise.setCriteria(criteria);
+        promise.setProtectedAttributeNames(protectedAttributeNames);
+        promise.setProtectedCriteria(protectedCriteria);
+        int[][][] attributeMapping = IntStream.range(0, attributeNames.length).mapToObj(i -> new int[][] { { 0, i } })
+                .toArray(int[][][]::new);
+        promise.setAttributeMapping(attributeMapping);
         return promise;
     }
 
@@ -130,29 +175,31 @@ public class AnonymizationModule implements ProtectionModule, DataOperation {
     public String[][] get(Promise promise, String[][] contents) {
         // TODO workaround (promise not yet implemented in module)
         //return anonymizeModule.get(promise, contents);
-        boolean modify = false;
-        if (dataIdPatterns != null && promise != null && promise.getAttributeNames() != null) {
-            modify = Arrays.stream(promise.getAttributeNames())
-                    .anyMatch(an -> Arrays.stream(dataIdPatterns).anyMatch(p -> p.matcher(an).matches()));
-        }
-        if (modify) {
-            return contents.clone();
-        }
         return contents;
     }
 
     @Override
-    public String[][] post(String[] attributeNames, String[][] contents) {
-        return anonymizeModule.post(attributeNames, contents);
+    public String[][][] post(String[] attributeNames, String[][] contents) {
+        String[][][] newContents = anonymizeModule.post(attributeNames, contents);
+        // add protected attributes names as first row
+        newContents = new String[][][] {
+                Stream.concat(Stream.of(new String[][] { attributeNames }), Arrays.stream(newContents[0]))
+                        .toArray(String[][]::new) };
+        return newContents;
     }
 
     @Override
-    public String[][] put(String[] attributeNames, String[] criteria, String[][] contents) {
-        return anonymizeModule.put(attributeNames, criteria, contents);
+    public String[][][] put(String[] attributeNames, String[] criteria, String[][] contents) {
+        String[][][] newContents = anonymizeModule.put(attributeNames, criteria, contents);
+        // add protected attributes names as first row
+        newContents = new String[][][] {
+                Stream.concat(Stream.of(new String[][] { attributeNames }), Arrays.stream(newContents[0]))
+                        .toArray(String[][]::new) };
+        return newContents;
     }
 
     @Override
-    public void delete(String[] attributeNames, String[] criteria) {
-        anonymizeModule.delete(attributeNames, criteria);
+    public String[][] delete(String[] attributeNames, String[] criteria) {
+        return anonymizeModule.delete(attributeNames, criteria);
     }
 }

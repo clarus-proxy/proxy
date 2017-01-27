@@ -2,7 +2,7 @@ package eu.clarussecure.proxy.protocol.plugins.pgsql.message;
 
 import io.netty.buffer.ByteBuf;
 
-public class PgsqlAuthenticationResponse implements PgsqlAuthenticationMessage {
+public class PgsqlAuthenticationResponse implements PgsqlMessage {
 
     public static final byte TYPE = (byte) 'R';
     public static final int HEADER_SIZE = Byte.BYTES + Integer.BYTES;

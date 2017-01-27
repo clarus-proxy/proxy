@@ -1,7 +1,8 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql;
 
-import eu.clarussecure.proxy.protocol.plugins.pgsql.message.AuthenticationHandler;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.AuthenticationRequestHandler;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlBindMessage;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlCancelRequestMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlCloseMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlDescribeMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlExecuteMessage;
@@ -39,6 +40,8 @@ public class FrontendSidePipelineInitializer extends ChannelInitializer<Channel>
                 || "on".equalsIgnoreCase(queryProcessing);
     }
 
+    private EventExecutorGroup parserGroup = null;
+
     @Override
     protected void initChannel(Channel ch) throws Exception {
         Configuration configuration = ch.attr(PgsqlConstants.CONFIGURATION_KEY).get();
@@ -46,18 +49,20 @@ public class FrontendSidePipelineInitializer extends ChannelInitializer<Channel>
         pipeline.addLast("PgsqlPartCodec", new PgsqlRawPartCodec(true, configuration.getFramePartMaxLength()));
         if (MESSAGE_PROCESSING_ACTIVATED) {
             pipeline.addLast("PgsqlPartAggregator",
-                    new PgsqlRawPartAggregator(PgsqlSSLRequestMessage.TYPE,
-                            PgsqlStartupMessage.TYPE/* , PgsqlSimpleQueryMessage.TYPE */, PgsqlParseMessage.TYPE,
+                    new PgsqlRawPartAggregator(PgsqlSSLRequestMessage.TYPE, PgsqlStartupMessage.TYPE,
+                            PgsqlCancelRequestMessage.TYPE, /*PgsqlSimpleQueryMessage.TYPE, */PgsqlParseMessage.TYPE,
                             PgsqlBindMessage.TYPE, PgsqlDescribeMessage.TYPE, PgsqlExecuteMessage.TYPE,
                             PgsqlCloseMessage.TYPE, PgsqlSyncMessage.TYPE, PgsqlFlushMessage.TYPE));
             pipeline.addLast("PgsqlPartAccumulator", new PgsqlRawPartAccumulator(PgsqlSimpleQueryMessage.TYPE));
         }
-        EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
+        if (parserGroup == null) {
+            parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
+        }
         // Session initialization consists of dealing with optional initialization of SSL encryption: a specific SSL handler will be added as first handler in the pipeline if necessary
         // Session initialization ends with the startup message. Then the session initialization handler will be removed
         pipeline.addLast(parserGroup, "SessionInitializationRequestHandler", new SessionInitializationRequestHandler());
         if (MESSAGE_PROCESSING_ACTIVATED) {
-            pipeline.addLast(parserGroup, "AuthenticationHandler", new AuthenticationHandler());
+            pipeline.addLast(parserGroup, "AuthenticationRequestHandler", new AuthenticationRequestHandler());
             if (QUERY_PROCESSING_ACTIVATED) {
                 pipeline.addLast(parserGroup, "QueryRequestHandler", new QueryRequestHandler());
             }

@@ -16,7 +16,7 @@ public interface DataOperation {
      * @param operation operation to perform on the result (AVERAGE, MAX, MIN...)
      * @return an Promise object with a reference to the call and original parameters.
      */
-    public Promise get(String[] attributeNames, String[] criteria, Operation operation);
+    public Promise get(String[] attributeNames, String[] criteria, Operation operation, boolean dispatch);
 
     /** Inbound GET operation (RESPONSE), reconstructs data received by CSP.
      * @param promise reference to the original call
@@ -30,7 +30,7 @@ public interface DataOperation {
      * @param contents unprotected records
      * @returns protected data, using the same structure as provided in contents.
      */
-    public String[][] post(String[] attributeNames, String[][] contents);
+    public String[][][] post(String[] attributeNames, String[][] contents);
 
     /** Outbound PUT Operation, modifies data specified by criteria, according to security policy.
      * @param attributeNames names of the attributes, as given in the security policy for the current dataset.
@@ -38,11 +38,11 @@ public interface DataOperation {
      * @param contents unprotected records
      * @returns protected data, using the same structure as provided in contents.
      */
-    public String[][] put(String[] attributeNames, String[] criteria, String[][] contents);
+    public String[][][] put(String[] attributeNames, String[] criteria, String[][] contents);
 
     /** Outbound DELETE Operation, deletes data specified by criteria.
      * @param attributeNames names of the attributes, as given in the security policy for the current dataset.
      * @param criteria conditions of the get call, in the same order as the attributeNames.
      */
-    public void delete(String[] attributeNames, String[] criteria);
+    public String[][] delete(String[] attributeNames, String[] criteria);
 }

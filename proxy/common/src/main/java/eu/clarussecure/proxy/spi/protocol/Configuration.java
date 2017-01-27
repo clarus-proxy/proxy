@@ -4,9 +4,11 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import eu.clarussecure.proxy.spi.Mode;
 import eu.clarussecure.proxy.spi.Operation;
@@ -20,12 +22,14 @@ public abstract class Configuration implements Configurable {
     public static final int DEFAULT_NB_OF_PARSER_THREADS = 0;
 
     public static final int DEFAULT_FRAME_PART_MAX_LENGTH = Integer.MAX_VALUE;
-    
+
     protected final ProtocolCapabilities capabilities;
 
     protected int listenPort;
-    
-    protected Set<InetSocketAddress> serverEndpoints;
+
+    protected List<InetSocketAddress> serverEndpoints;
+
+    protected Map<String, String> parameters;
 
     protected int nbListenThreads = DEFAULT_NB_OF_LISTEN_THREADS;
 
@@ -50,47 +54,71 @@ public abstract class Configuration implements Configurable {
     public int getListenPort() {
         return listenPort != 0 ? listenPort : getDefaultProtocolPort();
     }
-        
+
     @Override
     public void setListenPort(int listenPort) {
         this.listenPort = listenPort;
     }
 
     @Override
-    public InetSocketAddress getServerEndpoint() {
+    public InetSocketAddress getServerEndpoint(int index) {
         if (serverEndpoints != null) {
-            if (serverEndpoints.size() > 1) {
-                throw new IllegalStateException(String.format("%s endpoints are defined", serverEndpoints.size()));
+            if (index >= serverEndpoints.size()) {
+                throw new IllegalArgumentException(
+                        String.format("index (%d) >= number of endpoints (%d)", index, serverEndpoints.size()));
             }
-            return serverEndpoints.iterator().next();
+            return serverEndpoints.get(index);
         }
         return null;
     }
 
     @Override
-    public Set<InetSocketAddress> getServerEndpoints() {
+    public List<InetSocketAddress> getServerEndpoints() {
         return serverEndpoints;
     }
 
     @Override
     public void setServerAddress(InetAddress serverAddress) {
-        serverEndpoints = Collections.singleton(new InetSocketAddress(serverAddress, getDefaultProtocolPort()));
+        serverEndpoints = Collections.singletonList(new InetSocketAddress(serverAddress, getDefaultProtocolPort()));
     }
 
     @Override
     public void setServerEndpoint(InetSocketAddress serverEndpoint) {
-        serverEndpoints = Collections.singleton(serverEndpoint);
+        serverEndpoints = Collections.singletonList(serverEndpoint);
     }
 
     @Override
-    public void setServerAddresses(Set<InetAddress> serverAddresses) {
-        serverAddresses.stream().map(serverAddress -> new InetSocketAddress(serverAddress, getDefaultProtocolPort()))
-                .collect(Collectors.toSet());
+    public void setServerAddresses(List<InetAddress> serverAddresses) {
+        serverEndpoints = serverAddresses.stream()
+                .map(serverAddress -> new InetSocketAddress(serverAddress, getDefaultProtocolPort()))
+                .collect(Collectors.toList());
     }
 
     @Override
-    public void setServerEndpoints(Set<InetSocketAddress> serverEndpoints) {
+    public void setServerAddresses(InetAddress... serverAddresses) {
+        serverEndpoints = Stream.of(serverAddresses)
+                .map(serverAddress -> new InetSocketAddress(serverAddress, getDefaultProtocolPort()))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public void setServerEndpoints(List<InetSocketAddress> serverEndpoints) {
         this.serverEndpoints = serverEndpoints;
+    }
+
+    @Override
+    public void setServerEndpoints(InetSocketAddress... serverEndpoints) {
+        this.serverEndpoints = Stream.of(serverEndpoints).collect(Collectors.toList());
+    }
+
+    @Override
+    public Map<String, String> getParameters() {
+        return parameters;
+    }
+
+    @Override
+    public void setParameters(Map<String, String> parameters) {
+        this.parameters = parameters;
     }
 
     @Override

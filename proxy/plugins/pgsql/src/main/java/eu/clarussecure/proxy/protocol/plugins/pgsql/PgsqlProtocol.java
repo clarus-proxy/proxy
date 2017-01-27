@@ -1,9 +1,6 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql;
 
 import java.util.Arrays;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPServer;
 import eu.clarussecure.proxy.spi.protocol.ProtocolCapabilities;
@@ -27,24 +24,20 @@ public class PgsqlProtocol extends ProtocolExecutor {
     }
 
     @Override
-    protected TCPServer<FrontendSidePipelineInitializer> buildServer() {
-        return new TCPServer<>(getConfiguration(), FrontendSidePipelineInitializer.class);
+    protected TCPServer<FrontendSidePipelineInitializer, BackendSidePipelineInitializer> buildServer() {
+        return new TCPServer<>(getConfiguration(), FrontendSidePipelineInitializer.class,
+                BackendSidePipelineInitializer.class, 0);
     }
 
     @Override
     public String[] adaptDataIds(String[] dataIds) {
-        // Duplicate data ids that refer to the public schema
-        Pattern publicDataIdPattern = Pattern.compile("([^/]*/)(public\\.)?([^/\\.]*/[^/]*)");
-        Stream<String> publicDataIds = Arrays.stream(dataIds)
-                .map(id -> id.indexOf('/') == -1 ? "*/*/" + id // prepend with */*/ if there is no /
-                        : id.indexOf('/') == id.lastIndexOf('/') ? "*/" + id // prepend with */ if there is one /
-                                : id) // do nothing if there is two /
-                .map(id -> publicDataIdPattern.matcher(id)).filter(Matcher::matches)
-                .map(m -> m.replaceAll(m.group(2) == null ? "$1public.$3" : "$1$3"))
-                .map(id -> id.startsWith("*/*/") ? id.substring("*/*/".length()) // remove */*/ if there is
-                        : id.startsWith("*/") ? id.substring("*/".length()) // remove */ if there is
-                                : id); // else do nothing
-        dataIds = Stream.concat(Arrays.stream(dataIds), publicDataIds).toArray(String[]::new);
+        // Add the public schema if any
+        dataIds = Arrays.stream(dataIds).map(id -> Helper.CONFIGURATION.adaptDataId(id)).toArray(String[]::new);
         return dataIds;
+    }
+
+    @Override
+    public String[] getDatasetPrefixByServer() {
+        return getConfiguration().getBackendDatabaseNames().stream().toArray(String[]::new);
     }
 }

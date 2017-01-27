@@ -10,7 +10,7 @@ public class PgsqlSSLRequestMessageWriter implements PgsqlMessageWriter<PgsqlSSL
     @Override
     public int contentSize(PgsqlSSLRequestMessage msg) {
         // Get content size
-        return Integer.BYTES;
+        return PgsqlSSLRequestMessage.LENGTH - PgsqlSSLRequestMessage.HEADER_SIZE;
     }
 
     @Override

@@ -1,32 +1,37 @@
 package eu.clarussecure.proxy.spi;
 
+import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class MetadataOperation extends ModuleOperation {
-    private Map<CString, List<CString>> metadata;
 
-    public Map<CString, List<CString>> getMetadata() {
+    private List<Map.Entry<CString, List<CString>>> metadata;
+
+    public List<Map.Entry<CString, List<CString>>> getMetadata() {
         if (metadata == null) {
-            metadata = new LinkedHashMap<>();
+            metadata = new ArrayList<>();
         }
         return metadata;
     }
 
-    public void setMetadata(Map<CString, List<CString>> metadata) {
+    public void setMetadata(List<Map.Entry<CString, List<CString>>> metadata) {
         this.metadata = metadata;
     }
 
     @Override
     public List<CString> getDataIds() {
-        return new ArrayList<>(getMetadata().keySet());
+        return getMetadata().stream().map(Map.Entry::getKey).collect(Collectors.toList());
     }
 
     @Override
     public void setDataIds(List<CString> dataIds) {
-        dataIds.forEach(dataId -> getMetadata().putIfAbsent(dataId, null));
+        getMetadata().clear();
+        dataIds.forEach(dataId -> {
+            getMetadata().add(new SimpleEntry<>(dataId, null));
+        });
     }
 
     @Override
@@ -35,16 +40,21 @@ public class MetadataOperation extends ModuleOperation {
     }
 
     public void addDataId(CString dataId, List<CString> protectedDataIds) {
-        getMetadata().put(dataId, protectedDataIds);
+        getMetadata().add(new SimpleEntry<>(dataId, protectedDataIds));
     }
 
     @Override
-    public void removeDataId(CString dataId) {
-        getMetadata().remove(dataId);
+    public void addDataIds(List<CString> dataIds) {
+        dataIds.forEach(dataId -> addDataId(dataId, null));
     }
 
-    public List<CString> getProtectedDataIds(CString dataId) {
-        return getMetadata().get(dataId);
+    @Override
+    public void removeDataId(int index) {
+        getMetadata().remove(index);
+    }
+
+    public List<CString> getProtectedDataIds(int index) {
+        return getMetadata().get(index).getValue();
     }
 
 }

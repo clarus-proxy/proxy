@@ -1,10 +1,13 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.codec;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlCancelRequestMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlSSLRequestMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlSSLResponseMessage;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlStartupMessage;
@@ -33,8 +36,8 @@ public class PgsqlRawPartDecoder extends ByteToMessageDecoder {
         private int length;
 
         public FrontendFirstMsgHeaderParserImpl() {
-            expectedTypeSize = 0;
-            expectedHeaderSize = Integer.BYTES;
+            expectedTypeSize.set(0);
+            expectedHeaderSize.set(Integer.BYTES);
         }
 
         @Override
@@ -50,6 +53,12 @@ public class PgsqlRawPartDecoder extends ByteToMessageDecoder {
                     // message is SSLRequest
                     type = PgsqlSSLRequestMessage.TYPE;
                 }
+            } else if (length == PgsqlCancelRequestMessage.LENGTH) {
+                int code = in.readInt();
+                if (code == PgsqlCancelRequestMessage.CODE) {
+                    // message is SSLRequest
+                    type = PgsqlCancelRequestMessage.TYPE;
+                }
             }
             return type;
         }
@@ -63,18 +72,15 @@ public class PgsqlRawPartDecoder extends ByteToMessageDecoder {
         @Override
         public void postProcessing(byte type) {
             if (type == PgsqlStartupMessage.TYPE) {
-                parser = new MsgHeaderParserImpl();
-                //                if (otherSideDecoder != null) {
-                //                    otherSideDecoder.skipFirstMessages();
-                //                }
+                parser.set(new MsgHeaderParserImpl());
             }
         }
     }
 
     private class BackendFirstMsgHeaderParserImpl implements MsgHeaderParser {
         public BackendFirstMsgHeaderParserImpl() {
-            expectedTypeSize = 0;
-            expectedHeaderSize = 0;
+            expectedTypeSize.set(0);
+            expectedHeaderSize.set(0);
         }
 
         @Override
@@ -92,15 +98,15 @@ public class PgsqlRawPartDecoder extends ByteToMessageDecoder {
         @Override
         public void postProcessing(byte type) {
             if (type == PgsqlSSLResponseMessage.TYPE) {
-                parser = new MsgHeaderParserImpl();
+                parser.set(new MsgHeaderParserImpl());
             }
         }
     }
 
     private class MsgHeaderParserImpl implements MsgHeaderParser {
         public MsgHeaderParserImpl() {
-            expectedTypeSize = Byte.BYTES;
-            expectedHeaderSize = expectedTypeSize + Integer.BYTES;
+            expectedTypeSize.set(Byte.BYTES);
+            expectedHeaderSize.set(Byte.BYTES + Integer.BYTES);
         }
 
         @Override
@@ -122,26 +128,24 @@ public class PgsqlRawPartDecoder extends ByteToMessageDecoder {
 
     private final String from;
     private final int maxlen;
-    private volatile int missing;
-    private volatile int expectedTypeSize;
-    private volatile int expectedHeaderSize;
-    private volatile MsgHeaderParser parser;
-    //    private volatile PgsqlRawPartDecoder otherSideDecoder;
+    private AtomicInteger missing;
+    private AtomicInteger expectedTypeSize;
+    private AtomicInteger expectedHeaderSize;
+    private AtomicReference<MsgHeaderParser> parser;
 
     public PgsqlRawPartDecoder(boolean frontend, int maxlen) {
         this.from = frontend ? "(F->)" : "(<-B)";
         this.maxlen = maxlen;
-        this.missing = 0;
-        parser = frontend ? new FrontendFirstMsgHeaderParserImpl() : new BackendFirstMsgHeaderParserImpl();
+        this.missing = new AtomicInteger(0);
+        this.expectedTypeSize = new AtomicInteger(0);
+        this.expectedHeaderSize = new AtomicInteger(0);
+        parser = new AtomicReference<>(
+                frontend ? new FrontendFirstMsgHeaderParserImpl() : new BackendFirstMsgHeaderParserImpl());
     }
 
-    //    public void setOtherSideDecoder(PgsqlRawPartDecoder decoder) {
-    //        this.otherSideDecoder = decoder;
-    //    }
-
     public void skipFirstMessages() {
-        if (!(parser instanceof MsgHeaderParserImpl)) {
-            parser = new MsgHeaderParserImpl();
+        if (!(parser.get() instanceof MsgHeaderParserImpl)) {
+            parser.set(new MsgHeaderParserImpl());
         }
     }
 
@@ -149,32 +153,33 @@ public class PgsqlRawPartDecoder extends ByteToMessageDecoder {
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         LOGGER.trace("{} Decoding {} bytes...", from, in.readableBytes());
         while (in.readableBytes() > 0) {
-            if (missing == 0) { // New message
-                if (in.readableBytes() < expectedHeaderSize) {
+            if (missing.get() == 0) { // New message
+                if (in.readableBytes() < expectedHeaderSize.get()) {
                     return; // Message header is 4 or 5 bytes for frontend, 0 or 5 bytes for backend
                 }
                 in.markReaderIndex();
                 // read message type
-                byte type = parser.getType(in);
+                byte type = parser.get().getType(in);
                 // read message length
-                int length = parser.getLength(in);
+                int length = parser.get().getLength(in);
                 in.resetReaderIndex();
-                ByteBuf bytes = in
-                        .readRetainedSlice(Math.min(Math.min(maxlen, in.readableBytes()), expectedTypeSize + length));
-                missing = expectedTypeSize + length - bytes.readableBytes();
-                PgsqlRawMessage message = missing == 0 ? new DefaultFullPgsqlRawMessage(bytes, type, length)
+                ByteBuf bytes = in.readRetainedSlice(
+                        Math.min(Math.min(maxlen, in.readableBytes()), expectedTypeSize.get() + length));
+                int m = expectedTypeSize.get() + length - bytes.readableBytes();
+                missing.set(m);
+                PgsqlRawMessage message = m == 0 ? new DefaultFullPgsqlRawMessage(bytes, type, length)
                         : new DefaultPgsqlRawMessage(bytes, type, length);
                 // Redefine first, expectedTypeSize and expectedHeaderSize if necessary
-                parser.postProcessing(type);
+                parser.get().postProcessing(type);
                 out.add(message);
-                LOGGER.trace("{} New {} raw message decoded: {}", from, missing == 0 ? "full" : "partial", message);
+                LOGGER.trace("{} New {} raw message decoded: {}", from, m == 0 ? "full" : "partial", message);
             } else { // Additional content of a message
-                ByteBuf content = in.readRetainedSlice(Math.min(Math.min(maxlen, in.readableBytes()), missing));
-                missing -= content.readableBytes();
-                DefaultPgsqlRawContent message = missing == 0 ? new DefaultLastPgsqlRawContent(content)
+                ByteBuf content = in.readRetainedSlice(Math.min(Math.min(maxlen, in.readableBytes()), missing.get()));
+                int m = missing.addAndGet(-content.readableBytes());
+                DefaultPgsqlRawContent message = m == 0 ? new DefaultLastPgsqlRawContent(content)
                         : new DefaultPgsqlRawContent(content);
                 out.add(message);
-                LOGGER.trace("{} {} part of raw message decoded: {}", from, missing == 0 ? "Last" : "New", message);
+                LOGGER.trace("{} {} part of raw message decoded: {}", from, m == 0 ? "Last" : "New", message);
             }
         }
         LOGGER.trace("{} Remain {} bytes to decode", from, in.readableBytes());

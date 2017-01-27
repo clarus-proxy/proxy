@@ -37,7 +37,7 @@
         <dependency>
             <groupId>org.geotools</groupId>
             <artifactId>gt-main</artifactId>
-            <version>15.0</version>
+            <version>17.0</version>
         </dependency>
         <!--  AKKA fix: log -->
         <dependency>

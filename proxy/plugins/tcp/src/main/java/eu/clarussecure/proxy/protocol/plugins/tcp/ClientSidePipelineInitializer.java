@@ -10,12 +10,13 @@ import io.netty.util.concurrent.EventExecutorGroup;
 
 public class ClientSidePipelineInitializer extends ChannelInitializer<Channel> {
 
+    private EventExecutorGroup parserGroup = null;
+
     @Override
     protected void initChannel(Channel ch) throws Exception {
         Configuration configuration = ch.attr(TCPConstants.CONFIGURATION_KEY).get();
         ChannelPipeline pipeline = ch.pipeline();
-        EventExecutorGroup parserGroup = null;
-        if (configuration.getNbParserThreads() > 0) {
+        if (parserGroup == null && configuration.getNbParserThreads() > 0) {
             parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
         }
         pipeline.addLast(parserGroup, "ClientTCPFrameForwarder", new ClientTCPFrameForwarder());

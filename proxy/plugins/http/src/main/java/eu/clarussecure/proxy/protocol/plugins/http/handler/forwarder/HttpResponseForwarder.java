@@ -12,11 +12,11 @@ import io.netty.handler.codec.http.HttpObject;
  */
 public class HttpResponseForwarder extends ServerMessageForwarder<HttpObject> {
 
-	/**
-	 * Instantiates a new http response forwarder.
-	 */
-	public HttpResponseForwarder() {
-		super();
-	}
+    /**
+     * Instantiates a new http response forwarder.
+     */
+    public HttpResponseForwarder() {
+        super();
+    }
 
 }
