@@ -60,9 +60,22 @@ goto end
 :usage
 echo usage: proxy.bat [OPTION]... [SERVER_ADDRESS]...
 echo CLARUS extensions:
-echo   [-xd, --extension-dirs ^<PATHS^>] list the extensions directories that contain protection modules and protocol plugins. Extensions directories must be separated by ';'
+echo   [-xd, --extension-dirs ^<PATHS^>] list the extensions directories that contain protection modules and protocol plugins.
+echo                                   Extensions directories must be separated by ';'
 echo Security policy options:
 echo   -sp, --security-policy ^<PATH^>   security policy to apply.
+echo Resource consumption options:
+echo   [-mf, --max-frame-len ^<MAX_FRAME_LENGTH^>]
+echo                                   maximum frame length to process
+echo   [-lt, --nb-listen-threads ^<NB_LISTEN_THREADS^>]
+echo                                   number of listen threads (default: 1).
+echo                                   Must be a positive number or the special value 'cores' (number of cores)
+echo   [-st, --nb-session-threads ^<NB_SESSION_THREADS^>]
+echo                                   number of session threads (default: number of cores).
+echo                                   Must be a positive number or the special value 'cores' (number of cores)
+echo   [-pt, --nb-parser-threads ^<NB_PARSER_THREADS^>]
+echo                                   number of parser threads (default: 0).
+echo                                   Must be a positive number or 0 or the special value 'cores' (number of cores)
 echo Server addresses:
 echo   ^<HOSTNAME^>[:^<PORT^>]             server host and optional port. Multiple server addresses can be specified
 
