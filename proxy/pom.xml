@@ -8,7 +8,8 @@
   <name>CLARUS proxy</name>
   <modules>
     <module>common</module>
-    <module>main</module>
+	<module>main</module>
+	<module>modules/access</module>
     <module>modules/anonymization</module>
     <module>plugins/pgsql</module>
   </modules>

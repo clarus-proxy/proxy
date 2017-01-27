@@ -11,7 +11,22 @@
   <artifactId>proxy-module-access</artifactId>
   <name>Access module for the CLARUS proxy</name>
   <dependencies>
-    <dependency>
+	<dependency>
+		<groupId>org.apache.logging.log4j</groupId>
+		<artifactId>log4j-core</artifactId>
+		<version>2.7</version>
+	</dependency>
+	<dependency>
+		<groupId>org.apache.httpcomponents</groupId>
+		<artifactId>httpclient</artifactId>
+		<version>4.5.2</version>
+	</dependency>
+	<dependency>
+		<groupId>org.xerial</groupId>
+		<artifactId>sqlite-jdbc</artifactId>
+		<version>3.15.1</version>
+	</dependency>
+	<dependency>
       <groupId>com.unboundid</groupId>
       <artifactId>unboundid-ldapsdk</artifactId>
       <version>3.2.0</version>

@@ -3,6 +3,8 @@ package eu.clarussecure.proxy.access;
 import java.io.IOException;
 import java.util.Properties;
 
+import org.apache.http.auth.UsernamePasswordCredentials;
+
 import com.unboundid.ldap.sdk.Attribute;
 import com.unboundid.ldap.sdk.LDAPConnection;
 import com.unboundid.ldap.sdk.LDAPException;
@@ -29,6 +31,11 @@ public final class LdapConnector implements ClarusAccess {
 		this.bindDN = p.getProperty("bindDN");
 		this.clarusUser = p.getProperty("clarusUser");
 		this.clarusPass = p.getProperty("clarusPass");
+	}
+
+	@Override
+	public boolean authenticate(UsernamePasswordCredentials cr) {
+		return authenticate(cr.getUserName(), cr.getPassword());
 	}
 
 	@Override
