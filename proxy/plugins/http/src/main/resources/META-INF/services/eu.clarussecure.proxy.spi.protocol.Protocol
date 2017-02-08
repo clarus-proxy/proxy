@@ -1,1 +1,1 @@
-eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlProtocol
+eu.clarussecure.proxy.protocol.plugins.http.HttpProtocol
