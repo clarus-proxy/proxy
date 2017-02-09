@@ -21,6 +21,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageDecoder;
 import io.netty.handler.codec.http.HttpObject;
+import io.netty.util.ReferenceCountUtil;
 
 public abstract class HttpMessageHandler<T extends HttpMessage> extends MessageToMessageDecoder<HttpObject> {
 
@@ -44,7 +45,8 @@ public abstract class HttpMessageHandler<T extends HttpMessage> extends MessageT
 
 	@Override
 	protected void decode(ChannelHandlerContext ctx, HttpObject msg, List<Object> out) throws Exception {
-
+		ReferenceCountUtil.retain(msg);
+		out.add(msg);
 	}
 
 	protected boolean isStreamingSupported(byte type) {

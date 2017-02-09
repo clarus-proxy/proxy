@@ -30,6 +30,8 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
 		// The session initialization handler will be removed while dealing with
 		// the startup message (by the SessionInitializationRequestHandler
 		// running on the frontend side).
+		// pipeline.addLast(parserGroup, "SessionInitializationResponseHandler",
+		// new SessionInitializationResponseHandler());
 		pipeline.addLast(parserGroup, "HttpClientCodec", new HttpClientCodec());
 		pipeline.addLast(parserGroup, "HttpContentDecompressor", new HttpContentDecompressor());
 		pipeline.addLast(parserGroup, "HttpHeaderCodec", new HttpHeaderCodec());

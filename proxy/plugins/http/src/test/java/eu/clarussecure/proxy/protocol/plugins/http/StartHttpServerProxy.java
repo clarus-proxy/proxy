@@ -16,7 +16,8 @@ public class StartHttpServerProxy implements Callable<Void> {
 		HttpProtocol httpProtocol = new HttpProtocol();
 		httpProtocol.getConfiguration().setListenPort(80);
 		httpProtocol.getConfiguration().setServerAddress(InetAddress.getLocalHost());
-		httpProtocol.getConfiguration().setServerEndpoint(new InetSocketAddress(InetAddress.getByName("proxy2.akka.eu"), 9090));
+		httpProtocol.getConfiguration()
+				.setServerEndpoint(new InetSocketAddress(InetAddress.getByName("proxy2.akka.eu"), 9090));
 
 		httpProtocol.getConfiguration().setProcessingMode(true, Operation.CREATE, Mode.AS_IT_IS);
 		httpProtocol.getConfiguration().setProcessingMode(true, Operation.READ, Mode.AS_IT_IS);

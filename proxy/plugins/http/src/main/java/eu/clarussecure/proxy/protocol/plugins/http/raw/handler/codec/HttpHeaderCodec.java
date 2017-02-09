@@ -39,7 +39,6 @@ public class HttpHeaderCodec extends MessageToMessageCodec<HttpRequest, HttpResp
 		rewriteLocationHeader(ctx, headers);
 		ReferenceCountUtil.retain(response);
 		out.add(response);
-		LOGGER.debug(response.toString());
 	}
 
 	@Override
@@ -91,12 +90,12 @@ public class HttpHeaderCodec extends MessageToMessageCodec<HttpRequest, HttpResp
 		String originalUrlString = headers.getAsString(HttpHeaderNames.LOCATION);
 		if (originalUrlString != null && !originalUrlString.isEmpty()) {
 			try {
+				HttpConfiguration config = (HttpConfiguration) ctx.channel().attr(TCPConstants.CONFIGURATION_KEY).get();
 				String hostName = InetAddress.getLocalHost().getHostName();
 				if (this.requestHost != null && !this.requestHost.isEmpty()) {
 					hostName = this.requestHost.split(":")[0];
 				}
 				URL originalURL = new URL(originalUrlString);
-				HttpConfiguration config = (HttpConfiguration) ctx.channel().attr(TCPConstants.CONFIGURATION_KEY).get();
 				headers.remove(HttpHeaderNames.LOCATION);
 				headers.add(HttpHeaderNames.LOCATION,
 						new URL(originalURL.getProtocol(), hostName, config.getListenPort(), originalURL.getFile())
