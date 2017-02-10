@@ -15,7 +15,7 @@ public class SessionInitializationRequestHandler extends HttpMessageHandler<Http
 	public SessionInitializationRequestHandler() {
 		super(HttpSSLRequestMessage.class, HttpStartupMessage.class);
 	}
-
+	
 	@Override
 	protected HttpSessionInitializationRequestMessage process(ChannelHandlerContext ctx,
 			HttpSessionInitializationRequestMessage msg) throws IOException {
@@ -34,7 +34,7 @@ public class SessionInitializationRequestHandler extends HttpMessageHandler<Http
 				// Reply if necessary
 				if (transferMode.getResponse() != null) {
 					LOGGER.trace("Send the SSL response");
-					// Send SSL response to the frontend
+					// Send SSL response to the client
 					sendSSLResponse(ctx, transferMode.getResponse());
 				}
 				// Don't forward the message
@@ -42,7 +42,7 @@ public class SessionInitializationRequestHandler extends HttpMessageHandler<Http
 				newMsg = null;
 				break;
 			case ERROR:
-				// Send error message to the frontend
+				// Send error message to the client
 				LOGGER.trace("Send an error response");
 				// sendErrorResponse(ctx, transferMode.getErrorDetails());
 				newMsg = null;
@@ -62,7 +62,7 @@ public class SessionInitializationRequestHandler extends HttpMessageHandler<Http
 				LOGGER.trace("Forward the start-up message");
 				break;
 			case ORCHESTRATE:
-				// 1: send SSL request to the backend
+				// 1: send SSL request to the server
 				LOGGER.trace("Send the SSL request");
 				sendSSLRequest(ctx, HttpSSLRequestMessage.CODE);
 				// 2: wait for the SSL response
@@ -72,7 +72,7 @@ public class SessionInitializationRequestHandler extends HttpMessageHandler<Http
 				LOGGER.trace("Forward the start-up message");
 				break;
 			case ERROR:
-				// Send error message to the frontend
+				// Send error message to the client
 				LOGGER.trace("Send an error response");
 				// sendErrorResponse(ctx, transferMode.getErrorDetails());
 				newMsg = null;

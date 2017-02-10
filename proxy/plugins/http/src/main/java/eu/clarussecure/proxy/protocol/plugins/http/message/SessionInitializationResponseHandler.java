@@ -16,6 +16,12 @@ public class SessionInitializationResponseHandler extends HttpMessageHandler<Htt
 	public SessionInitializationResponseHandler() {
 		super(HttpSSLResponseMessage.class);
 	}
+	
+	@Override
+    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+	 	getSessionInitializer(ctx).addSSLHandlerOnServerSide(ctx);
+	 	getSessionInitializer(ctx).addSSLHandlerOnClientSide(ctx);
+    }
 
 	@Override
 	protected HttpSessionInitializationResponseMessage process(ChannelHandlerContext ctx,

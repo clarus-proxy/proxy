@@ -27,8 +27,8 @@ public class HttpProtocol extends ProtocolExecutor {
 	}
 
 	@Override
-	protected TCPServer<FrontendSidePipelineInitializer> buildServer() {
-		return new TCPServer<>(getConfiguration(), FrontendSidePipelineInitializer.class);
+	protected TCPServer<HttpClientPipelineInitializer> buildServer() {
+		return new TCPServer<>(getConfiguration(), HttpClientPipelineInitializer.class);
 	}
 
 	@Override

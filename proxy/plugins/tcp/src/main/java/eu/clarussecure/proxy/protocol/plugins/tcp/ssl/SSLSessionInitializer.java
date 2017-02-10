@@ -46,7 +46,7 @@ public class SSLSessionInitializer {
         CLIENT_SSL_MODE = SSLMode.valueOf(clientSSLMode.toUpperCase());
         String serverSSLMode = System.getProperty("tcp.ssl.server", SSLMode.ALLOWED.toString());
         SERVER_SSL_MODE = SSLMode.valueOf(serverSSLMode.toUpperCase());
-        String useSelfSignedCertificate = System.getProperty("tcp.ssl.use.self.signed.certificate", "false");
+        String useSelfSignedCertificate = System.getProperty("tcp.ssl.use.self.signed.certificate", "true");
         USE_SELF_SIGNED_CERTIFICATE = Boolean.TRUE.toString().equalsIgnoreCase(useSelfSignedCertificate)
                 || "1".equalsIgnoreCase(useSelfSignedCertificate) || "yes".equalsIgnoreCase(useSelfSignedCertificate)
                 || "on".equalsIgnoreCase(useSelfSignedCertificate);

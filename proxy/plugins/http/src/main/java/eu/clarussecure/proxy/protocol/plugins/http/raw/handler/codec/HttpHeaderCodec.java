@@ -51,7 +51,7 @@ public class HttpHeaderCodec extends MessageToMessageCodec<HttpRequest, HttpResp
 	}
 
 	/**
-	 * Rewrite Host header according to targeted backend
+	 * Rewrite Host header according to targeted server
 	 * 
 	 * @param headers
 	 */

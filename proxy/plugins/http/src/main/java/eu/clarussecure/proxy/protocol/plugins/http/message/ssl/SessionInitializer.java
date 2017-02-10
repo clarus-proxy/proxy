@@ -29,15 +29,15 @@ public class SessionInitializer {
 	private volatile SSLSessionInitializer sslSessionInitializer;
 	private volatile boolean sslRequestReceived;
 	private volatile boolean sslResponseReceived;
-	private volatile boolean sessionEncryptedOnFrontendSide;
-	private volatile boolean sessionEncryptedOnBackendSide;
+	private volatile boolean sessionEncryptedOnClientSide;
+	private volatile boolean sessionEncryptedOnServerSide;
 
 	public SessionInitializer() {
 		sslSessionInitializer = new SSLSessionInitializer();
 		sslRequestReceived = false;
 		sslResponseReceived = false;
-		sessionEncryptedOnFrontendSide = false;
-		sessionEncryptedOnBackendSide = false;
+		sessionEncryptedOnClientSide = false;
+		sessionEncryptedOnServerSide = false;
 	}
 
 	public SessionMessageTransferMode<Void, Byte> processSSLRequest(ChannelHandlerContext ctx, int code)
@@ -48,29 +48,29 @@ public class SessionInitializer {
 		Map<Byte, CString> errorDetails = null;
 		sslRequestReceived = true;
 		if (sslSessionInitializer.getClientMode() == SSLMode.DISABLED) {
-			// Frontend side: reply SSL is disabled
-			LOGGER.trace("Reply to the frontend that SSL is required");
+			// Client side: reply SSL is disabled
+			LOGGER.trace("Reply to the client that SSL is required");
 			transferMode = TransferMode.ERROR;
 			errorDetails = new LinkedHashMap<>();
 			errorDetails.put((byte) 'S', CString.valueOf("FATAL"));
 			errorDetails.put((byte) 'M', CString.valueOf("SSL is disabled"));
-			// Backend side: don't forward message to the backend
-			LOGGER.trace("SSL request is ignored (due to an error on the frontend side)");
+			// Server side: don't forward message to the server
+			LOGGER.trace("SSL request is ignored (due to an error on the client side)");
 		} else {
-			LOGGER.trace("SSL is allowed or required on the frontend side");
+			LOGGER.trace("SSL is allowed or required on the client side");
 			if (sslSessionInitializer.getServerMode() == SSLMode.DISABLED) {
-				// Frontend side: initialize and add SSL handler in frontend
+				// Client side: initialize and add SSL handler in client
 				// pipeline
-				addSSLHandlerOnFrontendSide(ctx);
+				addSSLHandlerOnClientSide(ctx);
 				// Reply SSL is ok
-				LOGGER.trace("Reply SSL to the frontend");
+				LOGGER.trace("Reply SSL to the client");
 				transferMode = TransferMode.FORGET;
 				response = HttpSSLResponseMessage.CODE_SSL;
-				// Backend side: don't forward message to the backend
-				LOGGER.trace("SSL request is ignored (SSL is disabled on the backend side)");
+				// Server side: don't forward message to the server
+				LOGGER.trace("SSL request is ignored (SSL is disabled on the server side)");
 			} else {
-				// Backend side: forward message to the backend
-				LOGGER.trace("Forward the SSL request (SSL is allowed or required on the backend side)");
+				// Server side: forward message to the server
+				LOGGER.trace("Forward the SSL request (SSL is allowed or required on the server side)");
 			}
 		}
 		SessionMessageTransferMode<Void, Byte> mode = new SessionMessageTransferMode<Void, Byte>(null, transferMode,
@@ -88,35 +88,35 @@ public class SessionInitializer {
 		if (code == HttpSSLResponseMessage.CODE_SSL) {
 			if (sslRequestReceived) {
 				if (sslSessionInitializer.getClientMode() == SSLMode.DISABLED) {
-					LOGGER.trace("SSL is disabled on the frontend side");
-					// Frontend side: modify SSL code
+					LOGGER.trace("SSL is disabled on the client side");
+					// Client side: modify SSL code
 					LOGGER.trace("Modify SSL code to NO_SSL");
 					newCode = HttpSSLResponseMessage.CODE_NO_SSL;
 				} else {
-					// Frontend side: forward message to the frontend
-					LOGGER.trace("Forward the SSL response (SSL was required by the frontend)");
-					// Frontend side: initialize and add SSL handler in frontend
+					// Client side: forward message to the client
+					LOGGER.trace("Forward the SSL response (SSL was required by the client)");
+					// Client side: initialize and add SSL handler in client
 					// pipeline
-					addSSLHandlerOnFrontendSide(ctx);
+					addSSLHandlerOnClientSide(ctx);
 				}
 			} else {
-				// Frontend side: don't forward message to the frontend
-				LOGGER.trace("SSL response is ignored (frontend did not request SSL)");
+				// Client side: don't forward message to the client
+				LOGGER.trace("SSL response is ignored (client did not request SSL)");
 				transferMode = TransferMode.FORGET;
-				// Backend side: remove the SSLInitializationHandler
+				// Server side: remove the SSLInitializationHandler
 				removeSessionInitializationResponseHandler(ctx);
 			}
-			// Initialize and add SSL handler in backend pipeline
-			addSSLHandlerOnBackendSide(ctx);
+			// Initialize and add SSL handler in server pipeline
+			addSSLHandlerOnServerSide(ctx);
 		} else if (code == HttpSSLResponseMessage.CODE_NO_SSL) {
 			if (sslRequestReceived) {
-				// Frontend side: forward message to the frontend
-				LOGGER.trace("Forward the SSL response (SSL was required by the frontend)");
+				// Client side: forward message to the client
+				LOGGER.trace("Forward the SSL response (SSL was required by the client)");
 			} else {
-				// Frontend side: don't forward message to the frontend
-				LOGGER.trace("SSL response is ignored (frontend did not request SSL)");
+				// Client side: don't forward message to the client
+				LOGGER.trace("SSL response is ignored (client did not request SSL)");
 				transferMode = TransferMode.FORGET;
-				// Backend side: remove the SSLInitializationHandler
+				// Server side: remove the SSLInitializationHandler
 				removeSessionInitializationResponseHandler(ctx);
 			}
 		}
@@ -135,44 +135,44 @@ public class SessionInitializer {
 		Map<Byte, CString> errorDetails = null;
 		if (sslRequestReceived) {
 			LOGGER.trace("Session initialization completed");
-			// Frontend side: nothing todo
-			LOGGER.trace("Session {} on the frontend side",
-					sessionEncryptedOnFrontendSide ? "encrypted with SSL" : "not encrypted");
-			// Backend side: nothing todo
-			LOGGER.trace("Session {} on the backend side",
-					sessionEncryptedOnBackendSide ? "encrypted with SSL" : "not encrypted");
+			// Client side: nothing todo
+			LOGGER.trace("Session {} on the client side",
+					sessionEncryptedOnClientSide ? "encrypted with SSL" : "not encrypted");
+			// Server side: nothing todo
+			LOGGER.trace("Session {} on the server side",
+					sessionEncryptedOnServerSide ? "encrypted with SSL" : "not encrypted");
 		} else {
 			if (sslSessionInitializer.getClientMode() == SSLMode.REQUIRED) {
-				// Frontend side: reply SSL is required
-				LOGGER.trace("Reply to the frontend that SSL is required");
+				// Client side: reply SSL is required
+				LOGGER.trace("Reply to the client that SSL is required");
 				transferMode = TransferMode.ERROR;
 				errorDetails = new LinkedHashMap<>();
 				errorDetails.put((byte) 'S', CString.valueOf("FATAL"));
 				errorDetails.put((byte) 'M', CString.valueOf("SSL is required"));
-				// Backend side: don't forward message to the backend
-				LOGGER.trace("SSL request is ignored (due to an error on the frontend side)");
+				// Server side: don't forward message to the server
+				LOGGER.trace("SSL request is ignored (due to an error on the client side)");
 			} else {
-				// Backend side: sent SSL request if SSL is required
+				// Server side: sent SSL request if SSL is required
 				if (sslSessionInitializer.getServerMode() == SSLMode.REQUIRED) {
-					LOGGER.trace("Handle SSL initialization with the backend");
+					LOGGER.trace("Handle SSL initialization with the server");
 					transferMode = TransferMode.ORCHESTRATE;
 				} else {
 					LOGGER.trace("Session initialization completed");
-					// Frontend side: nothing todo
-					LOGGER.trace("Session {} on the frontend side",
-							sessionEncryptedOnFrontendSide ? "encrypted with SSL" : "not encrypted");
-					// Backend side: nothing todo
-					LOGGER.trace("Session {} on the backend side",
-							sessionEncryptedOnBackendSide ? "encrypted with SSL" : "not encrypted");
+					// Client side: nothing todo
+					LOGGER.trace("Session {} on the client side",
+							sessionEncryptedOnClientSide ? "encrypted with SSL" : "not encrypted");
+					// Server side: nothing todo
+					LOGGER.trace("Session {} on the server side",
+							sessionEncryptedOnServerSide ? "encrypted with SSL" : "not encrypted");
 				}
 			}
 		}
-		// Remove SSLInitializationHandler on the frontend side
+		// Remove SSLInitializationHandler on the client side
 		removeSessionInitializationRequestHandler(ctx);
 		if (transferMode != TransferMode.ORCHESTRATE) {
-			// Remove SSLInitializationHandler on the backend side
+			// Remove SSLInitializationHandler on the server side
 			removeSessionInitializationResponseHandler(ctx);
-			// Configure HttpRawPartCodec to skip SSL response on the backend
+			// Configure HttpRawPartCodec to skip SSL response on the server
 			skipSSLResponse(ctx);
 		}
 		SessionMessageTransferMode<Void, Void> mode = new SessionMessageTransferMode<>(null, transferMode,
@@ -193,27 +193,27 @@ public class SessionInitializer {
 		}
 	}
 
-	private void addSSLHandlerOnFrontendSide(ChannelHandlerContext ctx) throws IOException {
+	public void addSSLHandlerOnClientSide(ChannelHandlerContext ctx) throws IOException {
 		Future<Channel> handshakeFuture = sslSessionInitializer.addSSLHandlerOnClientSide(ctx,
-				getPsqlSession(ctx).getClientSideChannel().pipeline());
+				getHttpSession(ctx).getClientSideChannel().pipeline());
 		handshakeFuture.addListener(new GenericFutureListener<Future<? super Channel>>() {
 
 			@Override
 			public void operationComplete(Future<? super Channel> future) throws Exception {
-				sessionEncryptedOnFrontendSide = true;
-				LOGGER.trace("SSL handshake for frontend side completed");
+				sessionEncryptedOnClientSide = true;
+				LOGGER.trace("SSL handshake for client side completed");
 			}
 		});
 	}
 
-	private void addSSLHandlerOnBackendSide(ChannelHandlerContext ctx) throws SSLException {
+	public void addSSLHandlerOnServerSide(ChannelHandlerContext ctx) throws SSLException {
 		Future<Channel> handshakeFuture = sslSessionInitializer.addSSLHandlerOnServerSide(ctx);
 		handshakeFuture.addListener(new GenericFutureListener<Future<? super Channel>>() {
 
 			@Override
 			public void operationComplete(Future<? super Channel> future) throws Exception {
-				sessionEncryptedOnBackendSide = true;
-				LOGGER.trace("SSL handshake for backend side completed");
+				sessionEncryptedOnServerSide = true;
+				LOGGER.trace("SSL handshake for server side completed");
 			}
 		});
 	}
@@ -227,7 +227,7 @@ public class SessionInitializer {
 	}
 
 	private void removeSessionInitializationResponseHandler(ChannelHandlerContext ctx) {
-		ChannelPipeline pipeline = getPsqlSession(ctx).getServerSideChannel().pipeline();
+		ChannelPipeline pipeline = getHttpSession(ctx).getServerSideChannel().pipeline();
 		ChannelHandler handler = pipeline.get("SessionInitializationResponseHandler");
 		if (handler != null) {
 			pipeline.remove(handler);
@@ -235,14 +235,14 @@ public class SessionInitializer {
 	}
 
 	private void skipSSLResponse(ChannelHandlerContext ctx) {
-		ChannelPipeline pipeline = getPsqlSession(ctx).getServerSideChannel().pipeline();
+		ChannelPipeline pipeline = getHttpSession(ctx).getServerSideChannel().pipeline();
 		HttpClientCodec codec = (HttpClientCodec) pipeline.get("HttpClientCodec");
-		// codec.skipFirstMessages();
+		//codec.skipFirstMessages();
 	}
 
-	private HttpSession getPsqlSession(ChannelHandlerContext ctx) {
-		HttpSession pgsqlSession = (HttpSession) ctx.channel().attr(TCPConstants.SESSION_KEY).get();
-		return pgsqlSession;
+	private HttpSession getHttpSession(ChannelHandlerContext ctx) {
+		HttpSession httpSession = (HttpSession) ctx.channel().attr(TCPConstants.SESSION_KEY).get();
+		return httpSession;
 	}
 
 }

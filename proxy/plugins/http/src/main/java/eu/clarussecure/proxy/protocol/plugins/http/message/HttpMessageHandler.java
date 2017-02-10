@@ -20,7 +20,9 @@ import eu.clarussecure.proxy.spi.buffer.MutableByteBufInputStream;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageDecoder;
+import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpObject;
+import io.netty.handler.codec.http.HttpRequest;
 import io.netty.util.ReferenceCountUtil;
 
 public abstract class HttpMessageHandler<T extends HttpMessage> extends MessageToMessageDecoder<HttpObject> {
@@ -157,8 +159,8 @@ public abstract class HttpMessageHandler<T extends HttpMessage> extends MessageT
 	}
 
 	protected HttpSession getHttpSession(ChannelHandlerContext ctx) {
-		HttpSession pgsqlSession = (HttpSession) ctx.channel().attr(TCPConstants.SESSION_KEY).get();
-		return pgsqlSession;
+		HttpSession httpSession = (HttpSession) ctx.channel().attr(TCPConstants.SESSION_KEY).get();
+		return httpSession;
 	}
 
 	protected <M extends HttpMessage> void sendResponse(ChannelHandlerContext ctx, M msg) throws IOException {
