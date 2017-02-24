@@ -16,7 +16,7 @@ public class HttpConfiguration extends Configuration {
 	private static final String PROTOCOL_NAME = "HTTP/1.1";
 	
 	/** The Constant DEFAULT_PROTOCOL_PORT. */
-	private static final int DEFAULT_PROTOCOL_PORT = 443;
+	private static final int DEFAULT_PROTOCOL_PORT = 80;
 	
 	/** The Constant DEFAULT_CLIENT_SSL_PORT. */
 	private static final int DEFAULT_CLIENT_SSL_PORT = 443;
