@@ -1,3 +1,6 @@
+/*
+ * 
+ */
 package eu.clarussecure.proxy.protocol.plugins.http;
 
 import eu.clarussecure.proxy.protocol.plugins.http.message.SessionInitializationResponseHandler;
@@ -13,25 +16,30 @@ import io.netty.handler.codec.http.HttpContentDecompressor;
 import io.netty.util.concurrent.DefaultEventExecutorGroup;
 import io.netty.util.concurrent.EventExecutorGroup;
 
+// TODO: Auto-generated Javadoc
+/**
+ * The Class HttpServerPipelineInitializer.
+ */
 public class HttpServerPipelineInitializer extends ChannelInitializer<Channel> {
 
+	/**
+	 * Instantiates a new http server pipeline initializer.
+	 */
 	public HttpServerPipelineInitializer() {
 		super();
 	}
 
+	/* (non-Javadoc)
+	 * @see io.netty.channel.ChannelInitializer#initChannel(io.netty.channel.Channel)
+	 */
 	@Override
 	protected void initChannel(Channel ch) throws Exception {
 		Configuration configuration = ch.attr(TCPConstants.CONFIGURATION_KEY).get();
 		ChannelPipeline pipeline = ch.pipeline();
 
 		EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
-		// Session initialization consists of dealing with optional
-		// initialization of SSL encryption: a specific SSL handler will be
-		// added as first handler in the pipeline if necessary
-		// The session initialization handler will be removed while dealing with
-		// the startup message (by the SessionInitializationRequestHandler
-		// running on the client side).
-		pipeline.addLast(parserGroup, "SessionInitializationResponseHandler", new SessionInitializationResponseHandler());
+		pipeline.addLast(parserGroup, "SessionInitializationResponseHandler",
+				new SessionInitializationResponseHandler());
 		pipeline.addLast(parserGroup, "HttpClientCodec", new HttpClientCodec());
 		pipeline.addLast(parserGroup, "HttpContentDecompressor", new HttpContentDecompressor());
 		pipeline.addLast(parserGroup, "HttpHeaderCodec", new HttpHeaderCodec());

@@ -17,12 +17,12 @@ import io.netty.util.ReferenceCountUtil;
 
 // TODO: Auto-generated Javadoc
 /**
- * The Class HttpMessageRequestHandler.
+ * The Class HttpMessageResponseHandler.
  */
-public abstract class HttpMessageRequestHandler extends HttpMessageHandler {
+public abstract class HttpMessageResponseHandler extends HttpMessageHandler {
 
 	/** The Constant LOGGER. */
-	private static final Logger LOGGER = LoggerFactory.getLogger(HttpMessageRequestHandler.class);
+	private static final Logger LOGGER = LoggerFactory.getLogger(HttpMessageResponseHandler.class);
 
 	/* (non-Javadoc)
 	 * @see io.netty.handler.codec.MessageToMessageDecoder#decode(io.netty.channel.ChannelHandlerContext, java.lang.Object, java.util.List)
@@ -40,8 +40,8 @@ public abstract class HttpMessageRequestHandler extends HttpMessageHandler {
 	public void channelActive(ChannelHandlerContext ctx) throws Exception {
 		HttpConfiguration configuration = getConfiguration(ctx);
 		HttpSession httpSession = getHttpSession(ctx);
-		if (httpSession != null && configuration.isClientSSLMode() && httpSession.getSessionInitializer().hasClientSideSSLHandler() == false) {
-			getHttpSession(ctx).getSessionInitializer().addSSLHandlerOnClientSide(ctx);
+		if (httpSession != null && configuration.isServerSSLMode() &&  httpSession.getSessionInitializer().hasServerSideSSLHandler() == false) {
+			getHttpSession(ctx).getSessionInitializer().addSSLHandlerOnServerSide(ctx);
 		}
 		super.channelActive(ctx);
 	}

@@ -19,7 +19,7 @@ public class TCPConfiguration extends Configuration {
     }
 
     @Override
-    public int getDefaultListenPort() {
+    public int getDefaultProtocolPort() {
         return DEFAULT_LISTEN_PORT;
     }
 

@@ -1,3 +1,6 @@
+/*
+ * 
+ */
 package eu.clarussecure.proxy.protocol.plugins.http;
 
 import java.nio.charset.Charset;
@@ -6,8 +9,18 @@ import eu.clarussecure.proxy.spi.CString;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.ByteProcessor;
 
+// TODO: Auto-generated Javadoc
+/**
+ * The Class HttpUtilities.
+ */
 public class HttpUtilities {
 
+	/**
+	 * Gets the c string.
+	 *
+	 * @param buffer the buffer
+	 * @return the c string
+	 */
 	public static CString getCString(ByteBuf buffer) {
 		CString str = null;
 
@@ -20,10 +33,22 @@ public class HttpUtilities {
 		return str;
 	}
 
+	/**
+	 * Compute length.
+	 *
+	 * @param str the str
+	 * @return the int
+	 */
 	public static int computeLength(CharSequence str) {
 		return (str != null ? str.length() : 0) + 1;
 	}
 
+	/**
+	 * Put string.
+	 *
+	 * @param byteBuf the byte buf
+	 * @param str the str
+	 */
 	public static void putString(ByteBuf byteBuf, CharSequence str) {
 		if (str != null) {
 			byteBuf.writeCharSequence(str, Charset.forName("ISO-8859-1"));
@@ -31,6 +56,12 @@ public class HttpUtilities {
 		byteBuf.writeByte((byte) 0);
 	}
 
+	/**
+	 * To string.
+	 *
+	 * @param byteBuf the byte buf
+	 * @return the string
+	 */
 	public static String toString(ByteBuf byteBuf) {
 		if (byteBuf == null) {
 			return "";
