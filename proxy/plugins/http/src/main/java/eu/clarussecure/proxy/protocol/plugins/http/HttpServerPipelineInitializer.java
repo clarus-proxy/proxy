@@ -4,8 +4,8 @@
 package eu.clarussecure.proxy.protocol.plugins.http;
 
 import eu.clarussecure.proxy.protocol.plugins.http.message.SessionInitializationResponseHandler;
-import eu.clarussecure.proxy.protocol.plugins.http.raw.handler.codec.HttpHeaderCodec;
-import eu.clarussecure.proxy.protocol.plugins.http.raw.handler.forwarder.HttpResponseForwarder;
+import eu.clarussecure.proxy.protocol.plugins.http.handler.codec.HttpHeaderCodec;
+import eu.clarussecure.proxy.protocol.plugins.http.handler.forwarder.HttpResponseForwarder;
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
 import eu.clarussecure.proxy.spi.protocol.Configuration;
 import io.netty.channel.Channel;

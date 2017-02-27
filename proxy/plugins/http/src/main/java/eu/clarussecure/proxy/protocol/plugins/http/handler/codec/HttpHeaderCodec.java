@@ -1,7 +1,7 @@
 /*
  * 
  */
-package eu.clarussecure.proxy.protocol.plugins.http.raw.handler.codec;
+package eu.clarussecure.proxy.protocol.plugins.http.handler.codec;
 
 import java.net.InetAddress;
 import java.net.MalformedURLException;

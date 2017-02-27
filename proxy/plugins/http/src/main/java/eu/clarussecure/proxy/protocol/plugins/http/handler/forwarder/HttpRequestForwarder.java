@@ -1,7 +1,7 @@
 /*
  * 
  */
-package eu.clarussecure.proxy.protocol.plugins.http.raw.handler.forwarder;
+package eu.clarussecure.proxy.protocol.plugins.http.handler.forwarder;
 
 import eu.clarussecure.proxy.protocol.plugins.http.HttpServerPipelineInitializer;
 import eu.clarussecure.proxy.protocol.plugins.http.HttpSession;

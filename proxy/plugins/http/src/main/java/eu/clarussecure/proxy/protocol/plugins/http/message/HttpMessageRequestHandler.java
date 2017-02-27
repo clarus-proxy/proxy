@@ -29,6 +29,7 @@ public abstract class HttpMessageRequestHandler extends HttpMessageHandler {
 	 */
 	@Override
 	protected void decode(ChannelHandlerContext ctx, HttpObject msg, List<Object> out) throws Exception {
+		LOGGER.debug("Decoding request message...");
 		ReferenceCountUtil.retain(msg);
 		out.add(msg);
 	}
@@ -42,8 +43,10 @@ public abstract class HttpMessageRequestHandler extends HttpMessageHandler {
 		HttpSession httpSession = getHttpSession(ctx);
 		if (httpSession != null && configuration.isClientSSLMode() && httpSession.getSessionInitializer().hasClientSideSSLHandler() == false) {
 			getHttpSession(ctx).getSessionInitializer().addSSLHandlerOnClientSide(ctx);
+			LOGGER.debug("Handler has been set on client side.");
 		}
 		super.channelActive(ctx);
+		LOGGER.debug("Channel '" + ctx.name() + "' is active.");
 	}
 	
 }
