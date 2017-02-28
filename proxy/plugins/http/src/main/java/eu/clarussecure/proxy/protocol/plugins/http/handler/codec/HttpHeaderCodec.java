@@ -55,7 +55,7 @@ public class HttpHeaderCodec extends MessageToMessageCodec<HttpRequest, HttpResp
 	 */
 	@Override
 	protected void encode(ChannelHandlerContext ctx, HttpResponse response, List<Object> out) throws Exception {
-		rewriteLocationHeader(ctx, response);
+		//rewriteLocationHeader(ctx, response);
 		ReferenceCountUtil.retain(response);
 		out.add(response);
 	}
@@ -67,10 +67,11 @@ public class HttpHeaderCodec extends MessageToMessageCodec<HttpRequest, HttpResp
 	protected void decode(ChannelHandlerContext ctx, HttpRequest request, List<Object> out) throws Exception {
 		if (request.method().equals(HttpMethod.CONNECT)) {
 			HttpResponse response = new DefaultHttpResponse(request.protocolVersion(), HttpResponseStatus.OK);
-			ctx.pipeline().writeAndFlush(response);
-		} else {
-			rewriteHostHeader(ctx, request);
-			removeSDCHEncoding(request);
+			HttpSession httpSession = (HttpSession) ctx.channel().attr(TCPConstants.SESSION_KEY).get();
+			httpSession.getClientSideChannel().writeAndFlush(response);
+		}else{
+			//rewriteHostHeader(ctx, request);
+			//removeSDCHEncoding(request);
 			ReferenceCountUtil.retain(request);
 			out.add(request);
 		}

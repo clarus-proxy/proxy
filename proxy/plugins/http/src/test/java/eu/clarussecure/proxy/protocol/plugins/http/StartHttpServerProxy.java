@@ -4,7 +4,6 @@
 package eu.clarussecure.proxy.protocol.plugins.http;
 
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.util.concurrent.Callable;
 
 import eu.clarussecure.proxy.spi.Mode;
@@ -31,7 +30,7 @@ public class StartHttpServerProxy implements Callable<Void> {
 		HttpProtocol httpProtocol = new HttpProtocol();
 		httpProtocol.getConfiguration().setListenPort(9090);
 		httpProtocol.getConfiguration().setServerAddress(InetAddress.getLocalHost());
-		httpProtocol.getConfiguration().setServerEndpoint(new InetSocketAddress("proxy10.akka.eu", 9090));
+		//httpProtocol.getConfiguration().setServerEndpoint(new InetSocketAddress("proxy10.akka.eu", 9090));
 		
 		
 		httpProtocol.getConfiguration().setProcessingMode(true, Operation.CREATE, Mode.AS_IT_IS);

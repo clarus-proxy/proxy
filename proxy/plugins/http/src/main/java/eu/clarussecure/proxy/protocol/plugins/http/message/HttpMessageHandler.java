@@ -21,6 +21,20 @@ import io.netty.util.ReferenceCountUtil;
  */
 public abstract class HttpMessageHandler extends MessageToMessageDecoder<HttpObject> {
 
+	/** The Constant LOGGER. */
+	private static final Logger LOGGER = LoggerFactory.getLogger(HttpMessageHandler.class);
+	
+	/* (non-Javadoc)
+	 * @see io.netty.handler.codec.MessageToMessageDecoder#decode(io.netty.channel.ChannelHandlerContext, java.lang.Object, java.util.List)
+	 */
+	@Override
+	protected void decode(ChannelHandlerContext ctx, HttpObject msg, List<Object> out) throws Exception {
+		LOGGER.debug("Decoding request message...");
+		ReferenceCountUtil.retain(msg);
+		out.add(msg);
+	}
+
+	
 	/**
 	 * Gets the http session.
 	 *
