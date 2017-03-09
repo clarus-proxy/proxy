@@ -72,6 +72,7 @@ public class SQLSession {
     private Operation currentCommandOperation;
     private Promise promise;
     private boolean resultProcessingEnabled = true;
+    private Map<CString, List<CString>> datasetDefinitions;
     private List<CString> involvedCSPs;
     private List<CString> dataIds;
     private TransferMode transferMode;
@@ -207,6 +208,35 @@ public class SQLSession {
 
     public void setResultProcessingEnabled(boolean resultProcessingEnabled) {
         this.resultProcessingEnabled = resultProcessingEnabled;
+    }
+
+    public Map<CString, List<CString>> getDatasetDefinitions() {
+        if (datasetDefinitions == null) {
+            datasetDefinitions = Collections.synchronizedMap(new HashMap<>());
+        }
+        return datasetDefinitions;
+    }
+
+    public void setDatasetDefinitions(Map<CString, List<CString>> datasetDefinitions) {
+        this.datasetDefinitions = datasetDefinitions;
+    }
+
+    public void addDatasetDefinition(CString datasetId, List<CString> dataIds) {
+        getDatasetDefinitions().put(datasetId, dataIds);
+    }
+
+    public void removeDatasetDefinition(CString datasetId) {
+        getDatasetDefinitions().remove(datasetId);
+    }
+
+    public void resetDatasetDefinition() {
+        if (datasetDefinitions != null) {
+            datasetDefinitions.clear();
+        }
+    }
+
+    public List<CString> getDatasetDefinition(CString datasetId) {
+        return getDatasetDefinitions().get(datasetId);
     }
 
     public List<CString> getInvolvedCSPs() {

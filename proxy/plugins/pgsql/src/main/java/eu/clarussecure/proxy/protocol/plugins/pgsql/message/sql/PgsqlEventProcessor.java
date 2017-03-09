@@ -58,6 +58,8 @@ import net.sf.jsqlparser.parser.TokenMgrError;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.Statement;
+import net.sf.jsqlparser.statement.create.table.ColumnDefinition;
+import net.sf.jsqlparser.statement.create.table.CreateTable;
 import net.sf.jsqlparser.statement.delete.Delete;
 import net.sf.jsqlparser.statement.insert.Insert;
 import net.sf.jsqlparser.statement.select.AllColumns;
@@ -604,7 +606,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                 ModuleOperation moduleOperation = null;
                 // Extract data operation
                 try {
-                    if (stmt instanceof Insert) {
+                    if (stmt instanceof CreateTable) {
+                        moduleOperation = extractCreateTableOperation(ctx, (CreateTable) stmt);
+                    } else if (stmt instanceof Insert) {
                         moduleOperation = extractInsertOperation(ctx, (Insert) stmt, parameterValues, dataOperation);
                     } else if (stmt instanceof Select) {
                         moduleOperation = extractSelectOperation(ctx, (Select) stmt, parameterValues);
@@ -752,7 +756,9 @@ public class PgsqlEventProcessor implements EventProcessor {
         // Extract module operation
         ModuleOperation moduleOperation = null;
         try {
-            if (stmt instanceof Insert) {
+            if (stmt instanceof CreateTable) {
+                moduleOperation = extractCreateTableOperation(ctx, (CreateTable) stmt);
+            } else if (stmt instanceof Insert) {
                 moduleOperation = extractInsertOperation(ctx, (Insert) stmt, null, null);
             } else if (stmt instanceof Select) {
                 moduleOperation = extractSelectOperation(ctx, (Select) stmt, null);
@@ -846,6 +852,31 @@ public class PgsqlEventProcessor implements EventProcessor {
         return result;
     }
 
+    private DataOperation extractCreateTableOperation(ChannelHandlerContext ctx, CreateTable stmt)
+            throws ParseException {
+        // TODO not yet supported. We just extract table definition
+        // Extract dataset id
+        String schemaId = getSchemaId(ctx, stmt.getTable());
+        String datasetId = getDatasetId(ctx, stmt.getTable(), schemaId);
+        // Extract data ids
+        List<CString> dataIds;
+        dataIds = stmt.getColumnDefinitions().stream()
+                // get column name
+                .map(ColumnDefinition::getColumnName)
+                // unquote string
+                .map(StringUtilities::unquote)
+                // build dataId
+                .map(cn -> datasetId + cn)
+                // transform to CString
+                .map(CString::valueOf)
+                // build a list
+                .collect(Collectors.toList());
+        // TODO modification not yet supported. We just extract table definition
+        SQLSession session = getSession(ctx);
+        session.addDatasetDefinition(CString.valueOf(datasetId), dataIds);
+        return null;
+    }
+
     private DataOperation extractInsertOperation(ChannelHandlerContext ctx, Insert stmt,
             List<ParameterValue> parameterValues, DataOperation dataOperation) throws ParseException {
         if (dataOperation == null) {
@@ -857,10 +888,14 @@ public class PgsqlEventProcessor implements EventProcessor {
             // Extract data ids
             List<CString> dataIds;
             if (stmt.getColumns() == null) {
-                dataIds = Collections.emptyList();
-                MetadataOperation metadataOperation = new MetadataOperation();
-                metadataOperation.addDataId(CString.valueOf(datasetId + "*"));
-                dataIds = newMetaDataOperation(ctx, metadataOperation).getDataIds();
+                SQLSession session = getSession(ctx);
+                dataIds = session.getDatasetDefinition(CString.valueOf(datasetId));
+                if (dataIds == null) {
+                    dataIds = Collections.emptyList();
+                    MetadataOperation metadataOperation = new MetadataOperation();
+                    metadataOperation.addDataId(CString.valueOf(datasetId + "*"));
+                    dataIds = newMetaDataOperation(ctx, metadataOperation).getDataIds();
+                }
             } else {
                 dataIds = stmt.getColumns().stream().map(Column::getColumnName) // get column name
                         .map(StringUtilities::unquote) // unquote string
@@ -904,9 +939,9 @@ public class PgsqlEventProcessor implements EventProcessor {
 
     private void modifyInsertStatement(ChannelHandlerContext ctx, Insert stmt, List<ParameterValue> parameterValues,
             DataOperation dataOperation, int row) {
-        List<CString> dataValues = dataOperation.getDataValues().get(row);
         if (stmt.getItemsList() instanceof ExpressionList) {
             final List<Expression> expressions = ((ExpressionList) stmt.getItemsList()).getExpressions();
+            List<CString> dataValues = dataOperation.getDataValues().get(row);
             for (int i = 0; i < dataValues.size(); i++) {
                 Expression expression = expressions.get(i);
                 if (!(expression instanceof NullValue)) {
@@ -928,7 +963,31 @@ public class PgsqlEventProcessor implements EventProcessor {
                 }
             }
         } else if (stmt.getItemsList() instanceof MultiExpressionList) {
-            // TODO more complex insert statement
+            final List<ExpressionList> expressionLists = ((MultiExpressionList) stmt.getItemsList()).getExprList();
+            for (ExpressionList expressionList : expressionLists) {
+                final List<Expression> expressions = expressionList.getExpressions();
+                List<CString> dataValues = dataOperation.getDataValues().get(row ++);
+                for (int i = 0; i < dataValues.size(); i++) {
+                    Expression expression = expressions.get(i);
+                    if (!(expression instanceof NullValue)) {
+                        String strValue = expression.toString();
+                        if (strValue.charAt(0) == '$') {
+                            // modify parameter
+                            if (parameterValues != null) {
+                                int paramIndex = Integer.parseInt(strValue.substring(1)) - 1; // get the parameter index
+                                ParameterValue parameterValue = parameterValues.get(paramIndex); // get the parameter value
+                                ByteBuf value = convertToByteBuf(parameterValue.getType(), // convert string to ByteBuf
+                                        parameterValue.getFormat(), dataValues.get(i));
+                                // modify parameter value
+                                parameterValue.setValue(value);
+                            }
+                        } else {
+                            // modify expression
+                            expressions.set(i, new StringValue(dataValues.get(i).toString()));
+                        }
+                    }
+                }
+            }
         } else if (stmt.getItemsList() instanceof SubSelect) {
             // TODO more complex insert statement
         }
@@ -1086,7 +1145,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (table != null && table.getDatabase() != null) {
             String databaseName = StringUtilities.unquote(table.getDatabase().getDatabaseName());
             if (databaseName != null && !databaseName.isEmpty()) {
-                sb.append(databaseName);
+                sb.append(databaseName.toLowerCase());
             }
         }
         if (sb.length() == 0) {
@@ -1102,7 +1161,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (table != null) {
             String schemaName = StringUtilities.unquote(table.getSchemaName());
             if (schemaName != null) {
-                sb.append(schemaName).append('.');
+                sb.append(schemaName.toLowerCase()).append('.');
             }
         }
         String schemaId = sb.toString();
@@ -1113,7 +1172,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         StringBuilder sb = new StringBuilder();
         if (table != null) {
             String tableName = StringUtilities.unquote(table.getName());
-            sb.append(schemaId).append(tableName);
+            sb.append(schemaId).append(tableName.toLowerCase());
         }
         if (sb.length() == 0) {
             sb.append(schemaId).append('*');
@@ -1675,7 +1734,9 @@ public class PgsqlEventProcessor implements EventProcessor {
             // Extract module operation
             ModuleOperation moduleOperation = null;
             try {
-                if (stmt instanceof Insert) {
+                if (stmt instanceof CreateTable) {
+                    moduleOperation = extractCreateTableOperation(ctx, (CreateTable) stmt);
+                } else if (stmt instanceof Insert) {
                     moduleOperation = extractInsertOperation(ctx, (Insert) stmt, parameterValues, null);
                 } else if (stmt instanceof Select) {
                     moduleOperation = extractSelectOperation(ctx, (Select) stmt, parameterValues);
