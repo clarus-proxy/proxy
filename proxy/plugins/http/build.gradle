@@ -1,0 +1,28 @@
+description = 'PostgreSQL protocol plugin for the CLARUS proxy'
+
+dependencies {
+    repositories {
+        maven {
+            url "https://oss.sonatype.org/content/groups/public/"
+        }
+    }
+
+    // CLARUS
+    compile project(':proxy-common')
+    compile project(':proxy-plugin-tcp')
+
+    // Transport
+    compile group: 'io.netty', name: 'netty-all', version: '4.1.4.Final'
+
+    // https://mvnrepository.com/artifact/io.netty/netty-tcnative-boringssl-static
+    //compile group: 'io.netty', name: 'netty-tcnative-boringssl-static', version: '1.1.33.Fork24'
+
+    // JSqlParser
+    compile group: 'com.github.jsqlparser', name: 'jsqlparser', version: '0.9.6-CLARUS-SNAPSHOT'
+
+    // Commons Apache
+    compile group: 'org.apache.commons', name: 'commons-lang3', version: '3.0'
+
+    // PostgreSQL
+    testCompile group: 'postgresql', name: 'postgresql', version: '9.1-901-1.jdbc4'
+}

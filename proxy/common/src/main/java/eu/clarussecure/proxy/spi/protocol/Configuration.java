@@ -20,11 +20,11 @@ public abstract class Configuration implements Configurable {
     public static final int DEFAULT_NB_OF_PARSER_THREADS = 0;
 
     public static final int DEFAULT_FRAME_PART_MAX_LENGTH = Integer.MAX_VALUE;
-
+    
     protected final ProtocolCapabilities capabilities;
 
     protected int listenPort;
-
+    
     protected Set<InetSocketAddress> serverEndpoints;
 
     protected int nbListenThreads = DEFAULT_NB_OF_LISTEN_THREADS;
@@ -48,9 +48,9 @@ public abstract class Configuration implements Configurable {
 
     @Override
     public int getListenPort() {
-        return listenPort != 0 ? listenPort : getDefaultListenPort();
+        return listenPort != 0 ? listenPort : getDefaultProtocolPort();
     }
-
+        
     @Override
     public void setListenPort(int listenPort) {
         this.listenPort = listenPort;
@@ -74,7 +74,7 @@ public abstract class Configuration implements Configurable {
 
     @Override
     public void setServerAddress(InetAddress serverAddress) {
-        serverEndpoints = Collections.singleton(new InetSocketAddress(serverAddress, getDefaultListenPort()));
+        serverEndpoints = Collections.singleton(new InetSocketAddress(serverAddress, getDefaultProtocolPort()));
     }
 
     @Override
@@ -84,7 +84,7 @@ public abstract class Configuration implements Configurable {
 
     @Override
     public void setServerAddresses(Set<InetAddress> serverAddresses) {
-        serverAddresses.stream().map(serverAddress -> new InetSocketAddress(serverAddress, getDefaultListenPort()))
+        serverAddresses.stream().map(serverAddress -> new InetSocketAddress(serverAddress, getDefaultProtocolPort()))
                 .collect(Collectors.toSet());
     }
 

@@ -11,7 +11,7 @@ public interface Configurable {
 
     String getProtocolName();
 
-    int getDefaultListenPort();
+    int getDefaultProtocolPort();
 
     int getListenPort();
 

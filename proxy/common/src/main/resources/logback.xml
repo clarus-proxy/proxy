@@ -18,7 +18,7 @@
         </encoder>
     </appender>
  -->
-    <logger name="eu.clarussecure.proxy" level="INFO" />
+    <logger name="eu.clarussecure.proxy" level="TRACE" />
 <!-- <logger name="eu.clarussecure.proxy.protocol.plugins.pgsql" level="DEBUG" /> -->
 <!-- <logger name="eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.forwarder" level="TRACE" /> -->
 <!-- <logger name="eu.clarussecure.proxy.protocol.plugins.tcp.handler.forwarder" level="TRACE" /> -->
