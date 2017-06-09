@@ -8,13 +8,17 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.SortedMap;
+import java.util.SortedSet;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -30,10 +34,18 @@ import io.netty.util.ReferenceCounted;
 public class SQLSession {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SQLSession.class);
-    private static boolean FORCE_LEAK_DETECTION;
+    private static final boolean FORCE_LEAK_DETECTION;
     static {
         String leakDetectionLevel = System.getProperty("io.netty.leakDetectionLevel", "SIMPLE");
         FORCE_LEAK_DETECTION = "PARANOID".equalsIgnoreCase(leakDetectionLevel);
+    }
+
+    private static final boolean CHECK_BUFFER_REFERENCE_COUNT;
+    static {
+        String bufferCheckReferenceCount = System.getProperty("buffer.check.reference.count", "false");
+        CHECK_BUFFER_REFERENCE_COUNT = Boolean.TRUE.toString().equalsIgnoreCase(bufferCheckReferenceCount)
+                || "1".equalsIgnoreCase(bufferCheckReferenceCount) || "yes".equalsIgnoreCase(bufferCheckReferenceCount)
+                || "on".equalsIgnoreCase(bufferCheckReferenceCount);
     }
 
     public static class AuthenticationPhase {
@@ -86,22 +98,39 @@ public class SQLSession {
             }
         }
 
-        public boolean areAllAuthenticationResponsesReceived() {
+        public synchronized boolean areAllAuthenticationResponsesReceived() {
             return receivedAuthenticationResponses.get() == authenticationResponses.size();
         }
 
         public synchronized void waitForAllResponses() throws IOException {
+            if (areAllAuthenticationResponsesReceived()) {
+                return;
+            }
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("waiting authentication responses ({})", System.identityHashCode(this));
+            }
             try {
                 wait();
             } catch (InterruptedException e) {
+                if (LOGGER.isErrorEnabled()) {
+                    LOGGER.error("unexpected thread interruption", e);
+                }
                 throw new IOException(e);
             }
             if (!areAllAuthenticationResponsesReceived()) {
-                throw new IllegalStateException("unexcpected");
+                if (LOGGER.isErrorEnabled()) {
+                    LOGGER.error("unexpected: missing authentication responses");
+                }
+                throw new IllegalStateException("unexpected: missing authentication responses");
+            } else if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("authentication responses have been received ({})", System.identityHashCode(this));
             }
         }
 
         public synchronized void allResponsesReceived() {
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("notifying authentication responses have been received ({})", System.identityHashCode(this));
+            }
             notifyAll();
         }
     }
@@ -389,58 +418,85 @@ public class SQLSession {
         private final Map<Integer, Queue<T>> detailsPerBackend;
         private final int nbBackends;
 
-        public QueryResponseStatus(QueryResponseType responseType, int nbBackends) {
-            this.type = responseType;
+        public QueryResponseStatus(QueryResponseType type, int nbBackends) {
+            this.type = type;
             this.detailsPerBackend = new ConcurrentHashMap<>(nbBackends);
             this.nbBackends = nbBackends;
         }
 
-        public QueryResponseType getType() {
-            return type;
+        private Queue<T> getDetails(int backend) {
+            return detailsPerBackend.computeIfAbsent(backend, nil -> new LinkedList<>());
         }
 
-        public synchronized Queue<T> getDetails(int backend) {
-            Queue<T> backendDetails = detailsPerBackend.get(backend);
-            if (backendDetails == null) {
-                backendDetails = new ConcurrentLinkedDeque<>();
-                detailsPerBackend.put(backend, backendDetails);
+        public synchronized SortedMap<Integer, T> addAndRemove(int backend, T details) {
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("adding {} response {} for backend {}/{}", type, System.identityHashCode(details), backend + 1,
+                        nbBackends);
             }
-            return backendDetails;
-        }
-
-        public void add(int backend, T details) {
             retain(details);
-            getDetails(backend).add(details);
+            synchronized (this) {
+                getDetails(backend).add(details);
+                return remove();
+            }
         }
 
-        public synchronized SortedMap<Integer, T> get() {
-            if (!available()) {
-                return null;
+        public synchronized SortedMap<Integer, T> addAndRemove(int backend, T details, Map<Integer, List<Integer>> detailIndexesPerBackend) {
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("adding {} response {} for backend {}/{}", type, System.identityHashCode(details), backend + 1,
+                        nbBackends);
             }
-            SortedMap<Integer, T> firstDetailsPerBackend = new TreeMap<>();
+            retain(details);
+            synchronized (this) {
+                getDetails(backend).add(details);
+                return remove(detailIndexesPerBackend);
+            }
+        }
+
+        public synchronized void clear() {
             for (Map.Entry<Integer, Queue<T>> entry : detailsPerBackend.entrySet()) {
-                Integer backend = entry.getKey();
                 Queue<T> backendDetails = entry.getValue();
-                firstDetailsPerBackend.put(backend, backendDetails.peek());
+                if (backendDetails.size() > 0) {
+                    if (LOGGER.isDebugEnabled()) {
+                        LOGGER.debug("strange: {} remaining {} responses of backend {}/{} are to be ignored",
+                                backendDetails.size(), type, entry.getKey() + 1, nbBackends);
+                    }
+                } else {
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("{} remaining {} responses of backend {}/{} are to be ignored",
+                                backendDetails.size(), type, entry.getKey() + 1, nbBackends);
+                    }
+                }
+                for (T details : backendDetails) {
+                    release(details);
+                }
             }
-            return firstDetailsPerBackend;
+            detailsPerBackend.clear();
         }
 
         public synchronized SortedMap<Integer, T> remove() {
             if (!available()) {
                 return null;
             }
+            boolean allEmpty = true;
             SortedMap<Integer, T> firstDetailsPerBackend = new TreeMap<>();
             for (Map.Entry<Integer, Queue<T>> entry : detailsPerBackend.entrySet()) {
                 Integer backend = entry.getKey();
                 Queue<T> backendDetails = entry.getValue();
                 T details = backendDetails.remove();
+                allEmpty &= backendDetails.isEmpty();
+                if (LOGGER.isTraceEnabled()) {
+                    LOGGER.trace("removing {} response {} of backend {}/{}", type, System.identityHashCode(details),
+                            backend + 1, nbBackends);
+                }
                 firstDetailsPerBackend.put(backend, details);
+            }
+            if (allEmpty) {
+                detailsPerBackend.clear();
             }
             return firstDetailsPerBackend;
         }
 
-        public synchronized SortedMap<Integer, T> remove(Map<Integer, List<Integer>> detailIndexesPerBackend) {
+        private SortedMap<Integer, T> remove(Map<Integer, List<Integer>> detailIndexesPerBackend) {
             if (nbBackends == 1 || detailIndexesPerBackend == null) {
                 return remove();
             }
@@ -502,21 +558,20 @@ public class SQLSession {
             SortedMap<Integer, T> matchingDetailsPerBackend = new TreeMap<>();
             for (int b = 0; b < nbBackends; b++) {
                 matchingDetailsPerBackend.put(b, backendsDetails[b]);
+                if (LOGGER.isTraceEnabled()) {
+                    LOGGER.trace("removing {} response {} of backend {}/{}", type,
+                            System.identityHashCode(backendsDetails[b]), b + 1, nbBackends);
+                }
                 iters[b].remove();
+            }
+            boolean allEmpty = detailsPerBackend.values().stream().allMatch(q -> q.isEmpty());
+            if (allEmpty) {
+                detailsPerBackend.clear();
             }
             return matchingDetailsPerBackend;
         }
 
-        public synchronized void clear() {
-            for (Queue<T> backendDetails : detailsPerBackend.values()) {
-                for (T details : backendDetails) {
-                    release(details);
-                }
-            }
-            detailsPerBackend.clear();
-        }
-
-        public synchronized boolean available() {
+        private boolean available() {
             boolean available = detailsPerBackend.size() == nbBackends;
             if (available) {
                 for (Queue<T> backendDetails : detailsPerBackend.values()) {
@@ -528,10 +583,19 @@ public class SQLSession {
 
         private void retain(T details) {
             if (details instanceof ReferenceCounted) {
+                if (CHECK_BUFFER_REFERENCE_COUNT && LOGGER.isTraceEnabled()) {
+                    LOGGER.trace("retaining {} ({}), refcount={}", details, System.identityHashCode(details),
+                            ((ReferenceCounted) details).refCnt());
+                }
                 ((ReferenceCounted) details).retain();
             } else if (details instanceof Collection) {
                 for (Object responseDetail : (Collection<?>) details) {
                     if (responseDetail instanceof ReferenceCounted) {
+                        if (CHECK_BUFFER_REFERENCE_COUNT && LOGGER.isTraceEnabled()) {
+                            LOGGER.trace("retaining {} ({}), refcount={}", responseDetail,
+                                    System.identityHashCode(responseDetail),
+                                    ((ReferenceCounted) responseDetail).refCnt());
+                        }
                         ((ReferenceCounted) responseDetail).retain();
                     }
                 }
@@ -539,10 +603,18 @@ public class SQLSession {
                 for (Map.Entry<?, ?> entry : ((Map<?, ?>) details).entrySet()) {
                     Object key = entry.getKey();
                     if (key instanceof ReferenceCounted) {
+                        if (CHECK_BUFFER_REFERENCE_COUNT && LOGGER.isTraceEnabled()) {
+                            LOGGER.trace("retaining {} ({}), refcount={}", key, System.identityHashCode(key),
+                                    ((ReferenceCounted) key).refCnt());
+                        }
                         ((ReferenceCounted) key).retain();
                     }
                     Object value = entry.getValue();
                     if (value instanceof ReferenceCounted) {
+                        if (CHECK_BUFFER_REFERENCE_COUNT && LOGGER.isTraceEnabled()) {
+                            LOGGER.trace("retaining {} ({}), refcount={}", value, System.identityHashCode(value),
+                                    ((ReferenceCounted) value).refCnt());
+                        }
                         ((ReferenceCounted) value).retain();
                     }
                 }
@@ -551,10 +623,18 @@ public class SQLSession {
 
         private void release(T details) {
             if (details instanceof ReferenceCounted) {
+                if (CHECK_BUFFER_REFERENCE_COUNT && LOGGER.isTraceEnabled()) {
+                    LOGGER.trace("releasing {} ({}), refcount={}", details, System.identityHashCode(details), ((ReferenceCounted) details).refCnt());
+                }
                 ((ReferenceCounted) details).release();
             } else if (details instanceof Collection) {
                 for (Object responseDetail : (Collection<?>) details) {
                     if (responseDetail instanceof ReferenceCounted) {
+                        if (CHECK_BUFFER_REFERENCE_COUNT && LOGGER.isTraceEnabled()) {
+                            LOGGER.trace("releasing {} ({}), refcount={}", responseDetail,
+                                    System.identityHashCode(responseDetail),
+                                    ((ReferenceCounted) responseDetail).refCnt());
+                        }
                         ((ReferenceCounted) responseDetail).release();
                     }
                 }
@@ -562,10 +642,18 @@ public class SQLSession {
                 for (Map.Entry<?, ?> entry : ((Map<?, ?>) details).entrySet()) {
                     Object key = entry.getKey();
                     if (key instanceof ReferenceCounted) {
+                        if (CHECK_BUFFER_REFERENCE_COUNT && LOGGER.isTraceEnabled()) {
+                            LOGGER.trace("releasing {} ({}), refcount={}", key, System.identityHashCode(key),
+                                    ((ReferenceCounted) key).refCnt());
+                        }
                         ((ReferenceCounted) key).release();
                     }
                     Object value = entry.getValue();
                     if (value instanceof ReferenceCounted) {
+                        if (CHECK_BUFFER_REFERENCE_COUNT && LOGGER.isTraceEnabled()) {
+                            LOGGER.trace("releasing {} ({}), refcount={}", value, System.identityHashCode(value),
+                                    ((ReferenceCounted) value).refCnt());
+                        }
                         ((ReferenceCounted) value).release();
                     }
                 }
@@ -627,7 +715,7 @@ public class SQLSession {
     private boolean resultProcessingEnabled = true;
     private boolean unprotectingDataEnabled = false;
     private Map<CString, List<CString>> datasetDefinitions;
-    private Deque<List<Integer>> commandInvolvedBackends;
+    private Deque<List<Integer>> commandsInvolvedBackends;
     private List<Integer> queryInvolvedBackends;
     private List<ExpectedField> expectedFields;
     private boolean tableDefinitionEnabled;
@@ -637,6 +725,8 @@ public class SQLSession {
     private Map<Map.Entry<QueryResponseType, Integer>, QueryResponseStatus<?>> queryResponses;
     private SortedMap<Integer, List<PgsqlRowDescriptionMessage.Field>> backendRowDescriptions;
     private List<PgsqlRowDescriptionMessage.Field> rowDescription;
+    private Map<Integer, SortedSet<Integer>> tableOIDBackends;
+    private Map<Long, SortedSet<Integer>> typeOIDBackends;
     private Map<Integer, List<Integer>> joinFieldIndexes;
     private Deque<QueryResponseType> queryResponsesToIgnore;
     private SortedMap<CString, ExtendedQueryStatus<ParseStep>> parseStepStatuses;
@@ -644,6 +734,7 @@ public class SQLSession {
     private SortedMap<CString, DescribeStepStatus> describeStepStatuses;
     private CString currentDescribeStepKey;
     private SortedMap<String, CursorContext> cursorContexts;
+    private CountDownLatch responsesReceived = null;
 
     public String getUser() {
         return user;
@@ -789,40 +880,62 @@ public class SQLSession {
     }
 
     public synchronized List<Integer> getCommandInvolvedBackends() {
-        return commandInvolvedBackends != null ? commandInvolvedBackends.peek() : null;
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("getting first of commands involved backends: {}", commandsInvolvedBackends);
+        }
+        return commandsInvolvedBackends != null ? commandsInvolvedBackends.peek() : null;
     }
 
     public synchronized void setCommandInvolvedBackends(List<Integer> involvedBackends) {
-        setCommandInvolvedBackends(involvedBackends, false);
+        setCommandInvolvedBackends(involvedBackends, true);
     }
 
     public synchronized void setCommandInvolvedBackends(List<Integer> involvedBackends, boolean overwrite) {
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("setting {} command involved backends (overwite={})", involvedBackends, overwrite);
+        }
         if (involvedBackends == null) {
-            if (this.commandInvolvedBackends != null) {
-                this.commandInvolvedBackends.poll();
-                if (this.commandInvolvedBackends.size() == 0) {
-                    this.commandInvolvedBackends = null;
+            if (commandsInvolvedBackends != null) {
+                commandsInvolvedBackends.poll();
+                if (commandsInvolvedBackends.size() == 0) {
+                    commandsInvolvedBackends = null;
                 }
             }
         } else {
-            if (overwrite && this.commandInvolvedBackends != null) {
-                this.commandInvolvedBackends.pollLast();
+            if (overwrite && this.commandsInvolvedBackends != null) {
+                commandsInvolvedBackends.pollLast();
             }
-            if (this.commandInvolvedBackends == null) {
-                this.commandInvolvedBackends = new ConcurrentLinkedDeque<>();
+            if (commandsInvolvedBackends == null) {
+                commandsInvolvedBackends = new ConcurrentLinkedDeque<>();
             }
-            this.commandInvolvedBackends.add(involvedBackends);
-            this.queryInvolvedBackends = this.commandInvolvedBackends.stream().flatMap(List::stream).sorted().distinct()
-                    .collect(Collectors.toList());
+            commandsInvolvedBackends.add(involvedBackends);
+            queryInvolvedBackends = commandsInvolvedBackends.peek();
+        }
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("after setting commands involved backends: {}", commandsInvolvedBackends);
+            LOGGER.trace("and query involved backends: {}", queryInvolvedBackends);
         }
     }
 
     public synchronized List<Integer> getQueryInvolvedBackends() {
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("getting query involved backends: {}", queryInvolvedBackends);
+        }
         return queryInvolvedBackends;
     }
 
     public synchronized void setQueryInvolvedBackends(List<Integer> involvedBackends) {
-        this.queryInvolvedBackends = involvedBackends;
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("setting {} query involved backends", involvedBackends);
+        }
+        if (involvedBackends == null && commandsInvolvedBackends != null) {
+            queryInvolvedBackends = commandsInvolvedBackends.peek();
+        } else {
+            queryInvolvedBackends = involvedBackends;
+        }
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("after setting query involved backends: {}", queryInvolvedBackends);
+        }
     }
 
     public List<ExpectedField> getExpectedFields() {
@@ -898,7 +1011,7 @@ public class SQLSession {
         return queryResponses;
     }
 
-    public synchronized void resetQueryResponses() {
+    public void resetQueryResponses() {
         if (queryResponses != null) {
             for (QueryResponseStatus<?> queryResponse : queryResponses.values()) {
                 queryResponse.clear();
@@ -907,60 +1020,78 @@ public class SQLSession {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    public <T> void addQueryResponse(QueryResponseType type, int backend, int nbBackends, T details) {
+    public <T> SortedMap<Integer, T> newQueryResponse(QueryResponseType type, int backend, int nbBackends, T details) {
         if (type == null) {
-            throw new NullPointerException("type must not be null");
+            if (LOGGER.isErrorEnabled()) {
+                LOGGER.error("type cannot be null");
+            }
+            throw new NullPointerException("type cannot be null");
         }
         if (nbBackends <= 0) {
+            if (LOGGER.isErrorEnabled()) {
+                LOGGER.error("nbBackends ({}) must be positive", nbBackends);
+            }
             throw new IllegalArgumentException(String.format("nbBackends (%d) must be positive", nbBackends));
         }
         // don't test backend against nbBackends since it can be greater
         // e.g. a response from one backend which is the 2nd backend
         if (backend < 0) {
+            if (LOGGER.isErrorEnabled()) {
+                LOGGER.error("backend ({}) must be positive or zero", backend);
+            }
             throw new IllegalArgumentException(String.format("backend (%d) must be positive or zero", backend));
         }
-        QueryResponseStatus<T> queryResponses;
-        synchronized (getQueryResponses()) {
-            Map.Entry<QueryResponseType, Integer> key = new SimpleEntry<>(type, nbBackends);
-            queryResponses = (QueryResponseStatus<T>) getQueryResponses().get(key);
-            if (queryResponses == null) {
-                queryResponses = new QueryResponseStatus<T>(type, nbBackends);
-                getQueryResponses().put(key, queryResponses);
-            }
-        }
-        queryResponses.add(backend, details);
-    }
-
-    public <T> SortedMap<Integer, T> removeQueryResponse(QueryResponseType type, int nbBackends) {
-        if (type == null) {
-            throw new NullPointerException("type must not be null");
-        }
-        if (nbBackends <= 0) {
-            throw new IllegalArgumentException(String.format("nbBackends (%d) must be a positive value", nbBackends));
-        }
         Map.Entry<QueryResponseType, Integer> key = new SimpleEntry<>(type, nbBackends);
         @SuppressWarnings("unchecked")
-        QueryResponseStatus<T> queryResponses = (QueryResponseStatus<T>) getQueryResponses().get(key);
-        if (queryResponses != null) {
-            return queryResponses.remove();
-        }
-        return null;
+        QueryResponseStatus<T> queryResponses = (QueryResponseStatus<T>) getQueryResponses().computeIfAbsent(key,
+                nil -> new QueryResponseStatus<T>(type, nbBackends));
+        return queryResponses.addAndRemove(backend, details);
     }
 
-    public <T> SortedMap<Integer, T> removeQueryResponse(QueryResponseType type, int nbBackends,
+    public <T> SortedMap<Integer, T> newQueryResponse(QueryResponseType type, int backend, int nbBackends, T details,
             Map<Integer, List<Integer>> detailsIndexesPerBackend) {
         if (type == null) {
-            throw new NullPointerException("type must not be null");
+            if (LOGGER.isErrorEnabled()) {
+                LOGGER.error("type cannot be null");
+            }
+            throw new NullPointerException("type cannot be null");
         }
         if (nbBackends <= 0) {
-            throw new IllegalArgumentException(String.format("nbBackends (%d) must be a positive value", nbBackends));
+            if (LOGGER.isErrorEnabled()) {
+                LOGGER.error("nbBackends ({}) must be positive", nbBackends);
+            }
+            throw new IllegalArgumentException(String.format("nbBackends (%d) must be positive", nbBackends));
+        }
+        // don't test backend against nbBackends since it can be greater
+        // e.g. a response from one backend which is the 2nd backend
+        if (backend < 0) {
+            if (LOGGER.isErrorEnabled()) {
+                LOGGER.error("backend ({}) must be positive or zero", backend);
+            }
+            throw new IllegalArgumentException(String.format("backend (%d) must be positive or zero", backend));
         }
         Map.Entry<QueryResponseType, Integer> key = new SimpleEntry<>(type, nbBackends);
         @SuppressWarnings("unchecked")
-        QueryResponseStatus<T> queryResponses = (QueryResponseStatus<T>) getQueryResponses().get(key);
-        if (queryResponses != null) {
-            return queryResponses.remove(detailsIndexesPerBackend);
+        QueryResponseStatus<T> queryResponses = (QueryResponseStatus<T>) getQueryResponses().computeIfAbsent(key,
+                nil -> new QueryResponseStatus<T>(type, nbBackends));
+        return queryResponses.addAndRemove(backend, details, detailsIndexesPerBackend);
+    }
+
+    public <T> SortedMap<Integer, T> nextQueryResponses(QueryResponseType type) {
+        if (type == null) {
+            if (LOGGER.isErrorEnabled()) {
+                LOGGER.error("type cannot be null");
+            }
+            throw new NullPointerException("type cannot be null");
+        }
+        List<QueryResponseStatus<?>> candidates = getQueryResponses().entrySet().stream().filter(e -> e.getKey().getKey() == type).map(Map.Entry::getValue).collect(Collectors.toList());
+        for (QueryResponseStatus<?> candidate : candidates) {
+            @SuppressWarnings("unchecked")
+            QueryResponseStatus<T> queryResponses = (QueryResponseStatus<T>) candidate;
+            SortedMap<Integer, T> nextQueryResponses = queryResponses.remove();
+            if (nextQueryResponses != null) {
+                return nextQueryResponses;
+            }
         }
         return null;
     }
@@ -1057,6 +1188,64 @@ public class SQLSession {
                 }
             }
         }
+    }
+
+    public Map<Integer, SortedSet<Integer>> getTableOIDBackends() {
+        if (tableOIDBackends == null) {
+            tableOIDBackends = new ConcurrentHashMap<>();
+        }
+        return tableOIDBackends;
+    }
+
+    public void setTableOIDBackends(Map<Integer, SortedSet<Integer>> tableOIDBackends) {
+        this.tableOIDBackends = tableOIDBackends;
+    }
+
+    public void addTableOIDBackend(int tableOID, int backend) {
+        SortedSet<Integer> backends = getTableOIDBackends().get(tableOID);
+        if (backends == null) {
+            synchronized(getTableOIDBackends()) {
+                backends = getTableOIDBackends().get(tableOID);
+                if (backends == null) {
+                    backends = new TreeSet<>();
+                    getTableOIDBackends().put(tableOID, backends);
+                }
+            }
+        }
+        backends.add(backend);
+    }
+
+    public SortedSet<Integer> getTableOIDBackends(int tableOID) {
+        return getTableOIDBackends().get(tableOID);
+    }
+
+    public Map<Long, SortedSet<Integer>> getTypeOIDBackends() {
+        if (typeOIDBackends == null) {
+            typeOIDBackends = new ConcurrentHashMap<>();
+        }
+        return typeOIDBackends;
+    }
+
+    public void setTypeOIDBackends(Map<Long, SortedSet<Integer>> typeOIDBackends) {
+        this.typeOIDBackends = typeOIDBackends;
+    }
+
+    public void addTypeOIDBackend(long typeOID, int backend) {
+        SortedSet<Integer> backends = getTypeOIDBackends().get(typeOID);
+        if (backends == null) {
+            synchronized(getTypeOIDBackends()) {
+                backends = getTypeOIDBackends().get(typeOID);
+                if (backends == null) {
+                    backends = new TreeSet<>();
+                    getTypeOIDBackends().put(typeOID, backends);
+                }
+            }
+        }
+        backends.add(backend);
+    }
+
+    public SortedSet<Integer> getTypeOIDBackends(long typeOID) {
+        return getTypeOIDBackends().get(typeOID);
     }
 
     public Deque<QueryResponseType> getQueryResponsesToIgnore() {
@@ -1347,7 +1536,6 @@ public class SQLSession {
     }
 
     public void resetCurrentQuery() {
-        resetCurrentCommand();
         setQueryInvolvedBackends(null);
         resetQueryResponses();
     }
@@ -1367,8 +1555,45 @@ public class SQLSession {
         resetDatasetDefinition();
         setTransferMode(null);
         setTableDefinitionEnabled(false);
+        resetCurrentCommand();
         resetCurrentQueries();
         resetCursorContexts();
     }
 
+    public void waitForResponses() throws InterruptedException {
+        if (responsesReceived == null || responsesReceived.getCount() == 0) {
+            synchronized(this) {
+                if (responsesReceived == null || responsesReceived.getCount() == 0) {
+                    responsesReceived = new CountDownLatch(1);
+                }
+            }
+        }
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("waiting for responses");
+        }
+        // wait for responses
+        responsesReceived.await();
+        synchronized(this) {
+            if (responsesReceived != null && responsesReceived.getCount() == 0) {
+                responsesReceived = null;
+            }
+        }
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("responses have been received");
+        }
+    }
+
+    public void responsesReceived() {
+        CountDownLatch responsesReceived;
+        synchronized(this) {
+            responsesReceived = this.responsesReceived;
+        }
+        if (responsesReceived != null && responsesReceived.getCount() == 1) {
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("notifying responses have been received");
+            }
+            // notify response is received
+            responsesReceived.countDown();
+        }
+    }
 }

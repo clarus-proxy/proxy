@@ -6,7 +6,6 @@ import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlSession;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.MessageTransferMode;
 import io.netty.channel.ChannelHandlerContext;
 
@@ -69,7 +68,6 @@ public class QueryResponseHandler extends PgsqlMessageHandler<PgsqlQueryResponse
             PgsqlErrorMessage newMsg = processDetails(ctx, (PgsqlErrorMessage) msg, "Error", // Prefix to use for log messages
                     fields -> getEventProcessor(ctx).processErrorResult(ctx, fields), // Process the error fields
                     fields -> new PgsqlErrorMessage(fields)); // Builder to create a new error message
-            responseReceived(ctx);
             return newMsg;
         }
         case PgsqlCloseCompleteMessage.TYPE: {
@@ -80,19 +78,10 @@ public class QueryResponseHandler extends PgsqlMessageHandler<PgsqlQueryResponse
             PgsqlReadyForQueryMessage newMsg = processDetails(ctx, (PgsqlReadyForQueryMessage) msg, "Ready for query", // Prefix to use for log messages
                     trxStatus -> getEventProcessor(ctx).processReadyForQueryResponse(ctx, trxStatus), // Process the transaction status
                     PgsqlReadyForQueryMessage::new); // Builder to create a new ready for query message
-            responseReceived(ctx);
             return newMsg;
         }
         default:
             throw new IllegalArgumentException(String.format("msg type %c", (char) msg.getType()));
-        }
-    }
-
-    private void responseReceived(ChannelHandlerContext ctx) {
-        // Signal response is received
-        PgsqlSession psqlSession = getPgsqlSession(ctx);
-        synchronized (psqlSession) {
-            psqlSession.notifyAll();
         }
     }
 
@@ -174,7 +163,6 @@ public class QueryResponseHandler extends PgsqlMessageHandler<PgsqlQueryResponse
                     "Invalid value for enum " + transferMode.getTransferMode().getClass().getSimpleName() + ": "
                             + transferMode.getTransferMode());
         }
-
         return newDetails;
     }
 

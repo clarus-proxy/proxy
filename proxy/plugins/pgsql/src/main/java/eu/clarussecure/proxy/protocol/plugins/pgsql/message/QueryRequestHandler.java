@@ -5,6 +5,8 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -14,12 +16,12 @@ import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlSession;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlRowDescriptionMessage.Field;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.converter.PgsqlMessageToQueryConverter;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.CommandResults;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.QueriesTransferMode;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.Query;
+import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLSession;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLSession.QueryResponseType;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLStatement;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SimpleSQLStatement;
@@ -55,52 +57,67 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
     }
 
     private void simpleQueryDecodeStream(ChannelHandlerContext ctx, MutableByteBufInputStream in) throws IOException {
-        while (in.readableBytes() > 0) {
-            List<CString> newDirectedSQLCommands = null;
-            // Determinate the length of the next SQL command. Wait that enough
-            // bytes are available to have a complete SQL command. However, the
-            // separator char is not required
-            int len = nextSQLCommandLength(in, false, () -> in.readableBytes() > 0);
-            do {
-                // Read next SQL command
-                ByteBuf buffer = in.readFully(len);
-                boolean last = in.readableBytes() == 0;
-                int strlen = last ? buffer.capacity() - 1 : buffer.capacity();
-                CString sqlCommand = CString.valueOf(buffer, strlen);
-                // Process SQL command
-                newDirectedSQLCommands = process(ctx, newDirectedSQLCommands, sqlCommand, last);
-                // Determinate the length of the next SQL command. Break the
-                // loop if there is not enough bytes for the next SQL command.
-                // The separator char is used to determinate end of the SQL
-                // command
-                len = nextSQLCommandLength(in, true, () -> in.available() > 0);
-                if (len == -1 && in.available() > 0 && in.available() == in.readableBytes()) {
-                    len = in.available();
-                }
-            } while (len > 0);
-            if (newDirectedSQLCommands != null && !newDirectedSQLCommands.isEmpty()) {
-                if (in.readableBytes() > 0) {
-                    // Ignore ready for query from backends
-                    getSqlSession(ctx).addFirstQueryResponseToIgnore(QueryResponseType.READY_FOR_QUERY);
-                }
-                // Send queries to backends
-                for (int i = 0; i < newDirectedSQLCommands.size(); i++) {
-                    CString newSQLCommands = newDirectedSQLCommands.get(i);
-                    if (newSQLCommands != null) {
-                        PgsqlSimpleQueryMessage newMsg = new PgsqlSimpleQueryMessage(newSQLCommands);
-                        sendRequest(ctx, newMsg, i);
+        Deque<List<CString>> newGroupOfDirectedSQLCommands = null;
+        while (in.readableBytes() > 0 || (newGroupOfDirectedSQLCommands != null && !newGroupOfDirectedSQLCommands.isEmpty())) {
+            if (in.readableBytes() > 0) {
+                // Determinate the length of the next SQL command. Wait that enough
+                // bytes are available to have a complete SQL command. However, the
+                // separator char is not required
+                int len = nextSQLCommandLength(in, false, () -> in.readableBytes() > 0);
+                do {
+                    // Read next SQL command
+                    ByteBuf buffer = in.readFully(len);
+                    boolean last = in.readableBytes() == 0;
+                    int strlen = last ? buffer.capacity() - 1 : buffer.capacity();
+                    CString sqlCommand = CString.valueOf(buffer, strlen);
+                    // Process SQL command
+                    newGroupOfDirectedSQLCommands = process(ctx, newGroupOfDirectedSQLCommands, sqlCommand, last);
+                    if (newGroupOfDirectedSQLCommands != null && newGroupOfDirectedSQLCommands.size() > 1) {
+                        len = 0;
+                    } else {
+                        // Determinate the length of the next SQL command. Break the
+                        // loop if there is not enough bytes for the next SQL command.
+                        // The separator char is used to determinate end of the SQL
+                        // command
+                        len = nextSQLCommandLength(in, true, () -> in.available() > 0);
+                        if (len == -1 && in.available() > 0 && in.available() == in.readableBytes()) {
+                            len = in.available();
+                        }
                     }
+                } while (len > 0);
+            }
+            if (newGroupOfDirectedSQLCommands != null && !newGroupOfDirectedSQLCommands.isEmpty()) {
+                List<CString> newDirectedSQLCommands = newGroupOfDirectedSQLCommands.poll();
+                if (newDirectedSQLCommands != null && !newDirectedSQLCommands.isEmpty()) {
+                    if (in.readableBytes() > 0 || !newGroupOfDirectedSQLCommands.isEmpty()) {
+                        // Ignore ready for query from backends
+                        getSqlSession(ctx).addFirstQueryResponseToIgnore(QueryResponseType.READY_FOR_QUERY);
+                    }
+                    // Send queries to backends
+                    for (int i = 0; i < newDirectedSQLCommands.size(); i++) {
+                        CString newSQLCommands = newDirectedSQLCommands.get(i);
+                        if (newSQLCommands != null) {
+                            PgsqlSimpleQueryMessage newMsg = new PgsqlSimpleQueryMessage(newSQLCommands);
+                            sendRequest(ctx, newMsg, i);
+                        }
+                    }
+                    // Wait for responses
+                    waitForResponses(ctx);
                 }
             }
         }
     }
 
-    private List<CString> process(ChannelHandlerContext ctx, List<CString> newSQLCommands, CString sqlCommand,
+    private Deque<List<CString>> process(ChannelHandlerContext ctx, Deque<List<CString>> newGroupOfSQLCommands, CString sqlCommand,
             boolean last) throws IOException {
         List<CString> newDirectedSQLCommands = process(ctx, sqlCommand, last);
 
         if (newDirectedSQLCommands != null) {
-            if (newSQLCommands == null) {
+            if (newGroupOfSQLCommands == null) {
+                newGroupOfSQLCommands = new LinkedList<>();
+            }
+            List<CString> newSQLCommands = newGroupOfSQLCommands.peekLast();
+            if (newSQLCommands == null || newSQLCommands.size() != newDirectedSQLCommands.size()) {
                 newSQLCommands = new ArrayList<>(newDirectedSQLCommands.size());
                 for (int i = 0; i < newDirectedSQLCommands.size(); i++) {
                     CString newSQLCommand = null;
@@ -110,6 +127,7 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                     }
                     newSQLCommands.add(newSQLCommand);
                 }
+                newGroupOfSQLCommands.add(newSQLCommands);
             }
             if (newDirectedSQLCommands.size() == 1 && newDirectedSQLCommands.get(0) == sqlCommand) {
                 sqlCommand.retain();
@@ -122,7 +140,7 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                 }
             }
         }
-        return newSQLCommands;
+        return newGroupOfSQLCommands;
     }
 
     @Override
@@ -226,13 +244,13 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
     private List<SimpleSQLStatement> process(ChannelHandlerContext ctx, SimpleSQLStatement sqlStatement)
             throws IOException {
         CString sqlCommands = sqlStatement.getSQL();
-        List<CString> newDirectedSQLCommands = Collections.singletonList(sqlCommands);
+        Deque<List<CString>> newGroupOfDirectedSQLCommands = null;
         // Simple SQL statement may contain several SQL commands that must be
         // processed one by one
         int from = 0;
         try (MutableByteBufInputStream in = new MutableByteBufInputStream(sqlCommands.getByteBuf())) {
             // For each SQL command in the simple SQL statement
-            while (newDirectedSQLCommands != null && in.readableBytes() > 0) {
+            while (in.readableBytes() > 0) {
                 // Determinate the length of the next SQL command
                 // command. The separator char is not required
                 int len = nextSQLCommandLength(in, false, () -> in.readableBytes() > 0);
@@ -242,17 +260,40 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                 int strlen = last ? buffer.capacity() - 1 : buffer.capacity();
                 CString sqlCommand = CString.valueOf(buffer, strlen);
                 // Process next SQL command
-                newDirectedSQLCommands = process(ctx, sqlCommands, newDirectedSQLCommands, from, sqlCommand, last);
+                newGroupOfDirectedSQLCommands = process(ctx, sqlCommands, newGroupOfDirectedSQLCommands, from, sqlCommand, last);
                 from += len;
             }
         }
+        if (newGroupOfDirectedSQLCommands != null) {
+            while (newGroupOfDirectedSQLCommands.size() > 1) {
+                List<CString> newDirectedSQLCommands = newGroupOfDirectedSQLCommands.poll();
+                if (newDirectedSQLCommands != null && !newDirectedSQLCommands.isEmpty()) {
+                    // Ignore ready for query from backends
+                    getSqlSession(ctx).addFirstQueryResponseToIgnore(QueryResponseType.READY_FOR_QUERY);
+                    // Send queries to backends
+                    for (int i = 0; i < newDirectedSQLCommands.size(); i++) {
+                        CString newSQLCommands = newDirectedSQLCommands.get(i);
+                        if (newSQLCommands != null) {
+                            PgsqlSimpleQueryMessage newMsg = new PgsqlSimpleQueryMessage(newSQLCommands);
+                            sendRequest(ctx, newMsg, i);
+                        }
+                    }
+                    // Wait for responses
+                    waitForResponses(ctx);
+                }
+            }
+        }
+        List<CString> newDirectedSQLCommands = newGroupOfDirectedSQLCommands != null
+                ? newGroupOfDirectedSQLCommands.poll() : null;
         // Return new SQL statements only if SQL commands are modified
-        return (newDirectedSQLCommands != null && newDirectedSQLCommands.size() == 1
-                && newDirectedSQLCommands.get(0) == sqlCommands)
-                        ? Collections.singletonList(sqlStatement)
-                        : newDirectedSQLCommands != null ? newDirectedSQLCommands.stream()
-                                .map(nds -> nds == null ? null : new SimpleSQLStatement(nds))
-                                .collect(Collectors.toList()) : null;
+        if (newDirectedSQLCommands != null && newDirectedSQLCommands.size() == 1
+                && newDirectedSQLCommands.get(0) == sqlCommands) {
+            return Collections.singletonList(sqlStatement);
+        } else if (newDirectedSQLCommands != null) {
+            return newDirectedSQLCommands.stream().map(nds -> nds == null ? null : new SimpleSQLStatement(nds))
+                    .collect(Collectors.toList());
+        }
+        return null;
     }
 
     private interface StreamEvaluator {
@@ -346,24 +387,26 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
         return len;
     }
 
-    private List<CString> process(ChannelHandlerContext ctx, CString sqlCommands, List<CString> newSQLCommands,
+    private Deque<List<CString>> process(ChannelHandlerContext ctx, CString sqlCommands, Deque<List<CString>> newGroupOfSQLCommands,
             int from, CString sqlCommand, boolean last) throws IOException {
         List<CString> newDirectedSQLCommands = process(ctx, sqlCommand, last);
 
-        if (newDirectedSQLCommands == null || newDirectedSQLCommands.isEmpty() || newDirectedSQLCommands.size() > 1
-                || newDirectedSQLCommands.get(0) != sqlCommand || newSQLCommands == null || newSQLCommands.isEmpty()
-                || newSQLCommands.get(0) != sqlCommands) {
-            if (newSQLCommands != null && !newSQLCommands.isEmpty() && newSQLCommands.get(0) == sqlCommands) {
-                if (newDirectedSQLCommands == null) {
-                    newSQLCommands = null;
-                } else {
+        if (newDirectedSQLCommands != null) {
+            if (newGroupOfSQLCommands == null) {
+                newGroupOfSQLCommands = new LinkedList<>();
+            }
+            List<CString> newSQLCommands = newGroupOfSQLCommands.peekLast();
+            if (newDirectedSQLCommands.isEmpty() || newDirectedSQLCommands.size() > 1
+                    || newDirectedSQLCommands.get(0) != sqlCommand || newSQLCommands == null
+                    || newSQLCommands.get(0) != sqlCommands) {
+                if (newSQLCommands == null || newSQLCommands.size() != newDirectedSQLCommands.size()) {
                     newSQLCommands = new ArrayList<>(newDirectedSQLCommands.size());
                     for (int i = 0; i < newDirectedSQLCommands.size(); i++) {
                         CString newSQLCommand = null;
                         CString newDirectedSQLCommand = newDirectedSQLCommands.get(i);
                         if (newDirectedSQLCommand != null) {
                             newSQLCommand = CString.valueOf(ctx.alloc().compositeBuffer(Integer.MAX_VALUE));
-                            if (from > 0) {
+                            if (newGroupOfSQLCommands.isEmpty() && from > 0) {
                                 CString cs = sqlCommands.subSequence(0, from);
                                 cs.retain();
                                 newSQLCommand.append(cs);
@@ -371,22 +414,21 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                         }
                         newSQLCommands.add(newSQLCommand);
                     }
+                    newGroupOfSQLCommands.add(newSQLCommands);
                 }
             }
-            if (newDirectedSQLCommands != null) {
-                if (newDirectedSQLCommands.size() == 1 && newDirectedSQLCommands.get(0) == sqlCommand) {
-                    sqlCommand.retain();
-                }
-                for (int i = 0; i < newDirectedSQLCommands.size(); i++) {
-                    CString newDirectedSQLCommand = newDirectedSQLCommands.get(i);
-                    if (newDirectedSQLCommand != null) {
-                        CString newSQLCommand = newSQLCommands.get(i);
-                        newSQLCommand.append(newDirectedSQLCommand);
-                    }
+            if (newDirectedSQLCommands.size() == 1 && newDirectedSQLCommands.get(0) == sqlCommand) {
+                sqlCommand.retain();
+            }
+            for (int i = 0; i < newDirectedSQLCommands.size(); i++) {
+                CString newDirectedSQLCommand = newDirectedSQLCommands.get(i);
+                if (newDirectedSQLCommand != null) {
+                    CString newSQLCommand = newSQLCommands.get(i);
+                    newSQLCommand.append(newDirectedSQLCommand);
                 }
             }
         }
-        return newSQLCommands;
+        return newGroupOfSQLCommands;
     }
 
     private List<CString> process(ChannelHandlerContext ctx, CString sqlCommand, boolean last) throws IOException {
@@ -481,7 +523,7 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                         PgsqlQueryRequestMessage msg = PgsqlMessageToQueryConverter.to(query);
                         sendRequest(ctx, msg, i);
                         if (msg instanceof PgsqlSimpleQueryMessage || msg instanceof PgsqlSyncMessage) {
-                            waitForResponse(ctx);
+                            waitForResponses(ctx);
                         }
                     }
                 }
@@ -507,15 +549,13 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
         return newDirectedLastQueries;
     }
 
-    private void waitForResponse(ChannelHandlerContext ctx) throws IOException {
-        // Wait for response
-        PgsqlSession psqlSession = getPgsqlSession(ctx);
-        synchronized (psqlSession) {
-            try {
-                psqlSession.wait();
-            } catch (InterruptedException e) {
-                throw new IOException(e);
-            }
+    private void waitForResponses(ChannelHandlerContext ctx) throws IOException {
+        // Wait for responses
+        SQLSession psqlSession = getSqlSession(ctx);
+        try {
+            psqlSession.waitForResponses();
+        } catch (InterruptedException e) {
+            throw new IOException(e);
         }
     }
 

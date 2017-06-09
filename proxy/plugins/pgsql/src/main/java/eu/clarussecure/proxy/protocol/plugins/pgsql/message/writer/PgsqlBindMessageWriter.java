@@ -74,6 +74,7 @@ public class PgsqlBindMessageWriter implements PgsqlMessageWriter<PgsqlBindMessa
                 buffer.writeInt(-1);
             } else {
                 buffer.writeInt(parameterValue.capacity());
+                parameterValue.readerIndex(0);
                 buffer.writeBytes(parameterValue);
             }
         }

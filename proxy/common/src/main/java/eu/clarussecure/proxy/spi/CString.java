@@ -5,6 +5,9 @@ import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import eu.clarussecure.proxy.spi.buffer.CustomByteBufAllocator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
@@ -13,6 +16,8 @@ import io.netty.buffer.UnpooledByteBufAllocator;
 import io.netty.util.ReferenceCounted;
 
 public class CString implements CharSequence, Cloneable, Comparable<CharSequence>, ReferenceCounted {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(CString.class);
 
     private ByteBuf buffer;
     private int strLen;
@@ -90,6 +95,9 @@ public class CString implements CharSequence, Cloneable, Comparable<CharSequence
     @Override
     public ReferenceCounted retain() {
         if (buffer != null) {
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("Retaining CString's buffer by 1:  {} ({}), refcount={}", toString(), System.identityHashCode(this), buffer.refCnt());
+            }
             buffer.retain();
         }
         return this;
@@ -98,6 +106,9 @@ public class CString implements CharSequence, Cloneable, Comparable<CharSequence
     @Override
     public ReferenceCounted retain(int increment) {
         if (buffer != null) {
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("Retaining CString's buffer by {}:  {} ({}), refcount={}", increment, toString(), System.identityHashCode(this), buffer.refCnt());
+            }
             buffer.retain(increment);
         }
         return this;
@@ -122,6 +133,9 @@ public class CString implements CharSequence, Cloneable, Comparable<CharSequence
     @Override
     public boolean release() {
         if (buffer != null) {
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("Releasing CString's buffer by 1:  {} ({}), refcount={}", toString(), System.identityHashCode(this), buffer.refCnt());
+            }
             if (buffer.release()) {
                 buffer = null;
                 strLen = 0;
@@ -134,6 +148,9 @@ public class CString implements CharSequence, Cloneable, Comparable<CharSequence
     @Override
     public boolean release(int decrement) {
         if (buffer != null) {
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("Releasing CString's buffer by {}: {} ({}), refcount={}", decrement, toString(), System.identityHashCode(this), buffer.refCnt());
+            }
             if (buffer.release(decrement)) {
                 buffer = null;
                 strLen = 0;

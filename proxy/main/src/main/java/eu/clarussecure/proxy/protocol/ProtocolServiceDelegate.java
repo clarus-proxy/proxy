@@ -154,7 +154,7 @@ public class ProtocolServiceDelegate implements ProtocolService {
                             + dataOperation.getParameterValues().get(i).toString())
                     .toArray(String[]::new);
             promise = (DefaultPromise) protectionModule.getDataOperation().get(attributeNames, criteria, null,
-                    dataOperation.isModified() && !dataOperation.isUnprotectingDataEnabled());
+                    dataOperation.isModified()/* && !dataOperation.isUnprotectingDataEnabled()*/ && dataOperation.getInvolvedCSPs() != null);
             if (promise != null) {
                 dataOperations = new ArrayList<>(promise.getProtectedAttributeNames().length);
                 for (int csp = 0; csp < promise.getProtectedAttributeNames().length; csp++) {

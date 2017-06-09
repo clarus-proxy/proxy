@@ -18,12 +18,15 @@
         </encoder>
     </appender>
  -->
+ 
     <logger name="eu.clarussecure.proxy" level="INFO" />
+<!-- <logger name="eu.clarussecure.proxy.spi" level="TRACE" /> -->
 <!-- <logger name="eu.clarussecure.proxy.protocol.plugins.pgsql" level="DEBUG" /> -->
 <!-- <logger name="eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.forwarder" level="TRACE" /> -->
 <!-- <logger name="eu.clarussecure.proxy.protocol.plugins.tcp.handler.forwarder" level="TRACE" /> -->
 <!-- <logger name="eu.clarussecure.proxy.protocol.plugins.pgsql.message" level="TRACE" /> -->
 <!-- <logger name="eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql" level="DEBUG" /> -->
+<!-- <logger name="eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.SQLSession" level="TRACE" /> -->
 <!-- <logger name="eu.clarussecure.dataoperations.anonymization" level="DEBUG" /> -->
     <root level="INFO">
         <appender-ref ref="STDOUT" />
