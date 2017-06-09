@@ -3,5 +3,5 @@ description = 'Anonymization module for the CLARUS proxy'
 dependencies {
     // CLARUS
     compile project(':proxy-common')
-    compile group: 'eu.clarussecure', name: 'dataoperations.anonymizationmodule', version: '1.0-SNAPSHOT'
+    compile group: 'eu.clarussecure', name: 'dataoperations.anonymizationmodule', version: '1.1-SNAPSHOT'
 }
