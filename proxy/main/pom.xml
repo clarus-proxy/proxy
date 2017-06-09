@@ -61,6 +61,7 @@
   </licenses>
   <build>
     <plugins>
+      <!--
       <plugin>
         <groupId>net.revelc.code.formatter</groupId>
         <artifactId>formatter-maven-plugin</artifactId>
@@ -76,6 +77,7 @@
           <configFile>${project.parent.relativePath}/eclipse-formatter-config.xml</configFile>
         </configuration>
       </plugin>
+      -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>

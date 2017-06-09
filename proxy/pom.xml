@@ -82,6 +82,7 @@
           </filesets>
         </configuration>
       </plugin>
+      <!--
       <plugin>
         <groupId>net.revelc.code.formatter</groupId>
         <artifactId>formatter-maven-plugin</artifactId>
@@ -97,6 +98,7 @@
           <configFile>${project.basedir}/eclipse-formatter-config.xml</configFile>
         </configuration>
       </plugin>
+      -->
     </plugins>
     <pluginManagement>
       <plugins>
