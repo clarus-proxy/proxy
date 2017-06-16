@@ -96,7 +96,8 @@ public class CString implements CharSequence, Cloneable, Comparable<CharSequence
     public ReferenceCounted retain() {
         if (buffer != null) {
             if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace("Retaining CString's buffer by 1:  {} ({}), refcount={}", toString(), System.identityHashCode(this), buffer.refCnt());
+                LOGGER.trace("Retaining CString's buffer by 1:  {} ({}), refcount={}", toString(),
+                        System.identityHashCode(this), buffer.refCnt());
             }
             buffer.retain();
         }
@@ -107,7 +108,8 @@ public class CString implements CharSequence, Cloneable, Comparable<CharSequence
     public ReferenceCounted retain(int increment) {
         if (buffer != null) {
             if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace("Retaining CString's buffer by {}:  {} ({}), refcount={}", increment, toString(), System.identityHashCode(this), buffer.refCnt());
+                LOGGER.trace("Retaining CString's buffer by {}:  {} ({}), refcount={}", increment, toString(),
+                        System.identityHashCode(this), buffer.refCnt());
             }
             buffer.retain(increment);
         }
@@ -134,7 +136,8 @@ public class CString implements CharSequence, Cloneable, Comparable<CharSequence
     public boolean release() {
         if (buffer != null) {
             if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace("Releasing CString's buffer by 1:  {} ({}), refcount={}", toString(), System.identityHashCode(this), buffer.refCnt());
+                LOGGER.trace("Releasing CString's buffer by 1:  {} ({}), refcount={}", toString(),
+                        System.identityHashCode(this), buffer.refCnt());
             }
             if (buffer.release()) {
                 buffer = null;
@@ -149,7 +152,8 @@ public class CString implements CharSequence, Cloneable, Comparable<CharSequence
     public boolean release(int decrement) {
         if (buffer != null) {
             if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace("Releasing CString's buffer by {}: {} ({}), refcount={}", decrement, toString(), System.identityHashCode(this), buffer.refCnt());
+                LOGGER.trace("Releasing CString's buffer by {}: {} ({}), refcount={}", decrement, toString(),
+                        System.identityHashCode(this), buffer.refCnt());
             }
             if (buffer.release(decrement)) {
                 buffer = null;

@@ -58,7 +58,8 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
 
     private void simpleQueryDecodeStream(ChannelHandlerContext ctx, MutableByteBufInputStream in) throws IOException {
         Deque<List<CString>> newGroupOfDirectedSQLCommands = null;
-        while (in.readableBytes() > 0 || (newGroupOfDirectedSQLCommands != null && !newGroupOfDirectedSQLCommands.isEmpty())) {
+        while (in.readableBytes() > 0
+                || (newGroupOfDirectedSQLCommands != null && !newGroupOfDirectedSQLCommands.isEmpty())) {
             if (in.readableBytes() > 0) {
                 // Determinate the length of the next SQL command. Wait that enough
                 // bytes are available to have a complete SQL command. However, the
@@ -108,8 +109,8 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
         }
     }
 
-    private Deque<List<CString>> process(ChannelHandlerContext ctx, Deque<List<CString>> newGroupOfSQLCommands, CString sqlCommand,
-            boolean last) throws IOException {
+    private Deque<List<CString>> process(ChannelHandlerContext ctx, Deque<List<CString>> newGroupOfSQLCommands,
+            CString sqlCommand, boolean last) throws IOException {
         List<CString> newDirectedSQLCommands = process(ctx, sqlCommand, last);
 
         if (newDirectedSQLCommands != null) {
@@ -260,7 +261,8 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
                 int strlen = last ? buffer.capacity() - 1 : buffer.capacity();
                 CString sqlCommand = CString.valueOf(buffer, strlen);
                 // Process next SQL command
-                newGroupOfDirectedSQLCommands = process(ctx, sqlCommands, newGroupOfDirectedSQLCommands, from, sqlCommand, last);
+                newGroupOfDirectedSQLCommands = process(ctx, sqlCommands, newGroupOfDirectedSQLCommands, from,
+                        sqlCommand, last);
                 from += len;
             }
         }
@@ -387,8 +389,8 @@ public class QueryRequestHandler extends PgsqlMessageHandler<PgsqlQueryRequestMe
         return len;
     }
 
-    private Deque<List<CString>> process(ChannelHandlerContext ctx, CString sqlCommands, Deque<List<CString>> newGroupOfSQLCommands,
-            int from, CString sqlCommand, boolean last) throws IOException {
+    private Deque<List<CString>> process(ChannelHandlerContext ctx, CString sqlCommands,
+            Deque<List<CString>> newGroupOfSQLCommands, int from, CString sqlCommand, boolean last) throws IOException {
         List<CString> newDirectedSQLCommands = process(ctx, sqlCommand, last);
 
         if (newDirectedSQLCommands != null) {
