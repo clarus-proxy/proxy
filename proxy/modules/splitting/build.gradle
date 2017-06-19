@@ -3,7 +3,8 @@ description = 'Splitting module for the CLARUS proxy'
 dependencies {
     repositories {
         maven {
-            url 'http://repo.boundlessgeo.com/main'
+            name 'Open Source Geospatial Foundation Repository'
+            url 'http://download.osgeo.org/webdav/geotools/'
         }
     }
 

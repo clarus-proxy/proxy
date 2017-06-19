@@ -183,7 +183,7 @@
   <repositories>
     <repository>
       <id>repo-1</id>
-      <name>repository 1</name>
+      <name>maven</name>
       <url>https://oss.sonatype.org/content/groups/public/</url>
     </repository>
   </repositories>
