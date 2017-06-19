@@ -72,6 +72,7 @@ import net.sf.jsqlparser.expression.operators.relational.RegExpMatchOperator;
 import net.sf.jsqlparser.expression.operators.relational.RegExpMySQLOperator;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.select.SubSelect;
+
 /**
  * Find all used tables within an select statement.
  */
@@ -294,7 +295,8 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
         if (binaryExpression.getLeftExpression() != null) {
             binaryExpression.getRightExpression().accept(this);
         }
-        if (binaryExpression.getLeftExpression() instanceof Column || binaryExpression.getRightExpression() instanceof Column) {
+        if (binaryExpression.getLeftExpression() instanceof Column
+                || binaryExpression.getRightExpression() instanceof Column) {
             columnsInBinaryExpressions.add(binaryExpression);
         }
     }

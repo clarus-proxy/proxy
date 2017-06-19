@@ -129,7 +129,8 @@ public class SQLSession {
 
         public synchronized void allResponsesReceived() {
             if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace("notifying authentication responses have been received ({})", System.identityHashCode(this));
+                LOGGER.trace("notifying authentication responses have been received ({})",
+                        System.identityHashCode(this));
             }
             notifyAll();
         }
@@ -410,7 +411,20 @@ public class SQLSession {
     }
 
     public enum QueryResponseType {
-        PARSE_COMPLETE, BIND_COMPLETE, PARAMETER_DESCRIPTION, ROW_DESCRIPTION, DATA_ROW, NO_DATA, ROW_DESCRIPTION_AND_DATA_ROW_OR_NO_DATA, COMMAND_COMPLETE, EMPTY_QUERY, PORTAL_SUSPENDED, ERROR, COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR, CLOSE_COMPLETE, READY_FOR_QUERY
+        PARSE_COMPLETE,
+        BIND_COMPLETE,
+        PARAMETER_DESCRIPTION,
+        ROW_DESCRIPTION,
+        DATA_ROW,
+        NO_DATA,
+        ROW_DESCRIPTION_AND_DATA_ROW_OR_NO_DATA,
+        COMMAND_COMPLETE,
+        EMPTY_QUERY,
+        PORTAL_SUSPENDED,
+        ERROR,
+        COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR,
+        CLOSE_COMPLETE,
+        READY_FOR_QUERY
     }
 
     public static class QueryResponseStatus<T> {
@@ -430,8 +444,8 @@ public class SQLSession {
 
         public synchronized SortedMap<Integer, T> addAndRemove(int backend, T details) {
             if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace("adding {} response {} for backend {}/{}", type, System.identityHashCode(details), backend + 1,
-                        nbBackends);
+                LOGGER.trace("adding {} response {} for backend {}/{}", type, System.identityHashCode(details),
+                        backend + 1, nbBackends);
             }
             retain(details);
             synchronized (this) {
@@ -440,10 +454,11 @@ public class SQLSession {
             }
         }
 
-        public synchronized SortedMap<Integer, T> addAndRemove(int backend, T details, Map<Integer, List<Integer>> detailIndexesPerBackend) {
+        public synchronized SortedMap<Integer, T> addAndRemove(int backend, T details,
+                Map<Integer, List<Integer>> detailIndexesPerBackend) {
             if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace("adding {} response {} for backend {}/{}", type, System.identityHashCode(details), backend + 1,
-                        nbBackends);
+                LOGGER.trace("adding {} response {} for backend {}/{}", type, System.identityHashCode(details),
+                        backend + 1, nbBackends);
             }
             retain(details);
             synchronized (this) {
@@ -624,7 +639,8 @@ public class SQLSession {
         private void release(T details) {
             if (details instanceof ReferenceCounted) {
                 if (CHECK_BUFFER_REFERENCE_COUNT && LOGGER.isTraceEnabled()) {
-                    LOGGER.trace("releasing {} ({}), refcount={}", details, System.identityHashCode(details), ((ReferenceCounted) details).refCnt());
+                    LOGGER.trace("releasing {} ({}), refcount={}", details, System.identityHashCode(details),
+                            ((ReferenceCounted) details).refCnt());
                 }
                 ((ReferenceCounted) details).release();
             } else if (details instanceof Collection) {
@@ -1084,7 +1100,8 @@ public class SQLSession {
             }
             throw new NullPointerException("type cannot be null");
         }
-        List<QueryResponseStatus<?>> candidates = getQueryResponses().entrySet().stream().filter(e -> e.getKey().getKey() == type).map(Map.Entry::getValue).collect(Collectors.toList());
+        List<QueryResponseStatus<?>> candidates = getQueryResponses().entrySet().stream()
+                .filter(e -> e.getKey().getKey() == type).map(Map.Entry::getValue).collect(Collectors.toList());
         for (QueryResponseStatus<?> candidate : candidates) {
             @SuppressWarnings("unchecked")
             QueryResponseStatus<T> queryResponses = (QueryResponseStatus<T>) candidate;
@@ -1204,7 +1221,7 @@ public class SQLSession {
     public void addTableOIDBackend(int tableOID, int backend) {
         SortedSet<Integer> backends = getTableOIDBackends().get(tableOID);
         if (backends == null) {
-            synchronized(getTableOIDBackends()) {
+            synchronized (getTableOIDBackends()) {
                 backends = getTableOIDBackends().get(tableOID);
                 if (backends == null) {
                     backends = new TreeSet<>();
@@ -1233,7 +1250,7 @@ public class SQLSession {
     public void addTypeOIDBackend(long typeOID, int backend) {
         SortedSet<Integer> backends = getTypeOIDBackends().get(typeOID);
         if (backends == null) {
-            synchronized(getTypeOIDBackends()) {
+            synchronized (getTypeOIDBackends()) {
                 backends = getTypeOIDBackends().get(typeOID);
                 if (backends == null) {
                     backends = new TreeSet<>();
@@ -1562,7 +1579,7 @@ public class SQLSession {
 
     public void waitForResponses() throws InterruptedException {
         if (responsesReceived == null || responsesReceived.getCount() == 0) {
-            synchronized(this) {
+            synchronized (this) {
                 if (responsesReceived == null || responsesReceived.getCount() == 0) {
                     responsesReceived = new CountDownLatch(1);
                 }
@@ -1573,7 +1590,7 @@ public class SQLSession {
         }
         // wait for responses
         responsesReceived.await();
-        synchronized(this) {
+        synchronized (this) {
             if (responsesReceived != null && responsesReceived.getCount() == 0) {
                 responsesReceived = null;
             }
@@ -1585,7 +1602,7 @@ public class SQLSession {
 
     public void responsesReceived() {
         CountDownLatch responsesReceived;
-        synchronized(this) {
+        synchronized (this) {
             responsesReceived = this.responsesReceived;
         }
         if (responsesReceived != null && responsesReceived.getCount() == 1) {

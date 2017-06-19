@@ -3252,7 +3252,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         // Extract parameter ids
         PgsqlColumnsFinder columnsFinder = new PgsqlColumnsFinder();
         List<BinaryExpression> binaryExpressions = columnsFinder.getColumnsInBinaryExpressions(select.getWhere());
-        List<Map.Entry<BinaryExpression, Map.Entry<List<String>, String>>> whereItemIds = new ArrayList<>(binaryExpressions.size());
+        List<Map.Entry<BinaryExpression, Map.Entry<List<String>, String>>> whereItemIds = new ArrayList<>(
+                binaryExpressions.size());
         for (BinaryExpression expression : binaryExpressions) {
             List<String> paramIds;
             String paramValue;
@@ -3284,25 +3285,25 @@ public class PgsqlEventProcessor implements EventProcessor {
             // Extract parameter ids and values from where items
             dataOperation.setParameterIds(whereItemIds.stream().map(Map.Entry::getValue).map(Map.Entry::getKey)
                     .flatMap(ids -> ids.stream()).map(CString::valueOf).collect(Collectors.toList()));
-            dataOperation.setParameterValues(whereItemIds.stream().map(Map.Entry::getValue)
-                    .flatMap(e -> Stream.generate((Supplier<String>) () -> e.getValue()).limit(e.getKey().size()))
-                    .map(CString::valueOf)
-                    .map(value -> {
-                        if (parameterValues != null) {
-                            // if value is a parameter id ($<index>)
-                            if (value != null && value.charAt(0) == '$') {
-                                // get the parameter index
-                                int idx = Integer.parseInt(value.substring(1).toString()) - 1;
-                                // get the parameter value
-                                ParameterValue parameterValue = parameterValues.get(idx);
-                                // convert parameter value to string
-                                value = convertToText(parameterValue.getType(), -1, parameterValue.getFormat(),
-                                        parameterValue.getValue());
-                            }
-                        }
-                        return value;
-                    })
-                    .collect(Collectors.toList()));
+            dataOperation
+                    .setParameterValues(whereItemIds.stream()
+                            .map(Map.Entry::getValue).flatMap(e -> Stream
+                                    .generate((Supplier<String>) () -> e.getValue()).limit(e.getKey().size()))
+                            .map(CString::valueOf).map(value -> {
+                                if (parameterValues != null) {
+                                    // if value is a parameter id ($<index>)
+                                    if (value != null && value.charAt(0) == '$') {
+                                        // get the parameter index
+                                        int idx = Integer.parseInt(value.substring(1).toString()) - 1;
+                                        // get the parameter value
+                                        ParameterValue parameterValue = parameterValues.get(idx);
+                                        // convert parameter value to string
+                                        value = convertToText(parameterValue.getType(), -1, parameterValue.getFormat(),
+                                                parameterValue.getValue());
+                                    }
+                                }
+                                return value;
+                            }).collect(Collectors.toList()));
             // Extract parameter ids and values (functions)
             for (SelectItem selectItem : select.getSelectItems()) {
                 if (selectItem instanceof SelectExpressionItem
@@ -3343,17 +3344,12 @@ public class PgsqlEventProcessor implements EventProcessor {
         } else {
             String name = column.getTable().getName();
             String shortColumnName = columnName.substring(columnName.lastIndexOf('.') + 1);
-            dataIds = Collections
-                    .singletonList(
-                            tableIds.stream()
-                                    .sorted(Comparator
-                                            .comparingInt(e -> e.getKey().getAlias() != null ? 0 : 1))
-                                    .filter(e -> {
-                                        Table table = e.getKey();
-                                        return name.equals(table.getName()) || (table.getAlias() != null
-                                                && name.equals(table.getAlias().getName()));
-                                    }).map(Map.Entry::getValue).map(id -> id + shortColumnName).findFirst()
-                                    .orElse(columnName));
+            dataIds = Collections.singletonList(tableIds.stream()
+                    .sorted(Comparator.comparingInt(e -> e.getKey().getAlias() != null ? 0 : 1)).filter(e -> {
+                        Table table = e.getKey();
+                        return name.equals(table.getName())
+                                || (table.getAlias() != null && name.equals(table.getAlias().getName()));
+                    }).map(Map.Entry::getValue).map(id -> id + shortColumnName).findFirst().orElse(columnName));
         }
         return dataIds;
     }
@@ -3627,7 +3623,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                             if (same && selectItem instanceof SelectExpressionItem
                                     && ((SelectExpressionItem) selectItem).getExpression() instanceof Function) {
                                 Function function = (Function) ((SelectExpressionItem) selectItem).getExpression();
-                                int index = dataOperation.getParameterIds().indexOf(CString.valueOf(function.toString()));
+                                int index = dataOperation.getParameterIds()
+                                        .indexOf(CString.valueOf(function.toString()));
                                 if (index != -1) {
                                     String newExpression = dataOperation.getParameterValues().get(index).toString();
                                     String oldExpression = PlainSelect
@@ -5924,47 +5921,41 @@ public class PgsqlEventProcessor implements EventProcessor {
             }));
             // map expected clear field names to the fields, modifying their
             // name if necessary
-            expectedFieldToRowDescription = expectedFields
-                    .stream().map(ef -> {
-                        String clearFieldName = ef.getName();
-                        return new SimpleEntry<>(clearFieldName,
-                                ef.getProtectedFields().entrySet().stream().flatMap(e -> {
-                                    int backend = e.getKey();
-                                    List<ExpectedProtectedField> protectedFields = e.getValue();
-                                    List<PgsqlRowDescriptionMessage.Field> backendFields = allFields.get(backend);
-                                    return protectedFields.stream().map(epf -> {
-                                        int position = epf.getPosition();
-                                        PgsqlRowDescriptionMessage.Field backendField = backendFields.get(position);
-                                        if (session.isUnprotectingDataEnabled()) {
-                                            if (!backendField.getName().equals("?column?")) {
-                                                String outputName = clearFieldName.equals("*") ? epf.getName()
-                                                        : clearFieldName;
-                                                if (!backendField.getName().equals(outputName)) {
-                                                    backendField = new PgsqlRowDescriptionMessage.Field(
-                                                            CString.valueOf(outputName), backendField.getTableOID(),
-                                                            backendField.getColumnNumber(), backendField.getTypeOID(),
-                                                            backendField.getTypeSize(), backendField.getTypeModifier(),
-                                                            backendField.getFormat());
-                                                }
-                                            }
-                                        } else {
-                                            CString backendFieldName = backendField.getName();
-                                            String protectedAttributeName = epf.getAttributes().stream()
-                                                    .map(Map.Entry::getKey)
-                                                    .filter(pan -> backendFieldName.equals(toOutputName(pan)))
-                                                    .findFirst().orElse(epf.getAttributes().get(0).getKey());
-                                            backendField = new PgsqlRowDescriptionMessage.Field(
-                                                    CString.valueOf(
-                                                            "csp" + (backend + 1) + "/" + protectedAttributeName)
-                                                            .replace('/', '.'),
-                                                    backendField.getTableOID(), backendField.getColumnNumber(),
-                                                    backendField.getTypeOID(), backendField.getTypeSize(),
-                                                    backendField.getTypeModifier(), backendField.getFormat());
-                                        }
-                                        return backendField;
-                                    });
-                                }).collect(Collectors.toList()));
-                    }).collect(Collectors.toList());
+            expectedFieldToRowDescription = expectedFields.stream().map(ef -> {
+                String clearFieldName = ef.getName();
+                return new SimpleEntry<>(clearFieldName, ef.getProtectedFields().entrySet().stream().flatMap(e -> {
+                    int backend = e.getKey();
+                    List<ExpectedProtectedField> protectedFields = e.getValue();
+                    List<PgsqlRowDescriptionMessage.Field> backendFields = allFields.get(backend);
+                    return protectedFields.stream().map(epf -> {
+                        int position = epf.getPosition();
+                        PgsqlRowDescriptionMessage.Field backendField = backendFields.get(position);
+                        if (session.isUnprotectingDataEnabled()) {
+                            if (!backendField.getName().equals("?column?")) {
+                                String outputName = clearFieldName.equals("*") ? epf.getName() : clearFieldName;
+                                if (!backendField.getName().equals(outputName)) {
+                                    backendField = new PgsqlRowDescriptionMessage.Field(CString.valueOf(outputName),
+                                            backendField.getTableOID(), backendField.getColumnNumber(),
+                                            backendField.getTypeOID(), backendField.getTypeSize(),
+                                            backendField.getTypeModifier(), backendField.getFormat());
+                                }
+                            }
+                        } else {
+                            CString backendFieldName = backendField.getName();
+                            String protectedAttributeName = epf.getAttributes().stream().map(Map.Entry::getKey)
+                                    .filter(pan -> backendFieldName.equals(toOutputName(pan))).findFirst()
+                                    .orElse(epf.getAttributes().get(0).getKey());
+                            backendField = new PgsqlRowDescriptionMessage.Field(
+                                    CString.valueOf("csp" + (backend + 1) + "/" + protectedAttributeName).replace('/',
+                                            '.'),
+                                    backendField.getTableOID(), backendField.getColumnNumber(),
+                                    backendField.getTypeOID(), backendField.getTypeSize(),
+                                    backendField.getTypeModifier(), backendField.getFormat());
+                        }
+                        return backendField;
+                    });
+                }).collect(Collectors.toList()));
+            }).collect(Collectors.toList());
             // merge the duplicate fields if necessary
             expectedFieldToRowDescription.stream().forEach(e -> {
                 String clearFieldname = e.getKey();
@@ -6026,10 +6017,10 @@ public class PgsqlEventProcessor implements EventProcessor {
         // - replace asterisks by real names in attribute names
         // - remove attribute names that are not pertinent
         // - map field name and attribute names to their field position
-        for (int i = 0, j = 0, k = 0; i < expectedFields.size(); i ++, j ++, k ++) {
+        for (int i = 0, j = 0, k = 0; i < expectedFields.size(); i++, j++, k++) {
             ExpectedField expectedField = expectedFields.get(i);
             if (expectedField.getProtectedFields().isEmpty()) {
-                k --;
+                k--;
                 continue;
             }
             String clearName = expectedField.getName();
@@ -6048,8 +6039,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                             .collect(Collectors.toList());
                     if (newClearAttributes.isEmpty()) {
                         LOGGER.trace("strange... unexpected attribute size");
-                        newClearAttributes = Stream.of(new SimpleEntry<>(newFieldName, k))
-                                .collect(Collectors.toList());
+                        newClearAttributes = Stream.of(new SimpleEntry<>(newFieldName, k)).collect(Collectors.toList());
                     }
                     Map<Integer, List<ExpectedProtectedField>> newProtectedFields = expectedField.getProtectedFields()
                             .entrySet().stream()
@@ -6085,11 +6075,11 @@ public class PgsqlEventProcessor implements EventProcessor {
                     ExpectedField newClearField = new ExpectedField(newClearFieldName, k, newClearAttributes,
                             newProtectedFields);
                     expectedFields.add(i, newClearField);
-                    i ++;
-                    k ++;
+                    i++;
+                    k++;
                 }
-                i --;
-                k --;
+                i--;
+                k--;
             } else {
                 PgsqlRowDescriptionMessage.Field newField = expectedFieldToRowDescription.get(j).getValue().get(0);
                 if (!newField.getName().equals(clearFieldname)) {
@@ -6418,7 +6408,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         return mode;
     }
 
-    private List<ByteBuf> processDataRow(ChannelHandlerContext ctx, SortedMap<Integer, List<ByteBuf>> allValues, List<Integer> involvedBackends) {
+    private List<ByteBuf> processDataRow(ChannelHandlerContext ctx, SortedMap<Integer, List<ByteBuf>> allValues,
+            List<Integer> involvedBackends) {
         List<ByteBuf> newValues;
         SQLSession session = getSession(ctx);
         DefaultPromise promise = (DefaultPromise) session.getPromise();
@@ -6666,7 +6657,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                     // release the initial buffers that has been retained by
                     // session.addQueryResponse (avoid memory leaks)
                     if (LOGGER.isTraceEnabled()) {
-                        LOGGER.trace("releasing {} ({}), refcount={}", newTag, System.identityHashCode(newTag), ((ReferenceCounted) newTag).refCnt());
+                        LOGGER.trace("releasing {} ({}), refcount={}", newTag, System.identityHashCode(newTag),
+                                ((ReferenceCounted) newTag).refCnt());
                     }
                     if (newTag.release() && LOGGER.isTraceEnabled()) {
                         LOGGER.trace("tag {} deallocated", newTag);
@@ -6679,7 +6671,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 allTags.values().stream().forEach(tg -> {
                     if (ntg != tg) {
                         if (LOGGER.isTraceEnabled()) {
-                            LOGGER.trace("releasing {} ({}), refcount={}", tg, System.identityHashCode(tg), ((ReferenceCounted) tg).refCnt());
+                            LOGGER.trace("releasing {} ({}), refcount={}", tg, System.identityHashCode(tg),
+                                    ((ReferenceCounted) tg).refCnt());
                         }
                         if (tg.release() && LOGGER.isTraceEnabled()) {
                             LOGGER.trace("tag {} deallocated", tg);
@@ -6690,22 +6683,23 @@ public class PgsqlEventProcessor implements EventProcessor {
                     allTags.values().forEach(tg -> {
                         int refCnt = tg.refCnt();
                         if (LOGGER.isTraceEnabled()) {
-                            LOGGER.trace("out tag {} ({}) reference count: {}", tg, System.identityHashCode(tg), refCnt);
+                            LOGGER.trace("out tag {} ({}) reference count: {}", tg, System.identityHashCode(tg),
+                                    refCnt);
                         }
                         if (tg == ntg) {
                             if (refCnt == 0) {
-                                throw new IllegalStateException(String
-                                        .format("Unexpected reference count (0) for tag '%s' (expected greater than 0)", tg));
+                                throw new IllegalStateException(String.format(
+                                        "Unexpected reference count (0) for tag '%s' (expected greater than 0)", tg));
                             }
                         } else if (tg == tag) {
                             if (refCnt == 0) {
-                                throw new IllegalStateException(String
-                                        .format("Unexpected reference count (0) for tag '%s' (expected greater than 0)", tg));
+                                throw new IllegalStateException(String.format(
+                                        "Unexpected reference count (0) for tag '%s' (expected greater than 0)", tg));
                             }
                         } else {
                             if (refCnt != 0) {
-                                throw new IllegalStateException(String
-                                        .format("Unexpected reference count (%d) for tag '%s' (expected 0)", refCnt, tg));
+                                throw new IllegalStateException(String.format(
+                                        "Unexpected reference count (%d) for tag '%s' (expected 0)", refCnt, tg));
                             }
                         }
                     });
