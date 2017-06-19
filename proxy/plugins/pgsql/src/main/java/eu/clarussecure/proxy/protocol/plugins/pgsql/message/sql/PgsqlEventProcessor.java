@@ -33,6 +33,7 @@ import javax.xml.bind.DatatypeConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import eu.clarussecure.dataoperations.DataOperationCommand;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.GeometryType;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlConfiguration;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlConstants;
@@ -58,7 +59,6 @@ import eu.clarussecure.proxy.spi.Mode;
 import eu.clarussecure.proxy.spi.ModuleOperation;
 import eu.clarussecure.proxy.spi.Operation;
 import eu.clarussecure.proxy.spi.StringUtilities;
-import eu.clarussecure.proxy.spi.protection.DefaultPromise;
 import eu.clarussecure.proxy.spi.protocol.Configuration;
 import eu.clarussecure.proxy.spi.protocol.ProtocolService;
 import io.netty.buffer.ByteBuf;
@@ -6150,33 +6150,33 @@ public class PgsqlEventProcessor implements EventProcessor {
                 }
             }
         });
-        // rebuilt attribute mapping
-        Arrays.fill(positionPerBackend, 0);
-        List<List<Map.Entry<String, Map<Integer, Integer>>>> allAttributeMapping = new ArrayList<>(
-                expectedFields.size());
-        for (int i = 0; i < expectedFields.size(); i++) {
-            ExpectedField expectedField = expectedFields.get(i);
-            List<Map.Entry<String, Integer>> attributes = expectedField.getAttributes();
-            List<Map.Entry<String, Map<Integer, Integer>>> attributeMapping = new ArrayList<>();
-            for (int j = 0; j < expectedField.getAttributes().size(); j++) {
-                int relativeClearIndex = j;
-                Map<Integer, Integer> mapping = expectedField.getProtectedFields().entrySet().stream()
-                        .flatMap(entry -> {
-                            int backend = entry.getKey();
-                            List<ExpectedProtectedField> protectedFields = entry.getValue();
-                            Stream<Map.Entry<Integer, Integer>> stream;
-                            if (protectedFields.stream().flatMap(protectedField -> protectedField.getAttributeMapping()
-                                    .stream().filter(e -> e.getValue() == relativeClearIndex)).count() > 0) {
-                                stream = Stream.of(new SimpleEntry<>(backend, positionPerBackend[backend]++));
-                            } else {
-                                stream = Stream.empty();
-                            }
-                            return stream;
-                        }).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-                attributeMapping.add(new SimpleEntry<>(attributes.get(relativeClearIndex).getKey(), mapping));
-            }
-            allAttributeMapping.add(attributeMapping);
-        }
+//        // rebuilt attribute mapping
+//        Arrays.fill(positionPerBackend, 0);
+//        List<List<Map.Entry<String, Map<Integer, Integer>>>> allAttributeMapping = new ArrayList<>(
+//                expectedFields.size());
+//        for (int i = 0; i < expectedFields.size(); i ++) {
+//            ExpectedField expectedField = expectedFields.get(i);
+//            List<Map.Entry<String, Integer>> attributes = expectedField.getAttributes();
+//            List<Map.Entry<String, Map<Integer, Integer>>> attributeMapping = new ArrayList<>();
+//            for (int j = 0; j < expectedField.getAttributes().size(); j ++) {
+//                int relativeClearIndex = j;
+//                Map<Integer, Integer> mapping = expectedField.getProtectedFields().entrySet().stream()
+//                        .flatMap(entry -> {
+//                            int backend = entry.getKey();
+//                            List<ExpectedProtectedField> protectedFields = entry.getValue();
+//                            Stream<Map.Entry<Integer, Integer>> stream;
+//                            if (protectedFields.stream().flatMap(protectedField -> protectedField.getAttributeMapping()
+//                                    .stream().filter(e -> e.getValue() == relativeClearIndex)).count() > 0) {
+//                                stream = Stream.of(new SimpleEntry<>(backend, positionPerBackend[backend]++));
+//                            } else {
+//                                stream = Stream.empty();
+//                            }
+//                            return stream;
+//                        }).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+//                attributeMapping.add(new SimpleEntry<>(attributes.get(relativeClearIndex).getKey(), mapping));
+//            }
+//            allAttributeMapping.add(attributeMapping);
+//        }
         // rebuilt promise
         String[] attributeNames = expectedFields.stream().map(ExpectedField::getAttributes).flatMap(List::stream)
                 .map(Map.Entry::getKey).toArray(String[]::new);
@@ -6190,14 +6190,17 @@ public class PgsqlEventProcessor implements EventProcessor {
             List<String> protectedAttributes = protectedAttributesPerBackend.get(backend);
             return protectedAttributes == null ? new String[0] : protectedAttributes.stream().toArray(String[]::new);
         }).toArray(String[][]::new);
-        int[][][] attributeMapping = allAttributeMapping.stream().flatMap(List::stream).map(Map.Entry::getValue)
-                .map(m -> m.entrySet().stream().sorted(Comparator.comparing(Map.Entry::getKey))
-                        .map(e -> new int[] { e.getKey(), e.getValue() }).toArray(int[][]::new))
-                .toArray(int[][][]::new);
-        DefaultPromise promise = (DefaultPromise) session.getPromise();
-        promise.setAttributeNames(attributeNames);
-        promise.setProtectedAttributeNames(protectedAttributeNames);
-        promise.setAttributeMapping(attributeMapping);
+//        int[][][] attributeMapping = allAttributeMapping.stream().flatMap(List::stream).map(Map.Entry::getValue)
+//                .map(m -> m.entrySet().stream().sorted(Comparator.comparing(Map.Entry::getKey))
+//                        .map(e -> new int[] { e.getKey(), e.getValue() }).toArray(int[][]::new))
+//                .toArray(int[][][]::new);
+        List<DataOperationCommand> promise = session.getPromise();
+        for (int backend = 0; backend < promise.size(); backend ++) {
+            DataOperationCommand dataOperationCommand = promise.get(backend);
+            dataOperationCommand.setAttributeNames(attributeNames);
+            dataOperationCommand.setProtectedAttributeNames(protectedAttributeNames[backend]);
+            //dataOperationCommand.setAttributeMapping(attributeMapping[backend]);
+        }
         return newFields;
     }
 
@@ -6412,7 +6415,7 @@ public class PgsqlEventProcessor implements EventProcessor {
             List<Integer> involvedBackends) {
         List<ByteBuf> newValues;
         SQLSession session = getSession(ctx);
-        DefaultPromise promise = (DefaultPromise) session.getPromise();
+        List<DataOperationCommand> promise = session.getPromise();
         if (session.isUnprotectingDataEnabled() && promise != null
                 && ((session.getExpectedFields() != null && session.getBackendRowDescriptions() != null
                         && session.getRowDescription() != null)
@@ -6420,8 +6423,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                                 && session.getCurrentDescribeStepStatus().getExpectedFields() != null
                                 && session.getCurrentDescribeStepStatus().getBackendRowDescriptions() != null
                                 && session.getCurrentDescribeStepStatus().getRowDescription() != null))) {
-            String[] attributeNames = promise.getAttributeNames();
-            String[][] protectedAttributeNames = promise.getProtectedAttributeNames();
+            String[] attributeNames = promise.get(0).getAttributeNames();
+            String[][] protectedAttributeNames = promise.stream().map(DataOperationCommand::getProtectedAttributeNames)
+                    .toArray(String[][]::new);
             // Extract data operation
             DataOperation dataOperation = new DataOperation();
             dataOperation.setOperation(Operation.READ);
