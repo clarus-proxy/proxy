@@ -20,7 +20,7 @@
         <attribute name="*/altitude" attribute_type="non_confidential"
             data_type="numeric_continuous" />
         <attribute name="*/prof_max" attribute_type="non_confidential"
-            data_type="nuemric_continuous" />
+            data_type="numeric_continuous" />
         <attribute name="*/geom" attribute_type="identifier"
             data_type="geometric_object" />
     </data>

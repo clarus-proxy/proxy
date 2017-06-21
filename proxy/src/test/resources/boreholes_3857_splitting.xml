@@ -31,7 +31,7 @@
             <attribute_type type="technical_identifier"
                 protection="replicate" clouds="2"/>
             <attribute_type type="identifier"
-                protection="splitting" clouds="2" splitting_type="lines" />
+                protection="splitting" clouds="2" splitting_type="points" />
             <attribute_type type="non_confidential"
                 protection="splitting" clouds="1" />
         </attribute_types>

@@ -34,9 +34,13 @@ public class PgsqlConfiguration extends Configuration {
 
     private static final String CSP_PATTERN = "csp\\d+";
 
-    private static final String GEOMETRIC_OBJECT_PATTERN = "geometric_object";
+    private static final String DATA_TECHNICAL_ID = "data_technical_id";
+
+    private static final String GEOMETRIC_OBJECT_DEFINITION = "geometric_object_definition";
 
     private List<String> backendDatabaseNames;
+
+    private String dataTechnicalId;
 
     private Map<String, String> geometryObjectDefinition;
 
@@ -58,6 +62,7 @@ public class PgsqlConfiguration extends Configuration {
     @Override
     public void setParameters(SecurityPolicy securityPolicy) {
         super.setParameters(securityPolicy);
+        String dataTechnicalId = null;
         String geometricDataId = null;
         String geometricObjectClearType = null;
         String geometricObjectProtectedType = null;
@@ -67,6 +72,14 @@ public class PgsqlConfiguration extends Configuration {
         if (attributeNodes != null) {
             for (Node attributeNode : attributeNodes) {
                 Node nameAttr = attributeNode.getAttributes().getNamedItem(SecurityPolicy.NAME_ATTR);
+                Node attributeTypeAttr = attributeNode.getAttributes().getNamedItem("attribute_type");
+                if (nameAttr != null && attributeTypeAttr != null) {
+                    String name = nameAttr.getNodeValue();
+                    String attributeType = attributeTypeAttr.getNodeValue();
+                    if ("technical_identifier".equals(attributeType)) {
+                        dataTechnicalId = adaptDataId(name);
+                    }
+                }
                 Node dataTypeAttr = attributeNode.getAttributes().getNamedItem("data_type");
                 if (nameAttr != null && dataTypeAttr != null) {
                     String name = nameAttr.getNodeValue();
@@ -92,7 +105,11 @@ public class PgsqlConfiguration extends Configuration {
                                 Node splittingTypeAttr = subnode.getAttributes().getNamedItem("splitting_type");
                                 if (splittingTypeAttr != null) {
                                     String splittingType = splittingTypeAttr.getNodeValue();
-                                    if ("lines".equals(splittingType)) {
+                                    if ("points".equals(splittingType)) {
+                                        geometricObjectClearType = GeometryType.POINT.toString();
+                                        geometricObjectProtectedType = GeometryType.POINT.toString();
+                                        break;
+                                    } else if ("lines".equals(splittingType)) {
                                         geometricObjectClearType = GeometryType.POINT.toString();
                                         geometricObjectProtectedType = GeometryType.LINESTRING.toString();
                                         break;
@@ -107,6 +124,14 @@ public class PgsqlConfiguration extends Configuration {
                 }
             }
         }
+        Map<String, String> parameters = getParameters();
+        if (parameters == null) {
+            parameters = new HashMap<>();
+            setParameters(parameters);
+        }
+        if (dataTechnicalId != null) {
+            parameters.put(DATA_TECHNICAL_ID, dataTechnicalId);
+        }
         StringBuilder sb = new StringBuilder();
         if (geometricDataId != null) {
             sb.append(GEOMETRIC_DATA_ID).append('=').append(geometricDataId).append(';');
@@ -117,15 +142,12 @@ public class PgsqlConfiguration extends Configuration {
         if (geometricObjectProtectedType != null) {
             sb.append(GEOMETRIC_OBJECT_PROTECTED_TYPE).append('=').append(geometricObjectProtectedType).append(';');
         }
-        Map<String, String> parameters = getParameters();
-        if (parameters == null) {
-            parameters = new HashMap<>();
-            setParameters(parameters);
+        if (sb.length() > 0) {
+            parameters.put(GEOMETRIC_OBJECT_DEFINITION, sb.toString());
         }
-        parameters.put(GEOMETRIC_OBJECT_PATTERN, sb.toString());
     }
 
-    public String adaptDataId(String dataId) {
+    public String adaptDataId(String dataId/*, boolean fullyQualify*/) {
         dataId = dataId.indexOf('/') == -1
                 // prepend with */*/ if there is no /
                 ? "*/*/" + dataId
@@ -138,14 +160,16 @@ public class PgsqlConfiguration extends Configuration {
         if (m.matches()) {
             dataId = m.replaceAll("$1public.$3");
         }
-        dataId = dataId.startsWith("*/*/")
-                // remove */*/ if there is
-                ? dataId.substring("*/*/".length())
-                : dataId.startsWith("*/")
-                        // remove */ if there is
-                        ? dataId.substring("*/".length())
-                        // else do nothing
-                        : dataId;
+//        if (!fullyQualify) {
+//            dataId = dataId.startsWith("*/*/")
+//                    // remove */*/ if there is
+//                    ? dataId.substring("*/*/".length())
+//                    : dataId.startsWith("*/")
+//                            // remove */ if there is
+//                            ? dataId.substring("*/".length())
+//                            // else do nothing
+//                            : dataId;
+//        }
         return dataId;
     }
 
@@ -168,14 +192,22 @@ public class PgsqlConfiguration extends Configuration {
         return backendDatabaseNames;
     }
 
+    public String getDataTechnicalId() {
+        if (dataTechnicalId == null) {
+            Map<String, String> parameters = getParameters();
+            if (parameters != null) {
+                dataTechnicalId = parameters.get(DATA_TECHNICAL_ID);
+            }
+        }
+        return dataTechnicalId;
+    }
+
     public Map<String, String> getGeometryObjectDefinition() {
         if (geometryObjectDefinition == null) {
             Map<String, String> parameters = getParameters();
             if (parameters != null) {
-                Pattern geoPattern = Pattern.compile(GEOMETRIC_OBJECT_PATTERN);
-                geometryObjectDefinition = parameters.entrySet().stream()
-                        .filter(e -> geoPattern.matcher(e.getKey()).matches()).map(Map.Entry::getValue)
-                        .flatMap(v -> Arrays.stream(v.split(";"))).map(p -> p.split("="))
+                String parameterValue = parameters.get(GEOMETRIC_OBJECT_DEFINITION);
+                geometryObjectDefinition = Arrays.stream(parameterValue.split(";")).map(p -> p.split("="))
                         .collect(Collectors.toMap(tk -> tk[0], tk -> tk[1], (v1, v2) -> v2));
             } else {
                 geometryObjectDefinition = Collections.emptyMap();

@@ -119,6 +119,7 @@ public class Proxy {
         }
         // Adapt data identifiers
         String[] dataIds = protocol.adaptDataIds(securityPolicy.getDataIds());
+        securityPolicy.setDataIds(dataIds);
         // Get dataset prefix for each server
         String[] datasetPrefixByServer = protocol.getDatasetPrefixByServer();
         // Initialize the protection module

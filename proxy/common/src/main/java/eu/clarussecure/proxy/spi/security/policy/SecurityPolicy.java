@@ -71,6 +71,23 @@ public class SecurityPolicy {
         return null;
     }
 
+    public void setDataIds(String[] names) {
+        Node root = document.getFirstChild();
+        Node data = findSubNode(DATA_ELT, root);
+        List<Node> attributes = findSubNodes(ATTRIBUTE_ELT, data);
+        if (attributes != null) {
+            for (int i = 0; i < attributes.size(); i ++) {
+                Node attribute = attributes.get(i);
+                if (attribute != null) {
+                    Node name = attribute.getAttributes().getNamedItem(NAME_ATTR);
+                    if (name != null) {
+                        name.setNodeValue(names[i]);
+                    }
+                }
+            }
+        }
+    }
+
     public Map<String, String> getProtocolParameters() {
         Node root = document.getFirstChild();
         Node protocol = findSubNode(PROTOCOL_ELT, root);

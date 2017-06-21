@@ -44,7 +44,7 @@
     <dependency>
       <groupId>eu.clarussecure</groupId>
       <artifactId>dataoperations.anonymizationmodule</artifactId>
-      <version>2.0</version>
+      <version>2.1</version>
       <scope>compile</scope>
     </dependency>
     <dependency>
