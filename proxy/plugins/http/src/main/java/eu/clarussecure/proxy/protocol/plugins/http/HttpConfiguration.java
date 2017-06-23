@@ -13,7 +13,7 @@ import eu.clarussecure.proxy.spi.protocol.ProtocolCapabilities;
 public class HttpConfiguration extends Configuration {
 
     /** The Constant PROTOCOL_NAME. */
-    private static final String PROTOCOL_NAME = "HTTP/1.1";
+    private static final String PROTOCOL_NAME = "HTTP";
 
     /** The Constant DEFAULT_PROTOCOL_PORT. */
     private static final int DEFAULT_PROTOCOL_PORT = 80;
