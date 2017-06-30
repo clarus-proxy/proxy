@@ -13,6 +13,9 @@ import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.util.concurrent.DefaultEventExecutorGroup;
 import io.netty.util.concurrent.EventExecutorGroup;
 
+/**
+ * Created on 15/06/2017.
+ */
 public class WfsClientPipelineInitializer extends ChannelInitializer<Channel> {
 
     /*

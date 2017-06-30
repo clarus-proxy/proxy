@@ -1,9 +1,6 @@
 package eu.clarussecure.proxy.protocol.plugins.wfs.handler;
 
-import eu.clarussecure.dataoperations.Promise;
-import eu.clarussecure.proxy.spi.CString;
 import eu.clarussecure.proxy.spi.DataOperation;
-import eu.clarussecure.proxy.spi.Operation;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.channel.ChannelHandlerContext;
@@ -19,12 +16,11 @@ import javax.xml.stream.*;
 import javax.xml.stream.events.StartElement;
 import javax.xml.stream.events.XMLEvent;
 import java.io.FileOutputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
+/**
+ * Created on 09/06/2017.
+ */
 public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
 
     private XMLInputFactory xmlInputFactory;
@@ -75,14 +71,11 @@ public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
 
                     event = xmlEventReader.peek();
                     eventType = event.getEventType();
-
                     StartElement startElement = null;
-
                     if (XMLEvent.START_ELEMENT == eventType) {
 
                         startElement = event.asStartElement();
                         LOGGER.info(startElement.getName().getLocalPart());
-
                         if (startElement.getName().getLocalPart().equals("featureMember")) {
 
                             // marshalling/unmarshalling via JAX
@@ -91,12 +84,9 @@ public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
                             // unmarshaller.unmarshal(xmlEventReader, FeatureCollectionType.class);
 
                         }
-
                     }
-
                     writer.add(event);
                     xmlEventReader.next();
-
                 }
 
                 writer.add(eventFactory.createEndDocument());
@@ -111,17 +101,13 @@ public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
                     // writer.flush();
                     // writer.close();
 
-                }
-                //catch (XMLStreamException e) {
-                catch (Exception e) {
+                } catch (Exception e) {
                     LOGGER.error("Can't close xml writer", e);
                 }
             }
-
             if (httpContent instanceof LastHttpContent) {
                 System.out.println("LAST HTTP CONTENT");
             }
-
         }
 
         ReferenceCountUtil.retain(httpObject);
@@ -129,6 +115,10 @@ public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
 
     }
 
+    /**
+     * replaceContentLengthByTransferEncodingHeader
+     * @param headers
+     */
     protected void replaceContentLengthByTransferEncodingHeader(HttpHeaders headers) {
 
         headers.remove(HttpHeaderNames.CONTENT_LENGTH);
@@ -136,6 +126,12 @@ public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
         headers.add(HttpHeaderNames.TRANSFER_ENCODING, "chunked");
     }
 
+    /**
+     * newDataOperation
+     * @param ctx
+     * @param dataOperation
+     * @return
+     */
     private List<DataOperation> newDataOperation(ChannelHandlerContext ctx, DataOperation dataOperation) {
         return null;
     }

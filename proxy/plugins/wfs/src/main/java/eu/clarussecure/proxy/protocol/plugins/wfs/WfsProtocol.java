@@ -5,6 +5,9 @@ import eu.clarussecure.proxy.spi.protocol.Configuration;
 import eu.clarussecure.proxy.spi.protocol.ProtocolCapabilities;
 import eu.clarussecure.proxy.spi.protocol.ProtocolExecutor;
 
+/**
+ * Created on 12/06/2017.
+ */
 public class WfsProtocol extends ProtocolExecutor {
 
     private static class Helper {
