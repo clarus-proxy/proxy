@@ -20,11 +20,38 @@ public class WfsRequest extends DefaultHttpRequest {
 
         super(httpVersion, method, uri);
 
-        if (this.method().equals(HttpMethod.GET)) {
-            setWfsParams();
-        } else if (this.method().equals(HttpMethod.POST)) {
-            // parse the payload
+        setWfsParams();
+
+    }
+
+    public boolean isGetRequest() {
+        return this.method().equals(HttpMethod.GET);
+    }
+
+    public boolean isPostRequest() {
+        return this.method().equals(HttpMethod.POST);
+    }
+
+    public boolean isWfsRequest() {
+
+        for (Map.Entry<String, String> entry : wfsParams.entrySet()) {
+            if (entry.getKey().equals(WfsParameter.SERVICE.getParameter())) {
+                return (entry.getValue().equalsIgnoreCase("WFS"));
+            }
         }
+        return false;
+    }
+
+    public boolean isWfsGetRequest() {
+        return isWfsRequest() && isGetRequest();
+    }
+
+    public boolean isWfsPostRequest() {
+        return isWfsRequest() && isPostRequest();
+    }
+
+    public boolean hasMultipleParameters() {
+        return (this.uri().indexOf("&") != -1);
     }
 
     /**

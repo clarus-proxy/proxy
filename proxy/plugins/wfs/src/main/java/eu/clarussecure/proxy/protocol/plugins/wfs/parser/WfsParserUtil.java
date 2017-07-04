@@ -25,7 +25,7 @@ public class WfsParserUtil {
             throw new WfsParsingException("no query in URI");
         }
 
-        Map<String, String> map = new HashMap<String, String>();
+        Map<String, String> parametersMap = new HashMap<String, String>();
 
         if (query.indexOf("&") == -1) {
             throw new WfsParsingException("no parameters");
@@ -34,11 +34,11 @@ public class WfsParserUtil {
 
             Arrays.stream(query.split("&")).forEach(param -> {
                 int idx = param.indexOf("=");
-                map.put(param.substring(0, idx), param.substring(idx + 1));
+                parametersMap.put(param.substring(0, idx), param.substring(idx + 1));
             });
         }
 
-        return map;
+        return parametersMap;
 
     }
 
