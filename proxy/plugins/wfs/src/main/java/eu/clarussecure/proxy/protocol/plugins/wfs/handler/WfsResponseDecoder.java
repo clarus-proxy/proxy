@@ -3,6 +3,8 @@ package eu.clarussecure.proxy.protocol.plugins.wfs.handler;
 import eu.clarussecure.proxy.spi.DataOperation;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
+import io.netty.buffer.ByteBufOutputStream;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageDecoder;
 import io.netty.handler.codec.http.*;
@@ -41,6 +43,10 @@ public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
     @Override
     protected void decode(ChannelHandlerContext ctx, HttpObject httpObject, List<Object> out) throws Exception {
 
+        ByteBuf buffer = Unpooled.buffer();
+
+        FullHttpResponse response = null;
+
         if (httpObject instanceof HttpResponse) {
             HttpResponse httpResponse = (HttpResponse) httpObject;
             this.replaceContentLengthByTransferEncodingHeader(httpResponse.headers());
@@ -48,22 +54,17 @@ public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
         }
         if (httpObject instanceof HttpContent) {
 
-            final HttpContent httpContent = (HttpContent) httpObject;
-
+            HttpContent httpContent = (HttpContent) httpObject;
             ByteBuf httpContentByteBuffer = httpContent.content();
-
             ByteBufInputStream byteBufInputStream = new ByteBufInputStream(httpContentByteBuffer);
-
             XMLEventReader xmlEventReader = xmlInputFactory.createXMLEventReader(byteBufInputStream);
 
-            // test with a file output stream
-            FileOutputStream outputStream = new FileOutputStream("response.xml");
+            ByteBufOutputStream outputStream = new ByteBufOutputStream(buffer);
 
             XMLEventWriter writer = xmlOutputFactory.createXMLEventWriter(outputStream);
             XMLEventFactory eventFactory = XMLEventFactory.newInstance();
 
             try {
-
                 XMLEvent event = null;
                 int eventType = 0;
 
@@ -91,6 +92,9 @@ public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
 
                 writer.add(eventFactory.createEndDocument());
 
+                response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.ACCEPTED,
+                        outputStream.buffer());
+
             } catch (XMLStreamException e) {
                 LOGGER.error("Error during WFS message processing", e);
 
@@ -110,8 +114,9 @@ public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
             }
         }
 
-        ReferenceCountUtil.retain(httpObject);
-        out.add(httpObject);
+        ReferenceCountUtil.retain(response);
+
+        out.add(response);
 
     }
 
