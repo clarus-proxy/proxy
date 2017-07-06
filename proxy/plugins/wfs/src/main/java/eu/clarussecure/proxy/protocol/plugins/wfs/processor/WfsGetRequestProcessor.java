@@ -1,6 +1,7 @@
 package eu.clarussecure.proxy.protocol.plugins.wfs.processor;
 
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
+import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsGetRequest;
 import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsParameter;
 import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsRequest;
 import eu.clarussecure.proxy.protocol.plugins.wfs.parser.WfsParserUtil;
@@ -66,7 +67,7 @@ public class WfsGetRequestProcessor implements EventProcessor {
      * @param request
      * @return
      */
-    public HttpObject processGetFeature(ChannelHandlerContext ctx, WfsRequest request) {
+    public HttpObject processGetFeature(ChannelHandlerContext ctx, WfsGetRequest request) {
 
         Operation operation = null;
         ProtocolService protocolService = getProtocolService(ctx);
@@ -94,7 +95,7 @@ public class WfsGetRequestProcessor implements EventProcessor {
      * @param operation
      * @return
      */
-    private ModuleOperation extractGetFeatureOperation(ChannelHandlerContext ctx, WfsRequest request,
+    private ModuleOperation extractGetFeatureOperation(ChannelHandlerContext ctx, WfsGetRequest request,
             List<ByteBuf> parameterValues, DataOperation dataOperation, Operation operation) {
 
         ModuleOperation moduleOperation = null;
@@ -132,7 +133,6 @@ public class WfsGetRequestProcessor implements EventProcessor {
                 String[] propertyNames = param.split(",");
             }
         });
-
 
         dataOperation = new DataOperation();
         dataOperation.setOperation(operation);

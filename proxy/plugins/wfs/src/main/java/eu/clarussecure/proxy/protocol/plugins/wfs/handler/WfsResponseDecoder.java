@@ -115,7 +115,6 @@ public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
         }
 
         ReferenceCountUtil.retain(response);
-
         out.add(response);
 
     }
@@ -138,6 +137,7 @@ public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
      * @return
      */
     private List<DataOperation> newDataOperation(ChannelHandlerContext ctx, DataOperation dataOperation) {
+        /* TODO complete the code */
         return null;
     }
 

@@ -1,7 +1,9 @@
 package eu.clarussecure.proxy.protocol.plugins.wfs.handler;
 
 import eu.clarussecure.proxy.protocol.plugins.wfs.exception.WfsParsingException;
+import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsGetRequest;
 import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsOperation;
+import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsPostRequest;
 import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsRequest;
 import eu.clarussecure.proxy.protocol.plugins.wfs.processor.WfsGetRequestProcessor;
 import io.netty.buffer.ByteBuf;
@@ -10,9 +12,8 @@ import io.netty.buffer.ByteBufOutputStream;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageDecoder;
-import io.netty.handler.codec.http.HttpContent;
-import io.netty.handler.codec.http.HttpObject;
-import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.*;
+import io.netty.util.ReferenceCountUtil;
 import org.codehaus.stax2.XMLInputFactory2;
 import org.codehaus.stax2.XMLOutputFactory2;
 import org.slf4j.Logger;
@@ -50,10 +51,80 @@ public class WfsRequestDecoder extends MessageToMessageDecoder<HttpObject> {
             HttpRequest httpRequest = (HttpRequest) httpObject;
             WfsGetRequestProcessor eventProcessor = new WfsGetRequestProcessor();
 
-            /* TODO catch the WFS parsing exception */
-            WfsRequest request = new WfsRequest(httpRequest.protocolVersion(), httpRequest.method(), httpRequest.uri());
+            switch (httpRequest.getMethod().name()) {
 
-            if (request.isWfsGetRequest()) {
+            case "GET":
+                LOGGER.info("this is a GET ");
+                processGetRequest(ctx, httpRequest, eventProcessor);
+                break;
+            case "POST":
+                LOGGER.info("this is a POST -- parsing the HTTP content");
+                break;
+
+            }
+
+        }
+        if (httpObject instanceof HttpContent) {
+
+            HttpContent content = (HttpContent) httpObject;
+
+            ByteBuf httpContentByteBuffer = content.content();
+            ByteBufInputStream requestInputStream = new ByteBufInputStream(httpContentByteBuffer);
+
+            ByteBuf buffer = Unpooled.buffer();
+
+            ByteBufOutputStream requestOutputStream = new ByteBufOutputStream(buffer);
+
+            // process request
+
+            try {
+
+                /*
+                XMLEventReader xmlEventReader = xmlInputFactory.createXMLEventReader(requestInputStream);
+                XMLEventWriter xmlEventWriter = xmlOutputFactory.createXMLEventWriter(requestOutputStream);
+                
+                XMLEvent event = null;
+                int eventType = 0;
+                
+                while (xmlEventReader.hasNext()) {
+                    event = xmlEventReader.peek();
+                    eventType = event.getEventType();
+                    StartElement startElement = null;
+                    if (XMLEvent.START_ELEMENT == eventType) {
+                
+                        startElement = event.asStartElement();
+                        LOGGER.info(startElement.getName().getLocalPart());
+                
+                    }
+                    xmlEventWriter.add(event);
+                    xmlEventReader.next();
+                
+                }
+                */
+
+            } catch (Exception e) {
+                LOGGER.error(e.toString());
+            }
+
+        }
+
+        ReferenceCountUtil.retain(httpObject);
+        out.add(httpObject);
+    }
+
+    private void processGetRequest(ChannelHandlerContext ctx, HttpRequest httpRequest,
+            WfsGetRequestProcessor eventProcessor) throws WfsParsingException {
+
+        try {
+
+            QueryStringDecoder decoder = new QueryStringDecoder(httpRequest.uri());
+
+            if (decoder.parameters().isEmpty()) {
+                LOGGER.info("empty list");
+            } else {
+
+                WfsGetRequest request = new WfsGetRequest(httpRequest.protocolVersion(), httpRequest.method(),
+                        httpRequest.uri());
 
                 WfsOperation operation = request.getWfsOperation();
 
@@ -71,49 +142,12 @@ public class WfsRequestDecoder extends MessageToMessageDecoder<HttpObject> {
                     eventProcessor.processGetFeature(ctx, request);
                     break;
                 }
-
-            } else if (request.isWfsPostRequest()) {
-
-                LOGGER.info("This is a POST request");
-
             }
 
-        }
-        if (httpObject instanceof HttpContent) {
-            HttpContent content = (HttpContent) httpObject;
-
-            ByteBuf httpContentByteBuffer = content.content();
-            ByteBufInputStream requestInputStream = new ByteBufInputStream(httpContentByteBuffer);
-
-            ByteBuf buffer = Unpooled.buffer();
-
-            ByteBufOutputStream requestOutputStream = new ByteBufOutputStream(buffer);
-
-            // process request
-            XMLEventReader xmlEventReader = xmlInputFactory.createXMLEventReader(requestInputStream);
-            XMLEventWriter xmlEventWriter = xmlOutputFactory.createXMLEventWriter(requestOutputStream);
-
-            XMLEvent event = null;
-            int eventType = 0;
-
-            while (xmlEventReader.hasNext()) {
-                event = xmlEventReader.peek();
-                eventType = event.getEventType();
-                StartElement startElement = null;
-                if (XMLEvent.START_ELEMENT == eventType) {
-
-                    startElement = event.asStartElement();
-                    LOGGER.info(startElement.getName().getLocalPart());
-
-                }
-                xmlEventWriter.add(event);
-                xmlEventReader.next();
-
-            }
-
+        } catch (WfsParsingException ex) {
+            LOGGER.error(ex.toString());
         }
 
-        out.add(httpObject);
     }
 
 }
