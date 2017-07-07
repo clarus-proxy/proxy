@@ -3,9 +3,6 @@ package eu.clarussecure.proxy.protocol.plugins.wfs.processor;
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
 import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsGetRequest;
 import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsParameter;
-import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsRequest;
-import eu.clarussecure.proxy.protocol.plugins.wfs.parser.WfsParserUtil;
-import eu.clarussecure.proxy.spi.CString;
 import eu.clarussecure.proxy.spi.DataOperation;
 import eu.clarussecure.proxy.spi.ModuleOperation;
 import eu.clarussecure.proxy.spi.Operation;
@@ -13,16 +10,11 @@ import eu.clarussecure.proxy.spi.protocol.Configuration;
 import eu.clarussecure.proxy.spi.protocol.ProtocolService;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpObject;
-import io.netty.handler.codec.http.HttpRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.MalformedURLException;
-import java.net.URISyntaxException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -80,6 +72,7 @@ public class WfsGetRequestProcessor implements EventProcessor {
         if (modifyRequests) {
 
             ModuleOperation moduleOperation = extractGetFeatureOperation(ctx, request, parameterValues, null, null);
+
         }
 
         return request;

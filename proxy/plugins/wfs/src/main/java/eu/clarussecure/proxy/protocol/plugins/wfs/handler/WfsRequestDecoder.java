@@ -1,5 +1,7 @@
 package eu.clarussecure.proxy.protocol.plugins.wfs.handler;
 
+import com.ctc.wstx.exc.WstxEOFException;
+import com.ctc.wstx.exc.WstxParsingException;
 import eu.clarussecure.proxy.protocol.plugins.wfs.exception.WfsParsingException;
 import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsGetRequest;
 import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsOperation;
@@ -19,10 +21,9 @@ import org.codehaus.stax2.XMLOutputFactory2;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.xml.stream.XMLEventReader;
-import javax.xml.stream.XMLEventWriter;
-import javax.xml.stream.XMLInputFactory;
-import javax.xml.stream.XMLOutputFactory;
+import javax.xml.namespace.QName;
+import javax.xml.stream.*;
+import javax.xml.stream.events.Attribute;
 import javax.xml.stream.events.StartElement;
 import javax.xml.stream.events.XMLEvent;
 import java.util.List;
@@ -46,6 +47,11 @@ public class WfsRequestDecoder extends MessageToMessageDecoder<HttpObject> {
     @Override
     protected void decode(ChannelHandlerContext ctx, HttpObject httpObject, List<Object> out) throws Exception {
 
+        ByteBuf buffer = Unpooled.buffer();
+
+        FullHttpRequest request = null;
+        HttpContent content = null;
+
         if (httpObject instanceof HttpRequest) {
 
             HttpRequest httpRequest = (HttpRequest) httpObject;
@@ -60,74 +66,88 @@ public class WfsRequestDecoder extends MessageToMessageDecoder<HttpObject> {
             case "POST":
                 LOGGER.info("this is a POST -- parsing the HTTP content");
                 break;
-
             }
 
+            ReferenceCountUtil.retain(httpObject);
+            out.add(httpObject);
+
         }
+
         if (httpObject instanceof HttpContent) {
 
-            HttpContent content = (HttpContent) httpObject;
+            HttpContent httpContent = (HttpContent) httpObject;
 
-            ByteBuf httpContentByteBuffer = content.content();
+            String serviceAttribute = null;
+
+            ByteBuf httpContentByteBuffer = httpContent.content();
             ByteBufInputStream requestInputStream = new ByteBufInputStream(httpContentByteBuffer);
 
-            ByteBuf buffer = Unpooled.buffer();
+            XMLEventReader xmlEventReader = xmlInputFactory.createXMLEventReader(requestInputStream);
 
-            ByteBufOutputStream requestOutputStream = new ByteBufOutputStream(buffer);
-
-            // process request
+            ByteBufOutputStream outputStream = new ByteBufOutputStream(buffer);
+            XMLEventWriter writer = xmlOutputFactory.createXMLEventWriter(outputStream);
+            XMLEventFactory eventFactory = XMLEventFactory.newInstance();
 
             try {
-
-                /*
-                XMLEventReader xmlEventReader = xmlInputFactory.createXMLEventReader(requestInputStream);
-                XMLEventWriter xmlEventWriter = xmlOutputFactory.createXMLEventWriter(requestOutputStream);
-                
                 XMLEvent event = null;
                 int eventType = 0;
-                
+
                 while (xmlEventReader.hasNext()) {
+
                     event = xmlEventReader.peek();
+
                     eventType = event.getEventType();
-                    StartElement startElement = null;
+                    StartElement startElement;
+
+                    /*
                     if (XMLEvent.START_ELEMENT == eventType) {
-                
                         startElement = event.asStartElement();
-                        LOGGER.info(startElement.getName().getLocalPart());
-                
+                        if (serviceAttribute == null) {
+                            serviceAttribute = checkProtocol(startElement);
+                    
+                        } else if (serviceAttribute.equals("WFS")) {
+                            LOGGER.info(startElement.getName().getLocalPart());
+                        } else {
+                            throw new WfsParsingException("Not a WFS stream");
+                        }
                     }
-                    xmlEventWriter.add(event);
+                    */
+                    writer.add(event);
                     xmlEventReader.next();
-                
+
                 }
-                */
 
-            } catch (Exception e) {
-                LOGGER.error(e.toString());
+                writer.add(eventFactory.createEndDocument());
+
+                content = new DefaultHttpContent(outputStream.buffer());
+
+                ReferenceCountUtil.retain(content);
+                out.add(content);
+
+            } catch (WstxEOFException exception) {
+                LOGGER.warn(
+                        "unable to parse content with the StAX API. The payload of this request may not be an XML.");
+
+            } catch (WstxParsingException exception) {
+                LOGGER.warn("unable to parse content with the StAX API." + exception.getMessage());
+
             }
-
         }
-
-        ReferenceCountUtil.retain(httpObject);
-        out.add(httpObject);
     }
 
     private void processGetRequest(ChannelHandlerContext ctx, HttpRequest httpRequest,
             WfsGetRequestProcessor eventProcessor) throws WfsParsingException {
 
         try {
-
             QueryStringDecoder decoder = new QueryStringDecoder(httpRequest.uri());
-
             if (decoder.parameters().isEmpty()) {
                 LOGGER.info("empty list");
+
             } else {
 
                 WfsGetRequest request = new WfsGetRequest(httpRequest.protocolVersion(), httpRequest.method(),
                         httpRequest.uri());
-
                 WfsOperation operation = request.getWfsOperation();
-
                 LOGGER.info(String.format("Get Request Processor for %s operation", operation.getName()));
 
                 switch (operation) {
@@ -147,6 +167,25 @@ public class WfsRequestDecoder extends MessageToMessageDecoder<HttpObject> {
         } catch (WfsParsingException ex) {
             LOGGER.error(ex.toString());
         }
+
+    }
+
+    private String checkProtocol(StartElement element) throws WfsParsingException {
+
+        String protocol = null;
+        Attribute serviceAttribute = element.getAttributeByName(new QName("service"));
+        if (serviceAttribute != null) {
+            try {
+                protocol = serviceAttribute.getValue().toUpperCase();
+                LOGGER.info("service attribute = " + protocol);
+
+            } catch (IllegalArgumentException e) {
+                throw new WfsParsingException("Unknown protocol: " + protocol);
+            }
+        } else {
+            throw new WfsParsingException("Missing service attribute in WFS root element");
+        }
+        return protocol;
 
     }
 
