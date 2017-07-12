@@ -165,6 +165,10 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(Column column) {
+        if (column.getColumnName().charAt(0) == '$'
+                && column.getColumnName().substring(1).chars().allMatch(c -> Character.isDigit(c))) {
+            return;
+        }
         Map.Entry<Expression, Set<Column>> entry = expressionsWithColumns.isEmpty() ? null : expressionsWithColumns.get(expressionsWithColumns.size() - 1);
         Expression currentExpression = currentExpressions.peek();
         if (entry == null || entry.getKey() != currentExpression) {
