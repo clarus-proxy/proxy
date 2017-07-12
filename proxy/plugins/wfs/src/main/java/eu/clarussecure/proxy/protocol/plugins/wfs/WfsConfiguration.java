@@ -26,7 +26,7 @@ public class WfsConfiguration extends HttpConfiguration {
     @Override
     public int getDefaultProtocolPort() {
 
-        return 8008;
+        return 8080;
     }
 
 }
