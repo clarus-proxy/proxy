@@ -1,7 +1,15 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql.message;
 
+import java.util.AbstractMap.SimpleEntry;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import net.sf.jsqlparser.expression.AllComparisonExpression;
 import net.sf.jsqlparser.expression.AnalyticExpression;
@@ -78,23 +86,33 @@ import net.sf.jsqlparser.statement.select.SubSelect;
  */
 public class PgsqlColumnsFinder implements ExpressionVisitor {
 
-    private List<Column> columns;
-    private List<BinaryExpression> columnsInBinaryExpressions;
+    private List<Map.Entry<Expression, Set<Column>>> expressionsWithColumns;
+    private Map<Expression, Expression> expressionsToParents;
+    private Deque<Expression> currentExpressions;
 
-    public List<Column> getColumns(Expression expression) {
-        init();
+    public void parse(Expression expression) {
+        expressionsWithColumns = new ArrayList<>();
+        expressionsToParents = new HashMap<>();
+        currentExpressions = new ArrayDeque<>();
         if (expression != null) {
             expression.accept(this);
         }
-        return columns;
     }
 
-    public List<BinaryExpression> getColumnsInBinaryExpressions(Expression expression) {
-        init();
-        if (expression != null) {
-            expression.accept(this);
-        }
-        return columnsInBinaryExpressions;
+    public Set<Column> getColumns() {
+        return expressionsWithColumns.stream().map(Map.Entry::getValue).flatMap(Set::stream).collect(Collectors.toSet());
+    }
+
+    public List<Expression> getExpressionsWithColumns() {
+        return expressionsWithColumns.stream().map(Map.Entry::getKey).collect(Collectors.toList());
+    }
+
+    public List<Map.Entry<Expression, Set<Column>>> getExpressionsWithColumnsToColumns() {
+        return expressionsWithColumns;
+    }
+
+    public Map<Expression, Expression> getExpressionsToParents() {
+        return expressionsToParents;
     }
 
     @Override
@@ -118,16 +136,21 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(ArrayElement arrayElement) {
+        expressionsToParents.put(arrayElement, currentExpressions.peek());
+        currentExpressions.push(arrayElement);
         if (arrayElement.getLeftExpression() != null) {
             arrayElement.getLeftExpression().accept(this);
         }
         if (arrayElement.getIndex() != null) {
             arrayElement.getIndex().accept(this);
         }
+        currentExpressions.pop();
     }
 
     @Override
     public void visit(Between between) {
+        expressionsToParents.put(between, currentExpressions.peek());
+        currentExpressions.push(between);
         if (between.getLeftExpression() != null) {
             between.getLeftExpression().accept(this);
         }
@@ -137,11 +160,18 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
         if (between.getBetweenExpressionEnd() != null) {
             between.getBetweenExpressionEnd().accept(this);
         }
+        currentExpressions.pop();
     }
 
     @Override
     public void visit(Column column) {
-        columns.add(column);
+        Map.Entry<Expression, Set<Column>> entry = expressionsWithColumns.isEmpty() ? null : expressionsWithColumns.get(expressionsWithColumns.size() - 1);
+        Expression currentExpression = currentExpressions.peek();
+        if (entry == null || entry.getKey() != currentExpression) {
+            entry = new SimpleEntry<>(currentExpression, new HashSet<>());
+            expressionsWithColumns.add(entry);
+        }
+        entry.getValue().add(column);
     }
 
     @Override
@@ -165,11 +195,14 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(Function function) {
+        expressionsToParents.put(function, currentExpressions.peek());
+        currentExpressions.push(function);
         if (function.getParameters() != null) {
             for (Expression expression : function.getParameters().getExpressions()) {
                 expression.accept(this);
             }
         }
+        currentExpressions.pop();
     }
 
     @Override
@@ -184,6 +217,8 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(InExpression inExpression) {
+        expressionsToParents.put(inExpression, currentExpressions.peek());
+        currentExpressions.push(inExpression);
         if (inExpression.getLeftExpression() != null) {
             inExpression.getLeftExpression().accept(this);
         } else if (inExpression.getLeftItemsList() != null) {
@@ -191,20 +226,27 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
         }
         // TODO ?
         //inExpression.getRightItemsList().accept(this);
+        currentExpressions.pop();
     }
 
     @Override
     public void visit(SignedExpression signedExpression) {
+        expressionsToParents.put(signedExpression, currentExpressions.peek());
+        currentExpressions.push(signedExpression);
         if (signedExpression.getExpression() != null) {
             signedExpression.getExpression().accept(this);
         }
+        currentExpressions.pop();
     }
 
     @Override
     public void visit(IsNullExpression isNullExpression) {
+        expressionsToParents.put(isNullExpression, currentExpressions.peek());
+        currentExpressions.push(isNullExpression);
         if (isNullExpression.getLeftExpression() != null) {
             isNullExpression.getLeftExpression().accept(this);
         }
+        currentExpressions.pop();
     }
 
     @Override
@@ -223,9 +265,12 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(ExistsExpression existsExpression) {
+        expressionsToParents.put(existsExpression, currentExpressions.peek());
+        currentExpressions.push(existsExpression);
         if (existsExpression.getRightExpression() != null) {
             existsExpression.getRightExpression().accept(this);
         }
+        currentExpressions.pop();
     }
 
     @Override
@@ -249,9 +294,12 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(Not not) {
+        expressionsToParents.put(not, currentExpressions.peek());
+        currentExpressions.push(not);
         if (not.getExpression() != null) {
             not.getExpression().accept(this);
         }
+        currentExpressions.pop();
     }
 
     @Override
@@ -270,9 +318,12 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(Parenthesis parenthesis) {
+        expressionsToParents.put(parenthesis, currentExpressions.peek());
+        currentExpressions.push(parenthesis);
         if (parenthesis.getExpression() != null) {
             parenthesis.getExpression().accept(this);
         }
+        currentExpressions.pop();
     }
 
     @Override
@@ -289,16 +340,15 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
     }
 
     public void visitBinaryExpression(BinaryExpression binaryExpression) {
+        expressionsToParents.put(binaryExpression, currentExpressions.peek());
+        currentExpressions.push(binaryExpression);
         if (binaryExpression.getLeftExpression() != null) {
             binaryExpression.getLeftExpression().accept(this);
         }
         if (binaryExpression.getLeftExpression() != null) {
             binaryExpression.getRightExpression().accept(this);
         }
-        if (binaryExpression.getLeftExpression() instanceof Column
-                || binaryExpression.getRightExpression() instanceof Column) {
-            columnsInBinaryExpressions.add(binaryExpression);
-        }
+        currentExpressions.pop();
     }
 
     @Override
@@ -315,6 +365,8 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(CaseExpression caseExpression) {
+        expressionsToParents.put(caseExpression, currentExpressions.peek());
+        currentExpressions.push(caseExpression);
         if (caseExpression.getSwitchExpression() != null) {
             caseExpression.getSwitchExpression().accept(this);
         }
@@ -326,16 +378,20 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
         if (caseExpression.getElseExpression() != null) {
             caseExpression.getElseExpression().accept(this);
         }
+        currentExpressions.pop();
     }
 
     @Override
     public void visit(WhenClause whenClause) {
+        expressionsToParents.put(whenClause, currentExpressions.peek());
+        currentExpressions.push(whenClause);
         if (whenClause.getWhenExpression() != null) {
             whenClause.getWhenExpression().accept(this);
         }
         if (whenClause.getThenExpression() != null) {
             whenClause.getThenExpression().accept(this);
         }
+        currentExpressions.pop();
     }
 
     @Override
@@ -375,7 +431,10 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(CastExpression cast) {
+        expressionsToParents.put(cast, currentExpressions.peek());
+        currentExpressions.push(cast);
         cast.getLeftExpression().accept(this);
+        currentExpressions.pop();
     }
 
     @Override
@@ -391,11 +450,6 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
     public void visit(ExtractExpression eexpr) {
     }
 
-    protected void init() {
-        columns = new ArrayList<>();
-        columnsInBinaryExpressions = new ArrayList<>();
-    }
-
     @Override
     public void visit(IntervalExpression iexpr) {
     }
@@ -406,6 +460,8 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(OracleHierarchicalExpression oexpr) {
+        expressionsToParents.put(oexpr, currentExpressions.peek());
+        currentExpressions.push(oexpr);
         if (oexpr.getStartExpression() != null) {
             oexpr.getStartExpression().accept(this);
         }
@@ -413,6 +469,7 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
         if (oexpr.getConnectExpression() != null) {
             oexpr.getConnectExpression().accept(this);
         }
+        currentExpressions.pop();
     }
 
     @Override
@@ -427,9 +484,12 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(JsonExpression jsonExpr) {
+        expressionsToParents.put(jsonExpr, currentExpressions.peek());
+        currentExpressions.push(jsonExpr);
         if (jsonExpr.getColumn() != null) {
             jsonExpr.getColumn().accept(this);
         }
+        currentExpressions.pop();
     }
 
     @Override
@@ -438,11 +498,14 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(WithinGroupExpression wgexpr) {
+        expressionsToParents.put(wgexpr, currentExpressions.peek());
+        currentExpressions.push(wgexpr);
         if (wgexpr.getExprList() != null) {
             for (Expression expression : wgexpr.getExprList().getExpressions()) {
                 expression.accept(this);
             }
         }
+        currentExpressions.pop();
     }
 
     @Override
@@ -466,11 +529,14 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(RowConstructor rowConstructor) {
+        expressionsToParents.put(rowConstructor, currentExpressions.peek());
+        currentExpressions.push(rowConstructor);
         if (rowConstructor.getExprList() != null) {
             for (Expression expr : rowConstructor.getExprList().getExpressions()) {
                 expr.accept(this);
             }
         }
+        currentExpressions.pop();
     }
 
     @Override
@@ -488,6 +554,5 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
 
     @Override
     public void visit(DateTimeLiteralExpression literal) {
-
     }
 }

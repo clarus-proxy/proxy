@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import eu.clarussecure.dataoperations.Promise;
+import eu.clarussecure.dataoperations.DataOperationCommand;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.message.PgsqlRowDescriptionMessage;
 import eu.clarussecure.proxy.spi.CString;
 import eu.clarussecure.proxy.spi.Operation;
@@ -679,13 +679,13 @@ public class SQLSession {
 
     public static class CursorContext {
         private final String name;
-        private final Promise promise;
+        private final List<DataOperationCommand> promise;
         private final boolean resultProcessingEnabled;
         private final boolean unprotectingDataEnabled;
         private final List<Integer> involvedBackends;
         private final List<ExpectedField> expectedFields;
 
-        public CursorContext(String name, Promise promise, boolean resultProcessingEnabled,
+        public CursorContext(String name, List<DataOperationCommand> promise, boolean resultProcessingEnabled,
                 boolean unprotectingDataEnabled, List<Integer> involvedBackends, List<ExpectedField> expectedFields) {
             this.name = name;
             this.promise = promise;
@@ -699,7 +699,7 @@ public class SQLSession {
             return name;
         }
 
-        public Promise getPromise() {
+        public List<DataOperationCommand> getPromise() {
             return promise;
         }
 
@@ -727,7 +727,7 @@ public class SQLSession {
     private Map<Byte, CString> transactionErrorDetails;
     private boolean inDatasetCreation;
     private Operation currentCommandOperation;
-    private Promise promise;
+    private List<DataOperationCommand> promise;
     private boolean resultProcessingEnabled = true;
     private boolean unprotectingDataEnabled = false;
     private Map<CString, List<CString>> datasetDefinitions;
@@ -834,11 +834,11 @@ public class SQLSession {
         this.currentCommandOperation = operation;
     }
 
-    public Promise getPromise() {
+    public List<DataOperationCommand> getPromise() {
         return promise;
     }
 
-    public void setPromise(Promise promise) {
+    public void setPromise(List<DataOperationCommand> promise) {
         this.promise = promise;
     }
 
@@ -1339,7 +1339,10 @@ public class SQLSession {
         getBindStepStatuses().values().stream() // iterate over bind step status
                 .map(ExtendedQueryStatus<BindStep>::getQuery) // retrieve bind
                 // step
-                .filter(q -> name.equals(q.getPreparedStatement())) // filter on prepared statement name
+                .filter(q -> name.equals(q.getPreparedStatement())) // filter on
+                                                                    // prepared
+                                                                    // statement
+                                                                    // name
                 .forEach(q -> removeBindStep(q.getName())); // remove the bind
         // step
         // Remove parse step status

@@ -3,16 +3,17 @@ package eu.clarussecure.proxy.spi;
 import java.util.ArrayList;
 import java.util.List;
 
-import eu.clarussecure.dataoperations.Promise;
+import eu.clarussecure.dataoperations.DataOperationCommand;
 
 public class DataOperation extends ModuleOperation {
     private int requestId;
     private Operation operation;
+    private boolean usingHeadOperation;
     private List<CString> dataIds;
-    private List<CString> parameterIds;
     private List<List<CString>> dataValues;
+    private List<CString> parameterIds;
     private List<CString> parameterValues;
-    private Promise promise;
+    private List<DataOperationCommand> promise;
     private boolean unprotectingDataEnabled = true;
 
     public int getRequestId() {
@@ -29,6 +30,14 @@ public class DataOperation extends ModuleOperation {
 
     public void setOperation(Operation operation) {
         this.operation = operation;
+    }
+
+    public boolean isUsingHeadOperation() {
+        return usingHeadOperation;
+    }
+
+    public void setUsingHeadOperation(boolean usingHeadOperation) {
+        this.usingHeadOperation = usingHeadOperation;
     }
 
     @Override
@@ -59,21 +68,6 @@ public class DataOperation extends ModuleOperation {
         getDataIds().remove(index);
     }
 
-    public List<CString> getParameterIds() {
-        if (parameterIds == null) {
-            parameterIds = new ArrayList<>();
-        }
-        return parameterIds;
-    }
-
-    public void setParameterIds(List<CString> parameterIds) {
-        this.parameterIds = parameterIds;
-    }
-
-    public void addParameterId(CString parameterId) {
-        getParameterIds().add(parameterId);
-    }
-
     public List<List<CString>> getDataValues() {
         if (dataValues == null) {
             dataValues = new ArrayList<>();
@@ -87,6 +81,21 @@ public class DataOperation extends ModuleOperation {
 
     public void addDataValues(List<CString> dataValues) {
         getDataValues().add(dataValues);
+    }
+
+    public List<CString> getParameterIds() {
+        if (parameterIds == null) {
+            parameterIds = new ArrayList<>();
+        }
+        return parameterIds;
+    }
+
+    public void setParameterIds(List<CString> parameterIds) {
+        this.parameterIds = parameterIds;
+    }
+
+    public void addParameterId(CString parameterId) {
+        getParameterIds().add(parameterId);
     }
 
     public List<CString> getParameterValues() {
@@ -104,11 +113,11 @@ public class DataOperation extends ModuleOperation {
         getParameterValues().add(parameterValue);
     }
 
-    public Promise getPromise() {
+    public List<DataOperationCommand> getPromise() {
         return promise;
     }
 
-    public void setPromise(Promise promise) {
+    public void setPromise(List<DataOperationCommand> promise) {
         this.promise = promise;
     }
 
