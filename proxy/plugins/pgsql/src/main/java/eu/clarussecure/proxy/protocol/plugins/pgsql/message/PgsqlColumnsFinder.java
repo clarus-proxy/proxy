@@ -100,7 +100,8 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
     }
 
     public Set<Column> getColumns() {
-        return expressionsWithColumns.stream().map(Map.Entry::getValue).flatMap(Set::stream).collect(Collectors.toSet());
+        return expressionsWithColumns.stream().map(Map.Entry::getValue).flatMap(Set::stream)
+                .collect(Collectors.toSet());
     }
 
     public List<Expression> getExpressionsWithColumns() {
@@ -169,7 +170,8 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
                 && column.getColumnName().substring(1).chars().allMatch(c -> Character.isDigit(c))) {
             return;
         }
-        Map.Entry<Expression, Set<Column>> entry = expressionsWithColumns.isEmpty() ? null : expressionsWithColumns.get(expressionsWithColumns.size() - 1);
+        Map.Entry<Expression, Set<Column>> entry = expressionsWithColumns.isEmpty() ? null
+                : expressionsWithColumns.get(expressionsWithColumns.size() - 1);
         Expression currentExpression = currentExpressions.peek();
         if (entry == null || entry.getKey() != currentExpression) {
             entry = new SimpleEntry<>(currentExpression, new HashSet<>());

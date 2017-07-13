@@ -1340,9 +1340,9 @@ public class SQLSession {
                 .map(ExtendedQueryStatus<BindStep>::getQuery) // retrieve bind
                 // step
                 .filter(q -> name.equals(q.getPreparedStatement())) // filter on
-                                                                    // prepared
-                                                                    // statement
-                                                                    // name
+                // prepared
+                // statement
+                // name
                 .forEach(q -> removeBindStep(q.getName())); // remove the bind
         // step
         // Remove parse step status

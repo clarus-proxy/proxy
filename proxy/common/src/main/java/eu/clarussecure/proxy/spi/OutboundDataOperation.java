@@ -9,7 +9,7 @@ public class OutboundDataOperation extends DataOperation {
         private CString operator;
         private CString value;
 
-        public Criterion (CString dataId, CString operator, CString value) {
+        public Criterion(CString dataId, CString operator, CString value) {
             this.dataId = dataId;
             this.operator = operator;
             this.value = value;

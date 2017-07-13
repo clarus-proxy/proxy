@@ -76,7 +76,7 @@ public class SecurityPolicy {
         Node data = findSubNode(DATA_ELT, root);
         List<Node> attributes = findSubNodes(ATTRIBUTE_ELT, data);
         if (attributes != null) {
-            for (int i = 0; i < attributes.size(); i ++) {
+            for (int i = 0; i < attributes.size(); i++) {
                 Node attribute = attributes.get(i);
                 if (attribute != null) {
                     Node name = attribute.getAttributes().getNamedItem(NAME_ATTR);

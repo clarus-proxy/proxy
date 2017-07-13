@@ -11,8 +11,6 @@ public class DataOperation extends ModuleOperation {
     private boolean usingHeadOperation;
     private List<CString> dataIds;
     private List<List<CString>> dataValues;
-    private List<CString> parameterIds;
-    private List<CString> parameterValues;
     private List<DataOperationCommand> promise;
     private boolean unprotectingDataEnabled = true;
 
@@ -81,36 +79,6 @@ public class DataOperation extends ModuleOperation {
 
     public void addDataValues(List<CString> dataValues) {
         getDataValues().add(dataValues);
-    }
-
-    public List<CString> getParameterIds() {
-        if (parameterIds == null) {
-            parameterIds = new ArrayList<>();
-        }
-        return parameterIds;
-    }
-
-    public void setParameterIds(List<CString> parameterIds) {
-        this.parameterIds = parameterIds;
-    }
-
-    public void addParameterId(CString parameterId) {
-        getParameterIds().add(parameterId);
-    }
-
-    public List<CString> getParameterValues() {
-        if (parameterValues == null) {
-            parameterValues = new ArrayList<>();
-        }
-        return parameterValues;
-    }
-
-    public void setParameterValues(List<CString> parameterValues) {
-        this.parameterValues = parameterValues;
-    }
-
-    public void addParameterValue(CString parameterValue) {
-        getParameterValues().add(parameterValue);
     }
 
     public List<DataOperationCommand> getPromise() {

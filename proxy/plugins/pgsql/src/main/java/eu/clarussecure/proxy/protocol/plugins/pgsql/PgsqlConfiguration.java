@@ -160,16 +160,16 @@ public class PgsqlConfiguration extends Configuration {
         if (m.matches()) {
             dataId = m.replaceAll("$1public.$3");
         }
-//        if (!fullyQualify) {
-//            dataId = dataId.startsWith("*/*/")
-//                    // remove */*/ if there is
-//                    ? dataId.substring("*/*/".length())
-//                    : dataId.startsWith("*/")
-//                            // remove */ if there is
-//                            ? dataId.substring("*/".length())
-//                            // else do nothing
-//                            : dataId;
-//        }
+        //        if (!fullyQualify) {
+        //            dataId = dataId.startsWith("*/*/")
+        //                    // remove */*/ if there is
+        //                    ? dataId.substring("*/*/".length())
+        //                    : dataId.startsWith("*/")
+        //                            // remove */ if there is
+        //                            ? dataId.substring("*/".length())
+        //                            // else do nothing
+        //                            : dataId;
+        //        }
         return dataId;
     }
 
