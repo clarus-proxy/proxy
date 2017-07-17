@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<schema>
+    <data>
+        <attribute name="*/nom_com"
+            attribute_type="non_confidential" data_type="categoric" />
+        <attribute name="*/adresse"
+            attribute_type="non_confidential" data_type="categoric" />
+        <attribute name="*/code_bss"
+            attribute_type="non_confidential" data_type="categoric" />
+        <attribute name="*/denominati"
+            attribute_type="non_confidential" data_type="categoric" />
+        <attribute name="*/type_point"
+            attribute_type="non_confidential" data_type="categoric" />
+        <attribute name="*/district"
+            attribute_type="non_confidential" data_type="categoric" />
+        <attribute name="*/circonscri"
+            attribute_type="non_confidential" data_type="categoric" />
+        <attribute name="*/precision"
+            attribute_type="non_confidential" data_type="categoric" />
+        <attribute name="*/altitude"
+            attribute_type="non_confidential" data_type="numeric_continuous" />
+        <attribute name="*/prof_max"
+            attribute_type="non_confidential" data_type="numeric_continuous" />
+        <attribute name="*/geom" attribute_type="identifier"
+            data_type="geometric_object" />
+        <attribute name="*/gid" attribute_type="technical_identifier"
+            data_type="numeric_continuous" />
+    </data>
+    <protection module="splitting">
+        <attribute_types>
+            <attribute_type type="technical_identifier"
+                protection="replicate" clouds="2"/>
+            <attribute_type type="identifier"
+                protection="splitting" clouds="2" splitting_type="points" />
+            <attribute_type type="non_confidential"
+                protection="splitting" clouds="1" />
+        </attribute_types>
+    </protection>
+    <protocol plugin="PostgreSQL">
+        <parameter param="csp1" value="database=geodata1" />
+        <parameter param="csp2" value="database=geodata2" />
+    </protocol>
+</schema>

@@ -1,12 +1,12 @@
 package eu.clarussecure.proxy.protocol.plugins.tcp;
 
 import java.net.InetSocketAddress;
-import java.util.concurrent.Callable;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import eu.clarussecure.proxy.spi.protocol.Configuration;
+import eu.clarussecure.proxy.spi.protocol.ProtocolServer;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
@@ -17,7 +17,7 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 
 public class TCPServer<CI extends ChannelInitializer<Channel>, SI extends ChannelInitializer<Channel>>
-        implements Callable<Void> {
+        implements ProtocolServer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TCPServer.class);
 
@@ -28,6 +28,8 @@ public class TCPServer<CI extends ChannelInitializer<Channel>, SI extends Channe
     private final Class<SI> serverSideChannelInitializerType;
 
     private final int preferredServerEndpoint;
+
+    private volatile boolean ready = false;
 
     public TCPServer(Configuration configuration, Class<CI> clientSideChannelInitializerType,
             Class<SI> serverSideChannelInitializerType, int preferredServerEndpoint) {
@@ -53,12 +55,27 @@ public class TCPServer<CI extends ChannelInitializer<Channel>, SI extends Channe
                     .childHandler(clientSidePipelineInitializer).childOption(ChannelOption.AUTO_READ, false);
             ChannelFuture f = bootstrap.bind().sync();
             LOGGER.info("Server ready to serve requests at:" + f.channel().localAddress());
+            synchronized (this) {
+                ready = true;
+                notifyAll();
+            }
             f.channel().closeFuture().sync();
         } finally {
             acceptorGroup.shutdownGracefully().sync();
             childGroup.shutdownGracefully().sync();
         }
         return null;
+    }
+
+    @Override
+    public void waitForServerIsReady() throws InterruptedException {
+        while (!ready) {
+            synchronized (this) {
+                if (!ready) {
+                    wait();
+                }
+            }
+        }
     }
 
     protected ChannelInitializer<Channel> buildClientSidePipelineInitializer() {

@@ -26,3 +26,5 @@ java.util.regex.Pattern.compile("POINT|LINESTRING|POLYGON|CIRCULARSTRING|MULTIPO
 java.util.regex.Pattern.compile("FOO?").matcher("FOOOO").matches();
 
 (int)((long) 0xffff & 0xffffl)(int) 65535
+
+"st_asbinary(\"geom\",'NDR'),\"gid\"".split(",(?![^(]*\\))")[0](java.lang.String) st_asbinary("geom",'NDR')

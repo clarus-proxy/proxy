@@ -53,7 +53,7 @@ public class Proxy {
         this.nbParserThreads = nbParserThreads;
     }
 
-    private void initialize() throws ParserConfigurationException, SAXException, IOException {
+    public void initialize() throws ParserConfigurationException, SAXException, IOException {
         LOGGER.trace("Loading security policy from file: {} ...", securityPolicyPath);
         // Load security policy
         securityPolicy = SecurityPolicy.load(new File(securityPolicyPath));
@@ -184,15 +184,35 @@ public class Proxy {
         }
     }
 
-    private void start() {
+    public void start() {
         protocol.start();
+    }
+
+    public void sync() throws InterruptedException {
         protocol.sync();
     }
 
+    public void waitForServerIsReady() throws InterruptedException {
+        protocol.waitForServerIsReady();
+    }
+
+    public void stop() {
+        protocol.stop();
+    }
+
     public static void main(String[] args) throws Exception {
+        Proxy proxy = builder(args);
+        if (proxy != null) {
+            proxy.initialize();
+            proxy.start();
+            proxy.sync();
+        }
+    }
+
+    public static Proxy builder(String[] args) throws Exception {
         if (args.length < 1) {
             usage();
-            return;
+            return null;
         }
         String securityPolicyPath = null;
         List<String> serverAddresses = new ArrayList<>();
@@ -212,7 +232,7 @@ public class Proxy {
                     if (maxFrameLen <= 0) {
                         System.out.println("Maximum frame length must be a positive number");
                         usage();
-                        return;
+                        return null;
                     }
                 }
             } else if ("-lt".equals(arg) || "--nb-listen-threads".equals(arg)) {
@@ -226,7 +246,7 @@ public class Proxy {
                         System.out.println(
                                 "Number of listen threads must be a positive number or the special value 'cores' (number of cores)");
                         usage();
-                        return;
+                        return null;
                     }
                 }
             } else if ("-st".equals(arg) || "--nb-session-threads".equals(arg)) {
@@ -240,7 +260,7 @@ public class Proxy {
                         System.out.println(
                                 "Number of session threads must be a positive number or the special value 'cores' (number of cores)");
                         usage();
-                        return;
+                        return null;
                     }
                 }
             } else if ("-pt".equals(arg) || "--nb-parser-threads".equals(arg)) {
@@ -254,7 +274,7 @@ public class Proxy {
                         System.out.println(
                                 "Number of parser threads must be a positive number or 0 or the special value 'cores' (number of cores)");
                         usage();
-                        return;
+                        return null;
                     }
                 }
             } else {
@@ -269,12 +289,11 @@ public class Proxy {
                 System.out.println("At least one server address is mandatory");
             }
             usage();
-            return;
+            return null;
         }
         Proxy proxy = new Proxy(securityPolicyPath, serverAddresses, maxFrameLen, nbListenThreads, nbSessionThreads,
                 nbParserThreads);
-        proxy.initialize();
-        proxy.start();
+        return proxy;
     }
 
     private static void usage() {

@@ -22,6 +22,7 @@ public enum SQLCommandType {
     CLOSE_CURSOR("CLOSE *"),
     // Other
     SET("SET"),
+    CREATE_INDEX("CREATE INDEX"),
     // Clarus metadata function
     CLARUS_METADATA("SELECT " + PgsqlEventProcessor.FUNCTION_METADATA),
     // Clarus protected function

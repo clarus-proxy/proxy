@@ -107,6 +107,7 @@ import net.sf.jsqlparser.statement.alter.AlterExpression.ColumnDataType;
 import net.sf.jsqlparser.statement.alter.AlterOperation;
 import net.sf.jsqlparser.statement.close.CursorClose;
 import net.sf.jsqlparser.statement.commit.Commit;
+import net.sf.jsqlparser.statement.create.index.CreateIndex;
 import net.sf.jsqlparser.statement.create.table.ColumnDefinition;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
 import net.sf.jsqlparser.statement.create.table.Index;
@@ -517,7 +518,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 break;
             }
             case ALTER_TABLE:
-            case ADD_GEOMETRY_COLUMN: {
+            case ADD_GEOMETRY_COLUMN:
+            case CREATE_INDEX: {
                 boolean inDatasetCreation = session.isInDatasetCreation();
                 operation = inDatasetCreation ? Operation.CREATE : Operation.UPDATE;
                 Mode processingMode = getProcessingMode(ctx, session.getTransactionStatus() == (byte) 'T', operation);
@@ -531,8 +533,13 @@ public class PgsqlEventProcessor implements EventProcessor {
                         if (inDatasetCreation) {
                             transferMode = TransferMode.FORGET;
                             if (sqlStatement instanceof SimpleQuery) {
-                                completeTag = CString
-                                        .valueOf(type == SQLCommandType.ALTER_TABLE ? "ALTER TABLE" : "SELECT 1");
+                                switch (type) {
+                                case ADD_GEOMETRY_COLUMN:
+                                    completeTag = CString.valueOf("SELECT 1");
+                                    break;
+                                default:
+                                    completeTag = CString.valueOf(type.getPattern());
+                                }
                             }
                         } else {
                             // Should not occur
@@ -1156,6 +1163,17 @@ public class PgsqlEventProcessor implements EventProcessor {
                         }
                         moduleOperation = extractAlterTableOperation(ctx, (Alter) refStmt, refOutboundDataOperation,
                                 null);
+                    } else if (refStmt instanceof CreateIndex) {
+                        // Retrieve the outbound data operation (if exist)
+                        OutboundDataOperation refOutboundDataOperation = null;
+                        if (lastOutboundDataOperation != null
+                                && (lastOutboundDataOperation.getOperation() == Operation.CREATE
+                                        || lastOutboundDataOperation.getOperation() == Operation.UPDATE)
+                                && lastOutboundDataOperation.isUsingHeadOperation()) {
+                            refOutboundDataOperation = lastOutboundDataOperation;
+                        }
+                        moduleOperation = extractCreateIndexOperation(ctx, (CreateIndex) refStmt,
+                                refOutboundDataOperation, null);
                     } else if (refStmt instanceof Drop) {
                         moduleOperation = extractDropTableOperation(ctx, (Drop) refStmt);
                     } else if (refStmt instanceof Insert) {
@@ -1290,6 +1308,12 @@ public class PgsqlEventProcessor implements EventProcessor {
                                 PgsqlStatement<Alter> statement = new PgsqlStatement<>((Alter) refStmt, null, null,
                                         refParamVals, null, null);
                                 PgsqlStatement<Alter> newStatement = modifyAlterTableStatement(ctx, statement,
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
+                                newStmt = newStatement.getStatement();
+                            } else if (refStmt instanceof CreateIndex) {
+                                PgsqlStatement<CreateIndex> statement = new PgsqlStatement<>((CreateIndex) refStmt,
+                                        null, null, refParamVals, null, null);
+                                PgsqlStatement<CreateIndex> newStatement = modifyCreateIndexStatement(ctx, statement,
                                         newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 newStmt = newStatement.getStatement();
                             } else if (refStmt instanceof Drop) {
@@ -1495,6 +1519,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 moduleOperation = extractCreateTableOperation(ctx, (CreateTable) stmt);
             } else if (stmt instanceof Alter) {
                 moduleOperation = extractAlterTableOperation(ctx, (Alter) stmt, null, operation);
+            } else if (stmt instanceof CreateIndex) {
+                moduleOperation = extractCreateIndexOperation(ctx, (CreateIndex) stmt, null, operation);
             } else if (stmt instanceof Drop) {
                 moduleOperation = extractDropTableOperation(ctx, (Drop) stmt);
             } else if (stmt instanceof Insert) {
@@ -1563,9 +1589,9 @@ public class PgsqlEventProcessor implements EventProcessor {
             List<OutboundDataOperation> newOutboundDataOperations = newOutboundDataOperation(ctx,
                     outboundDataOperation);
             if (stmt instanceof SetStatement || stmt instanceof StartTransaction || stmt instanceof Commit
-                    || stmt instanceof CreateTable || stmt instanceof Alter || stmt instanceof Drop
-                    || stmt instanceof Insert || stmt instanceof Select || stmt instanceof DeclareCursor
-                    || stmt instanceof CursorFetch || stmt instanceof CursorClose) {
+                    || stmt instanceof CreateTable || stmt instanceof Alter || stmt instanceof CreateIndex
+                    || stmt instanceof Drop || stmt instanceof Insert || stmt instanceof Select
+                    || stmt instanceof DeclareCursor || stmt instanceof CursorFetch || stmt instanceof CursorClose) {
                 if (newOutboundDataOperations.isEmpty()) {
                     // Forget SQL statement, reply directly to the frontend
                     CommandResults commandResults = new CommandResults();
@@ -1579,6 +1605,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                         commandResults.setCompleteTag(CString.valueOf("CREATE TABLE"));
                     } else if (stmt instanceof Alter) {
                         commandResults.setCompleteTag(CString.valueOf("ALTER TABLE"));
+                    } else if (stmt instanceof CreateIndex) {
+                        commandResults.setCompleteTag(CString.valueOf("CREATE INDEX"));
                     } else if (stmt instanceof Drop) {
                         commandResults.setCompleteTag(CString.valueOf("DROP TABLE"));
                     } else if (stmt instanceof Insert) {
@@ -1648,6 +1676,12 @@ public class PgsqlEventProcessor implements EventProcessor {
                                         newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 Alter newAlter = newStatement.getStatement();
                                 newSQL = newAlter.toString();
+                            } else if (stmt instanceof CreateIndex) {
+                                PgsqlStatement<CreateIndex> statement = new PgsqlStatement<>((CreateIndex) stmt);
+                                PgsqlStatement<CreateIndex> newStatement = modifyCreateIndexStatement(ctx, statement,
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
+                                CreateIndex newCreateIndex = newStatement.getStatement();
+                                newSQL = newCreateIndex.toString();
                             } else if (stmt instanceof Drop) {
                                 PgsqlStatement<Drop> statement = new PgsqlStatement<>((Drop) stmt);
                                 PgsqlStatement<Drop> newStatement = modifyDropTableStatement(ctx, statement,
@@ -1984,6 +2018,10 @@ public class PgsqlEventProcessor implements EventProcessor {
                 .replace("*", "[^/]*");
     }
 
+    private String modifyDatabaseName(String protectedDataId, String databaseName) {
+        return modifyDatabaseName(CString.valueOf(protectedDataId), databaseName).toString();
+    }
+
     private CString modifyDatabaseName(CString protectedDataId, String databaseName) {
         int offset = protectedDataId.indexOf('/');
         if (offset != -1) {
@@ -2227,7 +2265,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                     List<String> newColumnDefinitionDataIds = columnDefinitionProtectedDataIds.stream()
                             .filter(newDataIds1::contains).collect(Collectors.toList());
                     if (newColumnDefinitionDataIds.isEmpty()) {
-                        // drop the select item
+                        // drop the column definition
                         newColumnDefinition = null;
                     } else {
                         // For the protected data id selected for the column
@@ -2516,7 +2554,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                     List<String> newAlterExpressionsDataIds = alterExpressionProtectedDataIds.stream()
                             .filter(newDataIds1::contains).collect(Collectors.toList());
                     if (newAlterExpressionsDataIds.isEmpty()) {
-                        // drop the select item
+                        // drop the alter expression
                         newAlterExpression = null;
                     } else {
                         // For the protected data ids selected for the alter
@@ -2623,6 +2661,195 @@ public class PgsqlEventProcessor implements EventProcessor {
             newAlterExpression.setIndex(newIndex);
         }
         return newAlterExpression;
+    }
+
+    private OutboundDataOperation extractCreateIndexOperation(ChannelHandlerContext ctx, CreateIndex stmt,
+            OutboundDataOperation outboundDataOperation, Operation operation) throws ParseException {
+        // Extract dataset id
+        String schemaId = getSchemaId(ctx, stmt.getTable());
+        String datasetId = getTableId(ctx, stmt.getTable(), schemaId);
+        if (outboundDataOperation == null || (operation != null && outboundDataOperation.getOperation() != operation)) {
+            outboundDataOperation = new OutboundDataOperation();
+            outboundDataOperation.setOperation(operation != null ? operation : Operation.UPDATE);
+            outboundDataOperation.setUsingHeadOperation(true);
+            // Save mapping between table and dataset id
+            Map.Entry<Table, String> tableId = new SimpleEntry<>(stmt.getTable(), datasetId);
+            outboundDataOperation.addAttribute("tableId", tableId);
+        }
+        // Extract column names
+        List<String> columnNames = stmt.getIndex().getColumnsNames();
+        if (columnNames == null) {
+            columnNames = Collections.emptyList();
+        }
+        // Extract data ids
+        List<CString> dataIds = columnNames.stream()
+                // unquote string
+                .map(StringUtilities::unquote)
+                // build dataId
+                .map(cn -> datasetId + cn)
+                // transform to CString
+                .map(CString::valueOf)
+                // save as a list
+                .collect(Collectors.toList());
+        dataIds.removeAll(outboundDataOperation.getDataIds());
+        outboundDataOperation.addDataIds(dataIds);
+        // Save mapping between method and data ids
+        Map.Entry<String, List<String>> createIndexMethodIds = new SimpleEntry<>(stmt.getMethod(),
+                dataIds.stream().map(CString::toString).collect(Collectors.toList()));
+        outboundDataOperation.addAttribute("createIndexMethodIds", createIndexMethodIds);
+        return outboundDataOperation;
+    }
+
+    private PgsqlStatement<CreateIndex> modifyCreateIndexStatement(ChannelHandlerContext ctx,
+            PgsqlStatement<CreateIndex> statement, OutboundDataOperation outboundDataOperation, boolean newStatement) {
+        // Prepare statement
+        CreateIndex stmt = statement.getStatement();
+        if (newStatement) {
+            // Duplicate statement
+            String sql = stmt.toString();
+            try {
+                stmt = (CreateIndex) CCJSqlParserUtil.parse(sql);
+            } catch (JSQLParserException | TokenMgrError e) {
+                // Should not occur
+                LOGGER.error("Parsing error for {} : ", sql);
+                if (LOGGER.isTraceEnabled()) {
+                    LOGGER.trace("Parsing error details:", e);
+                }
+            }
+        }
+        CreateIndex createIndex = stmt;
+
+        int involvedBackend = outboundDataOperation.getInvolvedCSP() == -1 ? getPreferredBackend(ctx)
+                : outboundDataOperation.getInvolvedCSP();
+
+        // 1. Update clause index method
+        // 1.1 Retrieve data ids associated to index method and table id
+        // associated to the table
+        @SuppressWarnings("unchecked")
+        Map.Entry<String, List<String>> createIndexMethodIds = (Map.Entry<String, List<String>>) outboundDataOperation
+                .getAttribute("createIndexMethodIds");
+        List<String> dataIds = createIndexMethodIds.getValue();
+
+        // 1.2 Retrieve protected data ids
+        List<String> newDataIds1 = outboundDataOperation.getDataIds().stream().map(CString::toString)
+                .collect(Collectors.toList());
+
+        // 1.3 Retrieve the mapping between clear and protected data ids
+        // call metadata operation
+        MetadataOperation metadataOperation1 = new MetadataOperation();
+        List<CString> allDataIds1 = dataIds.stream().map(CString::valueOf).collect(Collectors.toList());
+        metadataOperation1.setDataIds(allDataIds1);
+        // mapping clear data ids to [protected data ids]:
+        // [0 protected data ids] -> preserve original column name
+        // [null protected data id for a csp] -> column name must be dropped
+        // from the query
+        // [non null protected data id for a csp] -> replace column name by 1
+        // protected data id
+        List<Map.Entry<CString, List<CString>>> metadata1 = newMetaDataOperation(ctx, metadataOperation1).getMetadata();
+        // filter to retain metadata mapping only for the involved backend
+        // [0 protected data id] -> preserve original column name
+        // [1 null protected data id] -> column name must be dropped from the
+        // query
+        // [1 non null protected data id] -> replace column name by 1 protected
+        // data id
+        Map<String, List<String>> rawDataIdsMapping1 = metadata1.stream().collect(Collectors.toMap(
+                e -> e.getKey().toString(),
+                e -> e.getValue().isEmpty() ? Collections.emptyList()
+                        : Collections.singletonList(StringUtilities.toString(e.getValue().get(involvedBackend))),
+                (l1, l2) -> l1));
+        // mapping original clear data ids to protected data ids:
+        Map<String, List<String>> dataIdsMapping1 = allDataIds1.stream().distinct().map(CString::toString)
+                .collect(Collectors.toMap(java.util.function.Function.identity(), id -> rawDataIdsMapping1.get(id)));
+        // retrieve the mapping between clear table id and protected table id
+        Map<String, List<String>> fqDataIdsMapping1 = dataIdsMapping1.entrySet().stream()
+                .filter(e -> e.getKey().lastIndexOf('/') != -1)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        Map.Entry<String, String> tableIdMapping = fqDataIdsMapping1.entrySet().stream()
+                .filter(e -> !e.getValue().isEmpty() && e.getValue().get(0) != null).findAny()
+                .map(e -> new SimpleEntry<>(e.getKey().substring(0, e.getKey().lastIndexOf('/')),
+                        e.getValue().get(0).substring(0, e.getValue().get(0).lastIndexOf('/'))))
+                .orElse(fqDataIdsMapping1.keySet().stream().findAny()
+                        .map(id -> new SimpleEntry<>(id.substring(0, id.lastIndexOf('/')),
+                                id.substring(0, id.lastIndexOf('/'))))
+                        .get());
+
+        // 1.4 Replace or remove columns
+        int nbColumns = createIndex.getIndex().getColumnsNames() != null
+                ? createIndex.getIndex().getColumnsNames().size() : 0;
+        List<String> newColumnNames = new ArrayList<>(nbColumns);
+        for (int i = 0; i < nbColumns; i++) {
+            String columnName = createIndex.getIndex().getColumnsNames().get(i);
+            String dataId = dataIds.get(i);
+            String newColumnName;
+            if (dataId == null) {
+                // no modification
+                newColumnName = columnName;
+            } else {
+                // first filter data id mapping on key: retain protected data
+                // id for the column name
+                List<String> columnProtectedDataIds = dataIdsMapping1.entrySet().stream()
+                        .filter(e -> dataId.equals(e.getKey())).flatMap(e -> e.getValue().stream())
+                        .collect(Collectors.toList());
+                if (columnProtectedDataIds.isEmpty()) {
+                    // no modification
+                    newColumnName = columnName;
+                } else {
+                    // then filter data id mapping on value: retain protected
+                    // data id that the data operation has returned
+                    List<String> newColumnDataIds = columnProtectedDataIds.stream().filter(newDataIds1::contains)
+                            .collect(Collectors.toList());
+                    if (newColumnDataIds.isEmpty()) {
+                        // drop the column name
+                        newColumnName = null;
+                    } else {
+                        // For the protected data id selected for the column
+                        // name,
+                        // build a new column name
+                        String oldDataId = dataId;
+                        String newDataId = newColumnDataIds.get(0);
+                        boolean same = newDataId.equals(oldDataId);
+                        if (same) {
+                            // no modification
+                            newColumnName = columnName;
+                        } else {
+                            newColumnName = buildColumnName(columnName, newDataId);
+                        }
+                    }
+                }
+            }
+            if (newColumnName != null) {
+                newColumnNames.add(newColumnName);
+            }
+        }
+        createIndex.getIndex().setColumnsNames(newColumnNames);
+
+        // 2. Update clause table
+        // 2.1 Retrieve mapping between clear table ids and protected table ids
+        // tableIdMapping is already resolved
+
+        // 2.2 Replace table
+        Table table = createIndex.getTable();
+        Table newTable = null;
+        String oldTableId = tableIdMapping.getKey();
+        String newTableId = tableIdMapping.getValue();
+        boolean same = newTableId.equals(oldTableId);
+        if (same) {
+            // no modification
+            newTable = table;
+        } else {
+            newTable = buildTable(table, newTableId);
+        }
+        createIndex.setTable(newTable);
+
+        return new PgsqlStatement<>(stmt, statement.getParameterTypes(), statement.getParameterFormats(),
+                statement.getParameterValues(), statement.getResultFormats(), statement.getColumns());
+    }
+
+    private String buildColumnName(String columnName, String newDataId) {
+        String[] tokens = newDataId.split("/");
+        assert tokens.length > 0;
+        String newColumnName = tokens[tokens.length - 1];
+        return newColumnName;
     }
 
     private OutboundDataOperation extractDropTableOperation(ChannelHandlerContext ctx, Drop stmt)
@@ -2901,7 +3128,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                         List<String> newColumnDataIds = columnProtectedDataIds.stream().filter(newDataIds1::contains)
                                 .collect(Collectors.toList());
                         if (newColumnDataIds.isEmpty()) {
-                            // drop the select item
+                            // drop the column
                             newColumn = null;
                         } else {
                             // For the protected data id selected for the column,
@@ -3737,7 +3964,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                 if (selectItemProtectedDataIds.isEmpty()) {
                     // no modification
                     newSelectItem = selectItem;
-                    newSelectItemDataIds = dataIds;
+                    List<String> backendDatabaseNames = getBackendDatabaseNames(ctx);
+                    if (!backendDatabaseNames.isEmpty()) {
+                        // Modify data ids (replace database name by the back-end database
+                        // name)
+                        newSelectItemDataIds = dataIds.stream().map(id -> modifyDatabaseName(id, backendDatabaseNames.get(involvedBackend))).collect(Collectors.toList());
+                    } else {
+                        newSelectItemDataIds = dataIds;
+                    }
                 } else {
                     // then filter data id mapping on value: retain protected
                     // data ids that the data operation has returned
@@ -3819,7 +4053,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                     Map<String, String> reverseDataIdsMapping1 = dataIdsMapping1.entrySet()
                             .stream().filter(
                                     e -> dataIds.contains(e.getKey()))
-                            .flatMap(e -> e.getValue().isEmpty() ? Stream.of(new SimpleEntry<>(e.getKey(), e.getKey()))
+                            .flatMap(e -> e.getValue().isEmpty() ? newSelectItemDataIds2.stream().map(id -> new SimpleEntry<>(id, e.getKey()))
                                     : e.getValue().stream()
                                             .filter(pid -> pid != null && newSelectItemDataIds2.contains(pid))
                                             .map(pid -> new SimpleEntry<>(pid, e.getKey())))
@@ -4815,6 +5049,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         session.setTransferMode(transferMode);
         if (transferMode == TransferMode.FORWARD) {
             if (parseStepStatus != null) {
+                // Set involved backends
+                session.setCommandInvolvedBackends(Collections.singletonList(getPreferredBackend(ctx)), false);
                 DescribeStepStatus describeStepStatus = session.getDescribeStepStatus((byte) 'S',
                         parseStepStatus.getQuery().getName());
                 Result<List<Query>, CommandResults, CString> result = buildNewQueries(ctx, parseStepStatus,
@@ -5571,6 +5807,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                 } else if (stmt instanceof Alter) {
                     moduleOperation = extractAlterTableOperation(ctx, (Alter) stmt, null,
                             bindStepStatus.getOperation());
+                } else if (stmt instanceof CreateIndex) {
+                    moduleOperation = extractCreateIndexOperation(ctx, (CreateIndex) stmt, null,
+                            bindStepStatus.getOperation());
                 } else if (stmt instanceof Drop) {
                     moduleOperation = extractDropTableOperation(ctx, (Drop) stmt);
                 } else if (stmt instanceof Insert) {
@@ -5621,9 +5860,10 @@ public class PgsqlEventProcessor implements EventProcessor {
                 List<OutboundDataOperation> newOutboundDataOperations = newOutboundDataOperation(ctx,
                         outBoundDataOperation);
                 if (stmt instanceof SetStatement || stmt instanceof StartTransaction || stmt instanceof Commit
-                        || stmt instanceof CreateTable || stmt instanceof Alter || stmt instanceof Drop
-                        || stmt instanceof Insert || stmt instanceof Select || stmt instanceof DeclareCursor
-                        || stmt instanceof CursorFetch || stmt instanceof CursorClose) {
+                        || stmt instanceof CreateTable || stmt instanceof Alter || stmt instanceof CreateIndex
+                        || stmt instanceof Drop || stmt instanceof Insert || stmt instanceof Select
+                        || stmt instanceof DeclareCursor || stmt instanceof CursorFetch
+                        || stmt instanceof CursorClose) {
                     if (newOutboundDataOperations.isEmpty()) {
                         // Forget SQL statement, reply directly to the frontend
                         CommandResults commandResults = new CommandResults();
@@ -5690,6 +5930,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                                             newOutboundDataOperations.size() > 1);
                                     Statement newAlter = newStatement.getStatement();
                                     newSQL = newAlter.toString();
+                                } else if (stmt instanceof CreateIndex) {
+                                    PgsqlStatement<CreateIndex> statement = new PgsqlStatement<>((CreateIndex) stmt,
+                                            parseStep.getParameterTypes(), bindStep.getParameterFormats(),
+                                            parameterValues, bindStep.getResultColumnFormats(), parseStep.getColumns());
+                                    newStatement = modifyCreateIndexStatement(ctx, statement, newOutboundDataOperation,
+                                            newOutboundDataOperations.size() > 1);
+                                    Statement newCreateIndex = newStatement.getStatement();
+                                    newSQL = newCreateIndex.toString();
                                 } else if (stmt instanceof Drop) {
                                     PgsqlStatement<Drop> statement = new PgsqlStatement<>((Drop) stmt,
                                             parseStep.getParameterTypes(), bindStep.getParameterFormats(),
@@ -6118,8 +6366,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.PARSE_COMPLETE, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.PARSE_COMPLETE));
             }
         }
         MessageTransferMode<Void, Void> mode = new MessageTransferMode<>(transferMode, null);
@@ -6146,14 +6394,14 @@ public class PgsqlEventProcessor implements EventProcessor {
         } else {
             // All backends have replied. Merge responses
             QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
-            if (nextQueryResponseToIgnore == null) {
+            if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.PARSE_COMPLETE) {
                 transferMode = TransferMode.FORWARD;
             } else if (nextQueryResponseToIgnore == QueryResponseType.BIND_COMPLETE) {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.BIND_COMPLETE, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.BIND_COMPLETE));
             }
         }
         MessageTransferMode<Void, Void> mode = new MessageTransferMode<>(transferMode, null);
@@ -6204,8 +6452,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.PARAMETER_DESCRIPTION, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.PARAMETER_DESCRIPTION));
             }
         }
         MessageTransferMode<List<Long>, Void> mode = new MessageTransferMode<>(transferMode,
@@ -6292,8 +6540,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.ROW_DESCRIPTION_AND_DATA_ROW_OR_NO_DATA, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.ROW_DESCRIPTION_AND_DATA_ROW_OR_NO_DATA));
             }
         }
         MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>, Void> mode = new MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>, Void>(
@@ -6874,9 +7122,9 @@ public class PgsqlEventProcessor implements EventProcessor {
             } else if (nextQueryResponseToIgnore == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
                 transferMode = TransferMode.FORGET;
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR,
-                        nextQueryResponseToIgnore));
+                throw new IllegalStateException(
+                        String.format("Unexpected %s response (%s or null was expected)", nextQueryResponseToIgnore,
+                                QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR));
             }
         }
         MessageTransferMode<List<ByteBuf>, Void> mode = new MessageTransferMode<List<ByteBuf>, Void>(transferMode,
@@ -7017,6 +7265,11 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (format == 0) {
             // Text format
             cs = value != null ? CString.valueOf(value, value.capacity()) : null;
+            // Special case for geometry type: remove '\x'
+            Type type = Types.getType(typeOID);
+            if (type == Type.BYTEA && cs.startsWith("\\x")) {
+                cs = cs.substring("\\x".length());
+            }
         } else {
             // Binary format
             Type type = Types.getType(typeOID);
@@ -7031,6 +7284,11 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (format == 0) {
             // Text format
             if (cs != null) {
+                // Special case for geometry type: prepend with '\x'
+                Type type = Types.getType(typeOID);
+                if (type == Type.BYTEA && !cs.startsWith("\\x")) {
+                    cs = CString.valueOf("\\x").append(cs);
+                }
                 value = cs.getByteBuf(cs.length());
             } else {
                 value = null;
@@ -7069,8 +7327,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.ROW_DESCRIPTION_AND_DATA_ROW_OR_NO_DATA, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.ROW_DESCRIPTION_AND_DATA_ROW_OR_NO_DATA));
             }
         }
         MessageTransferMode<Void, Void> mode = new MessageTransferMode<>(transferMode, null);
@@ -7111,7 +7369,8 @@ public class PgsqlEventProcessor implements EventProcessor {
             }
             // All backends have replied. Merge responses
             QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
-            if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY) {
+            if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY
+                    || nextQueryResponseToIgnore == QueryResponseType.PARSE_COMPLETE) {
                 transferMode = TransferMode.FORWARD;
                 if (numberOfBackends == 1) {
                     newTag = tag;
@@ -7200,9 +7459,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR,
-                        nextQueryResponseToIgnore));
+                throw new IllegalStateException(
+                        String.format("Unexpected %s response (%s or null was expected)", nextQueryResponseToIgnore,
+                                QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR));
             }
         }
         MessageTransferMode<CString, Void> mode = new MessageTransferMode<>(transferMode, newTag);
@@ -7237,9 +7496,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR,
-                        nextQueryResponseToIgnore));
+                throw new IllegalStateException(
+                        String.format("Unexpected %s response (%s or null was expected)", nextQueryResponseToIgnore,
+                                QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR));
             }
         }
         MessageTransferMode<Void, Void> mode = new MessageTransferMode<>(transferMode, null);
@@ -7273,9 +7532,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR,
-                        nextQueryResponseToIgnore));
+                throw new IllegalStateException(
+                        String.format("Unexpected %s response (%s or null was expected)", nextQueryResponseToIgnore,
+                                QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR));
             }
         }
         MessageTransferMode<Void, Void> mode = new MessageTransferMode<>(transferMode, null);
@@ -7385,8 +7644,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.CLOSE_COMPLETE, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.CLOSE_COMPLETE));
             }
         }
         MessageTransferMode<Void, Void> mode = new MessageTransferMode<>(transferMode, null);
@@ -7444,8 +7703,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 session.removeFirstQueryResponseToIgnore();
                 session.resetCurrentQuery();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.READY_FOR_QUERY, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.READY_FOR_QUERY));
             }
             session.responsesReceived();
         }

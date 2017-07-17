@@ -22,6 +22,7 @@ public class ProtocolLoader {
     }
 
     public Protocol getProtocol(String protocolName) {
+        loader.reload();
         Iterator<Protocol> protocolProviders = loader.iterator();
         while (protocolProviders.hasNext()) {
             Protocol protocol = protocolProviders.next();

@@ -4,4 +4,10 @@ ext.mainClassName = 'eu.clarussecure.proxy.Proxy'
 dependencies {
     // CLARUS
     compile project(':proxy-common')
+
+    // https://mvnrepository.com/artifact/org.apache.ibatis/ibatis-core
+    testCompile group: 'org.apache.ibatis', name: 'ibatis-core', version: '3.0'
+
+    // PostGIS
+    testCompile group: 'net.postgis', name: 'postgis-jdbc', version: '2.2.1'
 }

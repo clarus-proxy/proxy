@@ -47,6 +47,18 @@
       <version>4.12</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.apache.ibatis</groupId>
+      <artifactId>ibatis-core</artifactId>
+      <version>3.0</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>net.postgis</groupId>
+      <artifactId>postgis-jdbc</artifactId>
+      <version>2.2.1</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
   <organization>
     <name>The CLARUS Consortium</name>

@@ -9,11 +9,12 @@ import java.util.concurrent.Future;
 
 public abstract class ProtocolExecutor implements Protocol, Closeable {
 
+    private Callable<Void> server;
     private Future<Void> future;
 
     @Override
     public void start() {
-        Callable<Void> server = buildServer();
+        server = buildServer();
         try {
             future = Executors.newSingleThreadExecutor().submit(server);
         } catch (Exception e) {
@@ -24,10 +25,19 @@ public abstract class ProtocolExecutor implements Protocol, Closeable {
     protected abstract Callable<Void> buildServer();
 
     @Override
-    public void sync() {
+    public void waitForServerIsReady() throws InterruptedException {
+        if (!(server instanceof ProtocolServer)) {
+            throw new UnsupportedOperationException(
+                    "the underlying server does not implement the ProtocolServer interface");
+        }
+        ((ProtocolServer) server).waitForServerIsReady();
+    }
+
+    @Override
+    public void sync() throws InterruptedException {
         try {
             future.get();
-        } catch (ExecutionException | InterruptedException e) {
+        } catch (ExecutionException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
         }

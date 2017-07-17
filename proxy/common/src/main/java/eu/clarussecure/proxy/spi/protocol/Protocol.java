@@ -8,7 +8,9 @@ public interface Protocol {
 
     void start();
 
-    void sync();
+    void waitForServerIsReady() throws InterruptedException;
+
+    void sync() throws InterruptedException;
 
     void stop();
 
