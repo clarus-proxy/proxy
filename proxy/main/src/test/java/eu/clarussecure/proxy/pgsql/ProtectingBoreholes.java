@@ -55,22 +55,27 @@ public abstract class ProtectingBoreholes {
                 boolean[][] protectedColumnsPerCSP, boolean[] differentValueFlags, String whereClause) {
             String[] protectedDatabaseNames = new String[] { databaseName };
             String[] protectedSchemaNames = new String[] { schemaName };
-            return build(protectedDatabaseNames, protectedSchemaNames, tableName, columnNames, protectedColumnsPerCSP, differentValueFlags, whereClause);
+            return build(protectedDatabaseNames, protectedSchemaNames, tableName, columnNames, protectedColumnsPerCSP,
+                    differentValueFlags, whereClause);
         }
 
-        public static TableContext build(String[] protectedDatabaseNames, String[] protectedSchemaNames, String tableName, String[] columnNames,
-                boolean[][] protectedColumnsPerCSP, boolean[] differentValueFlags, String whereClause) {
+        public static TableContext build(String[] protectedDatabaseNames, String[] protectedSchemaNames,
+                String tableName, String[] columnNames, boolean[][] protectedColumnsPerCSP,
+                boolean[] differentValueFlags, String whereClause) {
             String[][] protectedColumnNames = IntStream.range(0, protectedColumnsPerCSP.length)
-                    .mapToObj(csp -> IntStream.range(0, columnNames.length)
-                            .mapToObj(c -> protectedColumnsPerCSP[csp][c] ? "csp" + (csp + 1) + "." + protectedDatabaseNames[csp] + "."
-                                    + protectedSchemaNames[csp] + "." + tableName + "." + columnNames[c] : null)
-                            .toArray(String[]::new))
+                    .mapToObj(
+                            csp -> IntStream.range(0, columnNames.length)
+                                    .mapToObj(c -> protectedColumnsPerCSP[csp][c]
+                                            ? "csp" + (csp + 1) + "." + protectedDatabaseNames[csp] + "."
+                                                    + protectedSchemaNames[csp] + "." + tableName + "." + columnNames[c]
+                                            : null)
+                                    .toArray(String[]::new))
                     .toArray(String[][]::new);
             return new TableContext(tableName, columnNames, protectedColumnNames, differentValueFlags, whereClause);
         }
 
-        public TableContext(String tableName, String[] columnNames,
-                String[][] protectedColumnNames, boolean[] differentValueFlags, String whereClause) {
+        public TableContext(String tableName, String[] columnNames, String[][] protectedColumnNames,
+                boolean[] differentValueFlags, String whereClause) {
             this.tableName = tableName;
             this.columnNames = columnNames;
             this.protectedColumnNames = protectedColumnNames;
@@ -103,21 +108,21 @@ public abstract class ProtectingBoreholes {
         }
 
         // bug with splitting: need to manage table names
-//        private String toTableName(String selectItem) {
-//            int idx = selectItem.indexOf(" as ");
-//            if (idx != -1) {
-//                return toTableName(selectItem.substring(0, idx).trim());
-//            }
-//            idx = selectItem.indexOf('(');
-//            if (idx != -1) {
-//                return "";
-//            }
-//            idx = selectItem.indexOf('.');
-//            if (idx != -1) {
-//                return selectItem.substring(0, idx).trim();
-//            }
-//            return getTableName();
-//        }
+        //        private String toTableName(String selectItem) {
+        //            int idx = selectItem.indexOf(" as ");
+        //            if (idx != -1) {
+        //                return toTableName(selectItem.substring(0, idx).trim());
+        //            }
+        //            idx = selectItem.indexOf('(');
+        //            if (idx != -1) {
+        //                return "";
+        //            }
+        //            idx = selectItem.indexOf('.');
+        //            if (idx != -1) {
+        //                return selectItem.substring(0, idx).trim();
+        //            }
+        //            return getTableName();
+        //        }
 
         private String toColumnName(String selectItem, int involvedCSP) {
             if (involvedCSP != -1) {
@@ -143,7 +148,8 @@ public abstract class ProtectingBoreholes {
                 }
                 idx = Arrays.asList(getColumnNames()).indexOf(columnName);
                 if (idx != -1) {
-                    columnName = involvedCSP < getProtectedColumnNames().length ? getProtectedColumnNames()[involvedCSP][idx] : null;
+                    columnName = involvedCSP < getProtectedColumnNames().length
+                            ? getProtectedColumnNames()[involvedCSP][idx] : null;
                 }
                 return columnName;
             } else {
@@ -194,12 +200,12 @@ public abstract class ProtectingBoreholes {
                             .map(selectItem -> toColumnName(selectItem, csp)).filter(cn -> cn != null))
                     .flatMap(stream -> stream).toArray(String[]::new);
             // bug with splitting: need to manage table names
-//            String[] expectedTableNames = Arrays.stream(selectItemTokens)
-//                    .filter(selectItem -> !selectItem.startsWith("clarus_protected(")).map(String::trim)
-//                    .flatMap(selectItem -> selectItem.equals("*") ? Arrays.stream(getColumnNames())
-//                            : Stream.of(selectItem))
-//                    .map(selectItem -> StringUtilities.unquote(selectItem)).map(selectItem -> toTableName(selectItem))
-//                    .toArray(String[]::new);
+            //            String[] expectedTableNames = Arrays.stream(selectItemTokens)
+            //                    .filter(selectItem -> !selectItem.startsWith("clarus_protected(")).map(String::trim)
+            //                    .flatMap(selectItem -> selectItem.equals("*") ? Arrays.stream(getColumnNames())
+            //                            : Stream.of(selectItem))
+            //                    .map(selectItem -> StringUtilities.unquote(selectItem)).map(selectItem -> toTableName(selectItem))
+            //                    .toArray(String[]::new);
             String query = "select " + selectItems + " from " + getTableName();
             if (whereClause != null) {
                 query = query + " where " + whereClause;
@@ -216,9 +222,9 @@ public abstract class ProtectingBoreholes {
                         String actualColumnName = resultSet.getMetaData().getColumnLabel(c + 1);
                         Assert.assertEquals(expectedColumnName, actualColumnName);
                         // bug with splitting: need to manage table names
-//                        String expectedTableName = expectedTableNames[c];
-//                        String actualTableName = resultSet.getMetaData().getTableName(c + 1);
-//                        Assert.assertEquals(expectedTableName, actualTableName);
+                        //                        String expectedTableName = expectedTableNames[c];
+                        //                        String actualTableName = resultSet.getMetaData().getTableName(c + 1);
+                        //                        Assert.assertEquals(expectedTableName, actualTableName);
                     }
                     if (returnResult) {
                         result = new ArrayList<>();
@@ -311,19 +317,23 @@ public abstract class ProtectingBoreholes {
 
     protected abstract String getProtectedGeometryType();
 
-    private List<List<String>> query(TableContext tableContext, String selectItems, String whereClause, int expectedNbRows, boolean returnResult) throws SQLException {
+    private List<List<String>> query(TableContext tableContext, String selectItems, String whereClause,
+            int expectedNbRows, boolean returnResult) throws SQLException {
         return tableContext.executeQuery(selectItems, whereClause, expectedNbRows, returnResult);
     }
 
-    private void query(TableContext tableContext, String selectItems, String whereClause, int expectedNbRows) throws SQLException {
+    private void query(TableContext tableContext, String selectItems, String whereClause, int expectedNbRows)
+            throws SQLException {
         query(tableContext, selectItems, whereClause, expectedNbRows, false);
     }
 
-    private void queryClearData(TableContext tableContext, String selectItems, String whereClause, int expectedNbRows) throws SQLException {
+    private void queryClearData(TableContext tableContext, String selectItems, String whereClause, int expectedNbRows)
+            throws SQLException {
         query(tableContext, selectItems, whereClause, expectedNbRows);
     }
 
-    private void queryClearData(TableContext tableContext, String selectItems, boolean withWhereClause) throws SQLException {
+    private void queryClearData(TableContext tableContext, String selectItems, boolean withWhereClause)
+            throws SQLException {
         queryClearData(tableContext, selectItems, withWhereClause ? tableContext.getWhereClause() : null,
                 withWhereClause ? 1 : Integer.MAX_VALUE);
     }
@@ -332,15 +342,15 @@ public abstract class ProtectingBoreholes {
         queryClearData(tableContext, selectItems, false);
     }
 
-    private void queryProtectedData(TableContext tableContext, String selectItems, String whereClause, int expectedNbRows) throws SQLException {
+    private void queryProtectedData(TableContext tableContext, String selectItems, String whereClause,
+            int expectedNbRows) throws SQLException {
         String[] selectItemTokens = selectItems.split(",(?![^(]*\\))");
-        String[] expectedColumnNames = Arrays.stream(selectItemTokens)
-                        .map(String::trim)
-                        .flatMap(selectItem -> selectItem.equals("*") ? Arrays.stream(tableContext.getColumnNames())
-                                : Stream.of(selectItem))
-                        .map(selectItem -> StringUtilities.unquote(selectItem)).toArray(String[]::new);
+        String[] expectedColumnNames = Arrays.stream(selectItemTokens).map(String::trim)
+                .flatMap(selectItem -> selectItem.equals("*") ? Arrays.stream(tableContext.getColumnNames())
+                        : Stream.of(selectItem))
+                .map(selectItem -> StringUtilities.unquote(selectItem)).toArray(String[]::new);
         // protected data by CSP
-        for (int csp = 1; csp <= tableContext.getNumberOfCSPs(); csp ++) {
+        for (int csp = 1; csp <= tableContext.getNumberOfCSPs(); csp++) {
             String protectedSelectItems = String.format("clarus_protected('csp%d'), %s", csp, selectItems);
             final int csp2 = csp - 1;
             boolean expectedResults = Arrays.stream(expectedColumnNames).map(cn -> tableContext.toColumnName(cn, csp2))
@@ -348,12 +358,13 @@ public abstract class ProtectingBoreholes {
             query(tableContext, protectedSelectItems, whereClause, expectedResults ? expectedNbRows : 0);
         }
         // protected data for a CSP that is not involved
-        String protectedSelectItems = String.format("clarus_protected('csp%d'), %s", tableContext.getNumberOfCSPs() + 1, selectItems);
+        String protectedSelectItems = String.format("clarus_protected('csp%d'), %s", tableContext.getNumberOfCSPs() + 1,
+                selectItems);
         query(tableContext, protectedSelectItems, whereClause, 0);
         // protected data for all  CSPs (plus one that is not involved)
         StringBuilder sb = new StringBuilder("clarus_protected(");
         boolean expectedResults = false;
-        for (int csp = 1; csp <= tableContext.getNumberOfCSPs(); csp ++) {
+        for (int csp = 1; csp <= tableContext.getNumberOfCSPs(); csp++) {
             sb.append(String.format("'csp%d', ", csp));
             final int csp2 = csp - 1;
             expectedResults |= Arrays.stream(expectedColumnNames).map(cn -> tableContext.toColumnName(cn, csp2))
@@ -364,7 +375,8 @@ public abstract class ProtectingBoreholes {
         query(tableContext, protectedSelectItems, whereClause, expectedResults ? expectedNbRows : 0);
     }
 
-    private void queryProtectedData(TableContext tableContext, String selectItems, boolean withWhereClause) throws SQLException {
+    private void queryProtectedData(TableContext tableContext, String selectItems, boolean withWhereClause)
+            throws SQLException {
         queryProtectedData(tableContext, selectItems, withWhereClause ? tableContext.getWhereClause() : null,
                 withWhereClause ? 1 : Integer.MAX_VALUE);
     }
@@ -378,9 +390,11 @@ public abstract class ProtectingBoreholes {
         void test(String columnName, String clearValue, String protectedValue);
     }
 
-    private void compareClearDataWithProtectedData(TableContext tableContext, TestColumnValues testColumnValues) throws SQLException {
+    private void compareClearDataWithProtectedData(TableContext tableContext, TestColumnValues testColumnValues)
+            throws SQLException {
         for (int c = 0; c < tableContext.getColumnNames().length; c++) {
-            List<List<String>> clearResult = tableContext.executeQuery(StringUtilities.quote(tableContext.getColumnNames()[c]), true, 1, true);
+            List<List<String>> clearResult = tableContext
+                    .executeQuery(StringUtilities.quote(tableContext.getColumnNames()[c]), true, 1, true);
             Assert.assertNotNull(clearResult);
             Assert.assertEquals(clearResult.size(), 1);
             Assert.assertNotNull(clearResult.get(0));
@@ -389,7 +403,9 @@ public abstract class ProtectingBoreholes {
             for (int csp = 0; csp < tableContext.getNumberOfCSPs(); csp++) {
                 boolean expectedResults = tableContext.toColumnName(tableContext.getColumnNames()[c], csp) != null;
                 List<List<String>> protectedResult = tableContext.executeQuery(
-                        String.format("clarus_protected('csp%d'), %s", (csp + 1), StringUtilities.quote(tableContext.getColumnNames()[c])), true, expectedResults ? 1 : 0, true);
+                        String.format("clarus_protected('csp%d'), %s", (csp + 1),
+                                StringUtilities.quote(tableContext.getColumnNames()[c])),
+                        true, expectedResults ? 1 : 0, true);
                 if (expectedResults) {
                     Assert.assertNotNull(protectedResult);
                     Assert.assertEquals(protectedResult.size(), 1);
@@ -410,7 +426,8 @@ public abstract class ProtectingBoreholes {
                         Assert.assertEquals(clearResult.get(0).get(0), protectedResult.get(0).get(0));
                     }
                     if (testColumnValues != null) {
-                        testColumnValues.test(tableContext.getColumnNames()[c], clearResult.get(0).get(0), protectedResult.get(0).get(0));
+                        testColumnValues.test(tableContext.getColumnNames()[c], clearResult.get(0).get(0),
+                                protectedResult.get(0).get(0));
                     }
                 } else {
                     Assert.assertNull(protectedResult);
@@ -474,15 +491,13 @@ public abstract class ProtectingBoreholes {
     @Test
     public void query_boreholes_5_selectWhereInEnvelope_clearResults() throws SQLException {
         queryClearData(getBoreholes(), "st_asbinary(geom,'NDR'), gid",
-                "geom && st_makeenvelope(-20026376.39,-20048966.10,20026376.39,20048966.10,3857)",
-                Integer.MAX_VALUE);
+                "geom && st_makeenvelope(-20026376.39,-20048966.10,20026376.39,20048966.10,3857)", Integer.MAX_VALUE);
     }
 
     @Test
     public void query_boreholes_5_selectWhereInEnvelope_protectedResults() throws SQLException {
         queryProtectedData(getBoreholes(), "st_asbinary(geom,'NDR'), gid",
-                "geom && st_makeenvelope(-20026376.39,-20048966.10,20026376.39,20048966.10,3857)",
-                Integer.MAX_VALUE);
+                "geom && st_makeenvelope(-20026376.39,-20048966.10,20026376.39,20048966.10,3857)", Integer.MAX_VALUE);
     }
 
     @Test
@@ -518,7 +533,8 @@ public abstract class ProtectingBoreholes {
     public void query_geometry_columns_2_selectColumnsOneByOne_protectedResults() throws SQLException {
         for (int c = 0; c < getGeometryColumns().getColumnNames().length; c++) {
             queryProtectedData(getGeometryColumns(), StringUtilities.quote(getGeometryColumns().getColumnNames()[c]));
-            queryProtectedData(getGeometryColumns(), StringUtilities.quote(getGeometryColumns().getColumnNames()[c]), true);
+            queryProtectedData(getGeometryColumns(), StringUtilities.quote(getGeometryColumns().getColumnNames()[c]),
+                    true);
         }
     }
 
@@ -545,7 +561,6 @@ public abstract class ProtectingBoreholes {
         queryProtectedData(getGeometryColumns(), "f_table_catalog as a, f_table_name as b, *, type as c");
         queryProtectedData(getGeometryColumns(), "f_table_catalog as a, f_table_name as b, *, type as c", true);
     }
-
 
     @Test
     public void query_geometry_columns_5_compareClearDataWithProtectedData() throws SQLException {

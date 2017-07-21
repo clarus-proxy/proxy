@@ -2752,11 +2752,12 @@ public class PgsqlEventProcessor implements EventProcessor {
         // query
         // [1 non null protected data id] -> replace column name by 1 protected
         // data id
-        Map<String, List<String>> rawDataIdsMapping1 = metadata1.stream().collect(Collectors.toMap(
-                e -> e.getKey().toString(),
-                e -> e.getValue().isEmpty() ? Collections.emptyList()
-                        : Collections.singletonList(StringUtilities.toString(e.getValue().get(involvedBackend))),
-                (l1, l2) -> l1));
+        Map<String, List<String>> rawDataIdsMapping1 = metadata1.stream()
+                .collect(Collectors.toMap(e -> e.getKey().toString(),
+                        e -> e.getValue().isEmpty() ? Collections.emptyList()
+                                : Collections
+                                        .singletonList(StringUtilities.toString(e.getValue().get(involvedBackend))),
+                        (l1, l2) -> l1));
         // mapping original clear data ids to protected data ids:
         Map<String, List<String>> dataIdsMapping1 = allDataIds1.stream().distinct().map(CString::toString)
                 .collect(Collectors.toMap(java.util.function.Function.identity(), id -> rawDataIdsMapping1.get(id)));
@@ -2764,9 +2765,14 @@ public class PgsqlEventProcessor implements EventProcessor {
         Map<String, List<String>> fqDataIdsMapping1 = dataIdsMapping1.entrySet().stream()
                 .filter(e -> e.getKey().lastIndexOf('/') != -1)
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-        Map.Entry<String, String> tableIdMapping = fqDataIdsMapping1.entrySet().stream()
-                .filter(e -> !e.getValue().isEmpty() && e.getValue().get(0) != null).findAny()
-                .map(e -> new SimpleEntry<>(e.getKey().substring(0, e.getKey().lastIndexOf('/')),
+        Map.Entry<String, String> tableIdMapping = fqDataIdsMapping1.entrySet()
+                .stream().filter(
+                        e -> !e.getValue().isEmpty() && e.getValue().get(0) != null)
+                .findAny()
+                .map(e -> new SimpleEntry<>(
+                        e.getKey().substring(0,
+                                e.getKey()
+                                        .lastIndexOf('/')),
                         e.getValue().get(0).substring(0, e.getValue().get(0).lastIndexOf('/'))))
                 .orElse(fqDataIdsMapping1.keySet().stream().findAny()
                         .map(id -> new SimpleEntry<>(id.substring(0, id.lastIndexOf('/')),
@@ -3968,7 +3974,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                     if (!backendDatabaseNames.isEmpty()) {
                         // Modify data ids (replace database name by the back-end database
                         // name)
-                        newSelectItemDataIds = dataIds.stream().map(id -> modifyDatabaseName(id, backendDatabaseNames.get(involvedBackend))).collect(Collectors.toList());
+                        newSelectItemDataIds = dataIds.stream()
+                                .map(id -> modifyDatabaseName(id, backendDatabaseNames.get(involvedBackend)))
+                                .collect(Collectors.toList());
                     } else {
                         newSelectItemDataIds = dataIds;
                     }
@@ -4050,10 +4058,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                     }
                     String protectedFieldName = toOutputName(newSelectItem.toString());
                     List<String> newSelectItemDataIds2 = newSelectItemDataIds;
-                    Map<String, String> reverseDataIdsMapping1 = dataIdsMapping1.entrySet()
-                            .stream().filter(
-                                    e -> dataIds.contains(e.getKey()))
-                            .flatMap(e -> e.getValue().isEmpty() ? newSelectItemDataIds2.stream().map(id -> new SimpleEntry<>(id, e.getKey()))
+                    Map<String, String> reverseDataIdsMapping1 = dataIdsMapping1.entrySet().stream()
+                            .filter(e -> dataIds.contains(e.getKey())).flatMap(e -> e.getValue().isEmpty()
+                                    ? newSelectItemDataIds2.stream().map(id -> new SimpleEntry<>(id, e.getKey()))
                                     : e.getValue().stream()
                                             .filter(pid -> pid != null && newSelectItemDataIds2.contains(pid))
                                             .map(pid -> new SimpleEntry<>(pid, e.getKey())))
