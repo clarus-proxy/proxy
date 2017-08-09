@@ -12,5 +12,5 @@ public interface ProtectionModule {
 
     DataOperation getDataOperation();
 
-    void initialize(Document document, String[] dataIds, String[] datasetPrefixByServer);
+    void initialize(Document document);
 }

@@ -35,9 +35,4 @@ public class PgsqlProtocol extends ProtocolExecutor {
         dataIds = Arrays.stream(dataIds).map(id -> Helper.CONFIGURATION.adaptDataId(id)).toArray(String[]::new);
         return dataIds;
     }
-
-    @Override
-    public String[] getDatasetPrefixByServer() {
-        return getConfiguration().getBackendDatabaseNames().stream().toArray(String[]::new);
-    }
 }

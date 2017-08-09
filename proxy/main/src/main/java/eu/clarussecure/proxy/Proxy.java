@@ -120,12 +120,10 @@ public class Proxy {
         // Adapt data identifiers
         String[] dataIds = protocol.adaptDataIds(securityPolicy.getDataIds());
         securityPolicy.setDataIds(dataIds);
-        // Get dataset prefix for each server
-        String[] datasetPrefixByServer = protocol.getDatasetPrefixByServer();
         // Initialize the protection module
         if (protectionModule != null) {
             LOGGER.trace("Initializing the protection module...");
-            protectionModule.initialize(securityPolicy.getDocument(), dataIds, datasetPrefixByServer);
+            protectionModule.initialize(securityPolicy.getDocument());
             LOGGER.debug("Protection module initialized");
         }
         // Register the protocol service

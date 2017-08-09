@@ -28,7 +28,7 @@ public class AnonymizationModule implements ProtectionModule {
     }
 
     @Override
-    public void initialize(Document document, String[] dataIds, String[] datasetPrefixByServer) {
+    public void initialize(Document document) {
         anonymizeModule = new AnonymizeModule(document);
     }
 

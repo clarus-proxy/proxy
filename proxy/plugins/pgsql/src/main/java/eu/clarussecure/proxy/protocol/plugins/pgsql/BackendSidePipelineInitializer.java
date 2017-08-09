@@ -21,7 +21,6 @@ import eu.clarussecure.proxy.protocol.plugins.pgsql.message.SessionInitializatio
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.codec.PgsqlRawPartAggregator;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.codec.PgsqlRawPartCodec;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.forwarder.PgsqlResponseForwarder;
-import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
 import eu.clarussecure.proxy.spi.protocol.Configuration;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
@@ -53,12 +52,9 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
     @Override
     protected void initChannel(Channel ch) throws Exception {
         Configuration configuration = ch.attr(PgsqlConstants.CONFIGURATION_KEY).get();
-        PgsqlSession session = (PgsqlSession) ch.attr(TCPConstants.SESSION_KEY).get();
-        PgsqlRawPartCodec clientSideCodec = (PgsqlRawPartCodec) session.getClientSideChannel().pipeline()
-                .get("PgsqlPartCodec");
         ChannelPipeline pipeline = ch.pipeline();
         pipeline.addLast("PgsqlPartCodec",
-                new PgsqlRawPartCodec(false, configuration.getFramePartMaxLength(), clientSideCodec));
+                new PgsqlRawPartCodec(false, configuration.getFramePartMaxLength()));
         if (parserGroup == null) {
             parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
         }

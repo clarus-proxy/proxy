@@ -27,7 +27,7 @@ public class SplittingModule implements ProtectionModule {
     }
 
     @Override
-    public void initialize(Document document, String[] dataIds, String[] datasetPrefixByServer) {
+    public void initialize(Document document) {
         splittingModule = new eu.clarussecure.dataoperations.splitting.SplittingModule(document);
     }
 
