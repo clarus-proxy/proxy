@@ -1616,9 +1616,6 @@ public class PgsqlEventProcessor implements EventProcessor {
                     } else if (stmt instanceof Delete) {
                         commandResults.setCompleteTag(CString.valueOf("DELETE 0 1"));
                     } else if (stmt instanceof Select) {
-                        List<PgsqlRowDescriptionMessage.Field> description = Stream.of("?column?").map(CString::valueOf)
-                                .map(PgsqlRowDescriptionMessage.Field::new).collect(Collectors.toList());
-                        commandResults.setRowDescription(description);
                         commandResults.setCompleteTag(CString.valueOf("SELECT 0"));
                     } else if (stmt instanceof DeclareCursor) {
                         commandResults.setCompleteTag(CString.valueOf("DECLARE CURSOR"));

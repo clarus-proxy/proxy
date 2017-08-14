@@ -8,19 +8,17 @@ import io.netty.channel.ChannelInitializer;
 
 public class TCPProtocol extends ProtocolExecutor {
 
-    private static class Helper {
-        private static final TCPCapabilities CAPABILITIES = new TCPCapabilities();
-        private static final TCPConfiguration CONFIGURATION = new TCPConfiguration(CAPABILITIES);
-    }
+    private final TCPCapabilities capabilities = new TCPCapabilities();
+    private final TCPConfiguration configuration = new TCPConfiguration(capabilities);
 
     @Override
     public ProtocolCapabilities getCapabilities() {
-        return Helper.CAPABILITIES;
+        return capabilities;
     }
 
     @Override
     public Configuration getConfiguration() {
-        return Helper.CONFIGURATION;
+        return configuration;
     }
 
     @Override

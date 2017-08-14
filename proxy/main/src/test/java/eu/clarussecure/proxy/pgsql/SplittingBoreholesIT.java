@@ -1,9 +1,7 @@
 package eu.clarussecure.proxy.pgsql;
 
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-
-import eu.clarussecure.proxy.Proxy;
+import org.junit.ClassRule;
+import org.junit.rules.RuleChain;
 
 public class SplittingBoreholesIT extends ProtectingBoreholes {
 
@@ -33,33 +31,28 @@ public class SplittingBoreholesIT extends ProtectingBoreholes {
     private static final String GEOMETRY_TYPE = "POINT";
     private static final String PROTECTED_GEOMETRY_TYPE = "POINT";
 
-    private static final TableContext BOREHOLES = TableContext.build(PROTECTED_DATABASE_NAMES, PROTECTED_SCHEMA_NAMES,
-            BOREHOLES_TABLE_NAME, BOREHOLES_COLUMN_NAMES, COLUMN_CSPS, DIFFERENT_VALUE_FLAGS, BOREHOLES_WHERE_CLAUSE);
+    private final DatasetContext boreholes = buildTableContext(BOREHOLES_SCRIPT, PROTECTED_DATABASE_NAMES,
+            PROTECTED_SCHEMA_NAMES, BOREHOLES_TABLE_NAME, BOREHOLES_COLUMN_NAMES, COLUMN_CSPS, DIFFERENT_VALUE_FLAGS,
+            BOREHOLES_WHERE_CLAUSE);
 
-    private static final TableContext GEOMETRY_COLUMNS = TableContext.build(PROTECTED_DATABASE_NAMES,
+    private final DatasetContext geometryColumns = buildTableContext(BOREHOLES_SCRIPT, PROTECTED_DATABASE_NAMES,
             PROTECTED_SCHEMA_NAMES, GEOMETRY_COLUMNS_TABLE_NAME, GEOMETRY_COLUMNS_COLUMN_NAMES, GEOMETRY_COLUMN_CSPS,
             GEOMETRY_COLUMN_DIFFERENT_VALUE_FLAGS, GEOMETRY_COLUMNS_WHERE_CLAUSE);
 
-    private static Proxy proxy;
-
-    @BeforeClass
-    public static void startProxy() throws Exception {
-        proxy = startProxy(SECURITY_POLICY, TARGET, TARGET);
-    }
-
-    @AfterClass
-    public static void stopProxy() throws Exception {
-        stopProxy(proxy);
+    @ClassRule
+    public static RuleChain getRuleChain() {
+        ProxyResource proxyResource = new ProxyResource(SECURITY_POLICY, TARGET, TARGET);
+        return getRuleChain(proxyResource, BOREHOLES_SCRIPT, SCHEMA_NAME, BOREHOLES_TABLE_NAME);
     }
 
     @Override
-    protected TableContext getBoreholes() {
-        return BOREHOLES;
+    protected DatasetContext getBoreholes() {
+        return boreholes;
     }
 
     @Override
-    protected TableContext getGeometryColumns() {
-        return GEOMETRY_COLUMNS;
+    protected DatasetContext getGeometryColumns() {
+        return geometryColumns;
     }
 
     @Override

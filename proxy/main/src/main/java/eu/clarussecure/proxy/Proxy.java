@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 import javax.xml.parsers.ParserConfigurationException;
@@ -186,7 +187,7 @@ public class Proxy {
         protocol.start();
     }
 
-    public void sync() throws InterruptedException {
+    public void sync() throws InterruptedException, ExecutionException {
         protocol.sync();
     }
 

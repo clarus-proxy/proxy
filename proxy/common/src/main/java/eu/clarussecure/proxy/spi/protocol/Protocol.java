@@ -1,5 +1,7 @@
 package eu.clarussecure.proxy.spi.protocol;
 
+import java.util.concurrent.ExecutionException;
+
 public interface Protocol {
 
     ProtocolCapabilities getCapabilities();
@@ -10,7 +12,7 @@ public interface Protocol {
 
     void waitForServerIsReady() throws InterruptedException;
 
-    void sync() throws InterruptedException;
+    void sync() throws InterruptedException, ExecutionException;
 
     void stop();
 

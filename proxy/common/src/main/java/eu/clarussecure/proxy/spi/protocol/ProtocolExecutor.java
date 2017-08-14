@@ -3,6 +3,7 @@ package eu.clarussecure.proxy.spi.protocol;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -34,12 +35,11 @@ public abstract class ProtocolExecutor implements Protocol, Closeable {
     }
 
     @Override
-    public void sync() throws InterruptedException {
+    public void sync() throws InterruptedException, ExecutionException {
         try {
             future.get();
-        } catch (ExecutionException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
+        } catch (CancellationException e) {
+            // nothing to do
         }
     }
 
