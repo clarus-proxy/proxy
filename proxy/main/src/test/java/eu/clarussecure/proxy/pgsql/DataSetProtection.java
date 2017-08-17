@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
+import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -36,27 +37,44 @@ import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
 import org.postgresql.util.PSQLState;
 
+import de.flapdoodle.embed.mongo.Command;
+import de.flapdoodle.embed.mongo.MongodExecutable;
+import de.flapdoodle.embed.mongo.MongodProcess;
+import de.flapdoodle.embed.mongo.MongodStarter;
+import de.flapdoodle.embed.mongo.config.DownloadConfigBuilder;
+import de.flapdoodle.embed.mongo.config.ExtractedArtifactStoreBuilder;
+import de.flapdoodle.embed.mongo.config.MongodConfigBuilder;
+import de.flapdoodle.embed.mongo.config.Net;
+import de.flapdoodle.embed.mongo.config.RuntimeConfigBuilder;
+import de.flapdoodle.embed.mongo.distribution.Version;
+import de.flapdoodle.embed.process.config.IRuntimeConfig;
+import de.flapdoodle.embed.process.config.store.HttpProxyFactory;
+import de.flapdoodle.embed.process.extract.ITempNaming;
+import de.flapdoodle.embed.process.extract.UUIDTempNaming;
+import de.flapdoodle.embed.process.io.directories.FixedPath;
+import de.flapdoodle.embed.process.io.directories.IDirectory;
+import de.flapdoodle.embed.process.runtime.Network;
 import eu.clarussecure.proxy.Proxy;
 import eu.clarussecure.proxy.spi.StringUtilities;
 
 @RunWith(Parameterized.class)
-public abstract class ProtectingDataSet {
+public abstract class DataSetProtection {
 
     protected class DatasetContext {
         private final String script;
         private final String tableName;
         private final String[] columnNames;
         private final String[][] protectedColumnNames;
-        private final boolean[] differentValueFlags;
+        private final boolean[] columnProtectionFlags;
         private final String whereClause;
 
         public DatasetContext(String script, String tableName, String[] columnNames, String[][] protectedColumnNames,
-                boolean[] differentValueFlags, String whereClause) {
+                boolean[] columnProtectedFlags, String whereClause) {
             this.script = script;
             this.tableName = tableName;
             this.columnNames = columnNames;
             this.protectedColumnNames = protectedColumnNames;
-            this.differentValueFlags = differentValueFlags;
+            this.columnProtectionFlags = columnProtectedFlags;
             this.whereClause = whereClause;
         }
 
@@ -80,71 +98,65 @@ public abstract class ProtectingDataSet {
             return getProtectedColumnNames().length;
         }
 
-        public boolean[] getDifferentValueFlags() {
-            return differentValueFlags;
+        public boolean[] getColumnProtectionFlags() {
+            return columnProtectionFlags;
+        }
+
+        public boolean isColumnProtected(int column) {
+            return getColumnProtectionFlags()[column];
         }
 
         public String getWhereClause() {
             return whereClause;
         }
 
-        // bug with splitting: need to manage table names
-        // private String toTableName(String selectItem) {
-        // int idx = selectItem.indexOf(" as ");
-        // if (idx != -1) {
-        // return toTableName(selectItem.substring(0, idx).trim());
-        // }
-        // idx = selectItem.indexOf('(');
-        // if (idx != -1) {
-        // return "";
-        // }
-        // idx = selectItem.indexOf('.');
-        // if (idx != -1) {
-        // return selectItem.substring(0, idx).trim();
-        // }
-        // return getTableName();
-        // }
-
-        private String toColumnName(String selectItem, int involvedCSP) {
-            if (involvedCSP != -1) {
-                String columnName = selectItem;
-                int idx = selectItem.indexOf('(');
-                if (idx != -1) {
-                    int idx2 = selectItem.indexOf(')', idx + 1);
-                    String params = selectItem.substring(idx + 1, idx2);
-                    String[] paramTokens = params.split(",");
-                    for (String token : paramTokens) {
-                        token = StringUtilities.unquote(token.trim());
-                        idx = Arrays.asList(getColumnNames()).indexOf(token);
-                        if (idx != -1) {
-                            columnName = token;
-                            break;
-                        }
-                    }
+        private String toColumnName(String selectItem, boolean resolveRealColumnName) {
+            String columnName = null;
+            int idx = selectItem.indexOf(" as ");
+            if (idx != -1) {
+                if (resolveRealColumnName) {
+                    selectItem = selectItem.substring(0, idx).trim();
                 } else {
-                    idx = selectItem.indexOf(" as ");
-                    if (idx != -1) {
+                    columnName = selectItem.substring(idx + " as ".length()).trim();
+                }
+            }
+            if (columnName == null) {
+                idx = selectItem.indexOf('(');
+                if (idx != -1) {
+                    if (resolveRealColumnName) {
+                        int idx2 = selectItem.indexOf(')', idx + 1);
+                        String params = selectItem.substring(idx + 1, idx2);
+                        String[] paramTokens = params.split(",");
+                        for (String token : paramTokens) {
+                            token = StringUtilities.unquote(token.trim());
+                            idx = Arrays.asList(getColumnNames()).indexOf(token);
+                            if (idx != -1) {
+                                columnName = token;
+                                break;
+                            }
+                        }
+                    } else {
                         columnName = selectItem.substring(0, idx).trim();
                     }
                 }
-                idx = Arrays.asList(getColumnNames()).indexOf(columnName);
+            }
+            if (columnName == null) {
+                columnName = selectItem;
+            }
+            return columnName;
+        }
+
+        private String toColumnName(String selectItem, int involvedCSP) {
+            if (involvedCSP != -1) {
+                String columnName = toColumnName(selectItem, true);
+                int idx = Arrays.asList(getColumnNames()).indexOf(columnName);
                 if (idx != -1) {
                     columnName = involvedCSP < getProtectedColumnNames().length
                             ? getProtectedColumnNames()[involvedCSP][idx] : null;
                 }
                 return columnName;
             } else {
-                String columnName = selectItem;
-                int idx = selectItem.indexOf(" as ");
-                if (idx != -1) {
-                    columnName = selectItem.substring(idx + " as ".length()).trim();
-                } else {
-                    idx = selectItem.indexOf('(');
-                    if (idx != -1) {
-                        columnName = selectItem.substring(0, idx).trim();
-                    }
-                }
-                return columnName;
+                return toColumnName(selectItem, false);
             }
         }
 
@@ -172,6 +184,14 @@ public abstract class ProtectingDataSet {
                     .flatMap(Arrays::stream).map(String::trim).map(StringUtilities::unquote)
                     .map(s -> s.substring("csp".length())).mapToInt(Integer::parseInt).map(csp -> csp - 1).toArray()
                     : new int[] { -1 };
+            String[] expectedClearColumnNames = Arrays.stream(involvedCSPs)
+                    .mapToObj(csp -> Arrays.stream(selectItemTokens)
+                            .filter(selectItem -> !selectItem.startsWith("clarus_protected(")).map(String::trim)
+                            .flatMap(selectItem -> selectItem.equals("*") ? Arrays.stream(getColumnNames())
+                                    : Stream.of(selectItem))
+                            .map(selectItem -> StringUtilities.unquote(selectItem))
+                            .map(selectItem -> toColumnName(selectItem, csp != -1)).filter(cn -> cn != null))
+                    .flatMap(stream -> stream).toArray(String[]::new);
             String[] expectedColumnNames = Arrays.stream(involvedCSPs)
                     .mapToObj(csp -> Arrays.stream(selectItemTokens)
                             .filter(selectItem -> !selectItem.startsWith("clarus_protected(")).map(String::trim)
@@ -180,17 +200,6 @@ public abstract class ProtectingDataSet {
                             .map(selectItem -> StringUtilities.unquote(selectItem))
                             .map(selectItem -> toColumnName(selectItem, csp)).filter(cn -> cn != null))
                     .flatMap(stream -> stream).toArray(String[]::new);
-            // bug with splitting: need to manage table names
-            // String[] expectedTableNames = Arrays.stream(selectItemTokens)
-            // .filter(selectItem ->
-            // !selectItem.startsWith("clarus_protected(")).map(String::trim)
-            // .flatMap(selectItem -> selectItem.equals("*") ?
-            // Arrays.stream(getColumnNames())
-            // : Stream.of(selectItem))
-            // .map(selectItem ->
-            // StringUtilities.unquote(selectItem)).map(selectItem ->
-            // toTableName(selectItem))
-            // .toArray(String[]::new);
             String query = "select " + selectItems + " from " + getTableName();
             if (whereClause != null) {
                 query = query + " where " + whereClause;
@@ -203,15 +212,41 @@ public abstract class ProtectingDataSet {
                     Assert.assertNotNull(resultSet.getMetaData());
                     Assert.assertEquals(expectedColumnNames.length, resultSet.getMetaData().getColumnCount());
                     for (int c = 0; c < resultSet.getMetaData().getColumnCount(); c++) {
+                        String expectedClearColumnName = expectedClearColumnNames[c];
                         String expectedColumnName = expectedColumnNames[c];
                         String actualColumnName = resultSet.getMetaData().getColumnLabel(c + 1);
-                        Assert.assertEquals(expectedColumnName, actualColumnName);
+                        if (expectedColumnName.contains("?")) {
+                            int index = actualColumnName.lastIndexOf('.');
+                            index = actualColumnName.lastIndexOf('.', index - 1) + 1;
+                            String actualShortColumnName = actualColumnName.substring(index);
+                            Assert.assertNotEquals(getTableName() + "." + expectedClearColumnName,
+                                    actualShortColumnName);
+                            Pattern pattern = Pattern
+                                    .compile(expectedColumnName.replace(".", "\\.").replace("?", ".*"));
+                            Assert.assertTrue(pattern.matcher(actualColumnName).matches());
+                        } else {
+                            Assert.assertEquals(expectedColumnName, actualColumnName);
+                        }
                         // bug with splitting: need to manage table names
-                        // String expectedTableName = expectedTableNames[c];
-                        // String actualTableName =
-                        // resultSet.getMetaData().getTableName(c + 1);
-                        // Assert.assertEquals(expectedTableName,
-                        // actualTableName);
+                        if (getNumberOfCSPs() == 1) {
+                            String actualTableName = resultSet.getMetaData().getTableName(c + 1);
+                            if (!actualTableName.isEmpty()) {
+                                String expectedClearTableName = getTableName();
+                                String expectedTableName;
+                                if (protectedNames) {
+                                    int end = expectedColumnName.lastIndexOf('.');
+                                    int begin = expectedColumnName.lastIndexOf('.', end - 1) + 1;
+                                    expectedTableName = expectedColumnName.substring(begin, end);
+                                } else {
+                                    expectedTableName = expectedClearTableName;
+                                }
+                                if (expectedTableName.equals("?")) {
+                                    Assert.assertNotEquals(expectedClearTableName, actualTableName);
+                                } else {
+                                    Assert.assertEquals(expectedTableName, actualTableName);
+                                }
+                            }
+                        }
                     }
                     if (returnResult) {
                         result = new ArrayList<>();
@@ -246,38 +281,45 @@ public abstract class ProtectingDataSet {
 
     protected DatasetContext buildTableContext(int nbCSPs, String script, String databaseName, String schemaName,
             String tableName, String[] columnNames, String whereClause) {
-        boolean[][] protectedColumnsPerCSP = new boolean[nbCSPs][columnNames.length];
-        Arrays.stream(protectedColumnsPerCSP).forEach(cspColumns -> Arrays.fill(cspColumns, true));
-        return buildTableContext(script, databaseName, schemaName, tableName, columnNames, protectedColumnsPerCSP,
+        String protectedDatabaseName = databaseName;
+        String protectedSchemaName = schemaName;
+        String protectedTableName = tableName;
+        String[] protectedColumnNames = columnNames;
+        return buildTableContext(nbCSPs, script, databaseName, schemaName, tableName, columnNames,
+                protectedDatabaseName, protectedSchemaName, protectedTableName, protectedColumnNames, whereClause);
+    }
+
+    protected DatasetContext buildTableContext(int nbCSPs, String script, String databaseName, String schemaName,
+            String tableName, String[] columnNames, String protectedDatabaseName, String protectedSchemaName,
+            String protectedTableName, String[] protectedColumnNames, String whereClause) {
+        String[] protectedDatabaseNames = IntStream.range(0, nbCSPs).mapToObj(csp -> protectedDatabaseName)
+                .toArray(String[]::new);
+        String[] protectedSchemaNames = IntStream.range(0, nbCSPs).mapToObj(csp -> protectedSchemaName)
+                .toArray(String[]::new);
+        String[] protectedTableNames = IntStream.range(0, nbCSPs).mapToObj(csp -> protectedTableName)
+                .toArray(String[]::new);
+        String[][] allProtectedColumnNames = IntStream.range(0, nbCSPs).mapToObj(csp -> IntStream
+                .range(0, columnNames.length).mapToObj(c -> protectedColumnNames[c]).toArray(String[]::new))
+                .toArray(String[][]::new);
+        boolean[] columnProtectionFlags = new boolean[columnNames.length];
+        Arrays.fill(columnProtectionFlags, false);
+        return buildTableContext(script, databaseName, schemaName, tableName, columnNames, columnProtectionFlags,
+                protectedDatabaseNames, protectedSchemaNames, protectedTableNames, allProtectedColumnNames,
                 whereClause);
     }
 
     protected DatasetContext buildTableContext(String script, String databaseName, String schemaName, String tableName,
-            String[] columnNames, boolean[][] protectedColumnsPerCSP, String whereClause) {
-        boolean[] differentValueFlags = new boolean[columnNames.length];
-        Arrays.fill(differentValueFlags, false);
-        return buildTableContext(script, databaseName, schemaName, tableName, columnNames, protectedColumnsPerCSP,
-                differentValueFlags, whereClause);
-    }
-
-    protected DatasetContext buildTableContext(String script, String databaseName, String schemaName, String tableName,
-            String[] columnNames, boolean[][] protectedColumnsPerCSP, boolean[] differentValueFlags,
+            String[] columnNames, boolean[] columnProtectionFlags, String[] protectedDatabaseNames,
+            String[] protectedSchemaNames, String[] protectedTableNames, String[][] protectedColumnNames,
             String whereClause) {
-        String[] protectedDatabaseNames = new String[] { databaseName };
-        String[] protectedSchemaNames = new String[] { schemaName };
-        return buildTableContext(script, protectedDatabaseNames, protectedSchemaNames, tableName, columnNames,
-                protectedColumnsPerCSP, differentValueFlags, whereClause);
-    }
-
-    protected DatasetContext buildTableContext(String script, String[] protectedDatabaseNames,
-            String[] protectedSchemaNames, String tableName, String[] columnNames, boolean[][] protectedColumnsPerCSP,
-            boolean[] differentValueFlags, String whereClause) {
-        String[][] protectedColumnNames = IntStream.range(0, protectedColumnsPerCSP.length).mapToObj(csp -> IntStream
-                .range(0, columnNames.length)
-                .mapToObj(c -> protectedColumnsPerCSP[csp][c] ? "csp" + (csp + 1) + "." + protectedDatabaseNames[csp]
-                        + "." + protectedSchemaNames[csp] + "." + tableName + "." + columnNames[c] : null)
-                .toArray(String[]::new)).toArray(String[][]::new);
-        return new DatasetContext(script, tableName, columnNames, protectedColumnNames, differentValueFlags,
+        String[][] fqProtectedColumnNames = IntStream.range(0, protectedColumnNames.length)
+                .mapToObj(csp -> IntStream.range(0, protectedColumnNames[csp].length)
+                        .mapToObj(c -> protectedColumnNames[csp][c] != null ? "csp" + (csp + 1) + "."
+                                + protectedDatabaseNames[csp] + "." + protectedSchemaNames[csp] + "."
+                                + protectedTableNames[csp] + "." + protectedColumnNames[csp][c] : null)
+                        .toArray(String[]::new))
+                .toArray(String[][]::new);
+        return new DatasetContext(script, tableName, columnNames, fqProtectedColumnNames, columnProtectionFlags,
                 whereClause);
     }
 
@@ -313,6 +355,65 @@ public abstract class ProtectingDataSet {
                 // should not occur
                 e.printStackTrace();
             }
+        }
+    };
+
+    protected static class MongoDBServerResource extends ExternalResource {
+        private final String host;
+        private final int port;
+        private MongodExecutable mongodExecutable;
+        private MongodProcess mongodProcess;
+
+        public MongoDBServerResource(String host, int port) {
+            this.host = host;
+            this.port = port;
+        }
+
+        @Override
+        protected void before() throws Throwable {
+            IRuntimeConfig runtimeConfig = null;
+            if (runtimeConfig == null) {
+                String artifactStorePath = System.getProperty("mongodb.artifact.store.path");
+                if (artifactStorePath != null) {
+                    IDirectory artifactStoreDirectoryPath = new FixedPath(artifactStorePath);
+                    ITempNaming executableNaming = new UUIDTempNaming();
+                    Command command = Command.MongoD;
+
+                    runtimeConfig = new RuntimeConfigBuilder().defaults(command)
+                            .artifactStore(new ExtractedArtifactStoreBuilder().defaults(command)
+                                    .download(new DownloadConfigBuilder().defaultsForCommand(command)
+                                            .artifactStorePath(artifactStoreDirectoryPath).build())
+                                    .executableNaming(executableNaming))
+                            .build();
+                }
+            }
+            if (runtimeConfig == null) {
+                String hostName = System.getProperty("http.proxyHost", System.getProperty("https.proxyHost"));
+                if (hostName != null) {
+                    int port = Integer.parseInt(System.getProperty("http.proxyPort", System.getProperty("https.proxyPort")));
+                    Command command = Command.MongoD;
+                    runtimeConfig = new RuntimeConfigBuilder().defaults(command)
+                            .artifactStore(
+                                    new ExtractedArtifactStoreBuilder().defaults(command)
+                                            .download(new DownloadConfigBuilder().defaultsForCommand(command)
+                                                    .proxyFactory(new HttpProxyFactory(hostName, port)).build()))
+                            .build();
+                }
+            }
+            if (runtimeConfig == null) {
+                runtimeConfig = new RuntimeConfigBuilder().defaults(Command.MongoD).build();
+            }
+            MongodStarter starter = MongodStarter.getInstance(runtimeConfig);
+
+            mongodExecutable = starter.prepare(new MongodConfigBuilder().version(Version.Main.PRODUCTION)
+                    .net(new Net(host, port, Network.localhostIsIPv6())).build());
+            mongodProcess = mongodExecutable.start();
+        }
+
+        @Override
+        protected void after() {
+            mongodProcess.stop();
+            mongodExecutable.stop();
         }
     };
 
@@ -472,7 +573,7 @@ public abstract class ProtectingDataSet {
         return RuleChain.outerRule(proxyResource).around(connectionResource).around(datasetResource);
     }
 
-    @Parameters
+    @Parameters(name = "{0}_queries")
     public static Iterable<? extends Object> getPreferQueryMode() {
         return Arrays.asList("simple", "extended");
     }
@@ -592,7 +693,7 @@ public abstract class ProtectingDataSet {
                 List<List<String>> protectedResult = protectedResults.get(csp);
                 boolean expectedResults = tableContext.toColumnName(tableContext.getColumnNames()[c], csp) != null;
                 if (expectedResults) {
-                    if (tableContext.getDifferentValueFlags()[c]) {
+                    if (tableContext.isColumnProtected(c)) {
                         Assert.assertNotEquals(clearResult.get(0).get(0), protectedResult.get(0).get(0));
                     } else {
                         Assert.assertEquals(clearResult.get(0).get(0), protectedResult.get(0).get(0));

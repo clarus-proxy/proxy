@@ -12,7 +12,7 @@ import org.junit.runners.MethodSorters;
 import eu.clarussecure.proxy.spi.StringUtilities;
 
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
-public abstract class ProtectingBoreholes extends ProtectingDataSet {
+public abstract class BoreholesProtection extends DataSetProtection {
 
     protected static final String BOREHOLES_SCRIPT = "./src/test/resources/datasets/boreholes_3857bis_WKT.sql";
     protected static final String BOREHOLES_TABLE_NAME = "coarsen_boreholes_3857bis";

@@ -16,6 +16,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
@@ -1898,7 +1899,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                 String catalogName = getDatabaseName(ctx);
                 String clearType = geometryObjectDefinition.get(PgsqlConfiguration.GEOMETRIC_OBJECT_CLEAR_TYPE);
                 String protectedType = geometryObjectDefinition.get(PgsqlConfiguration.GEOMETRIC_OBJECT_PROTECTED_TYPE);
-                if (!clearType.equalsIgnoreCase(protectedType)
+                if (!Objects.equals(clearType, protectedType)
                         || backendDatabaseNames.stream().anyMatch(dbn -> !dbn.equals(catalogName))) {
                     newOutboundDataOperations.stream().forEach(newOutboundDataOperation -> {
                         List<CString> dataIds = newOutboundDataOperation.getDataIds();
@@ -1909,7 +1910,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                                                         .endsWith("geometry_columns/f_table_catalog"))
                                                 .toArray()
                                         : new int[0];
-                        int[] typeIndexes = !clearType.equalsIgnoreCase(protectedType)
+                        int[] typeIndexes = !Objects.equals(clearType, protectedType)
                                 ? IntStream.range(0, dataIds.size())
                                         .filter(i -> dataIds.get(i).endsWith("geometry_columns/type")).toArray()
                                 : new int[0];
@@ -1954,7 +1955,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                 String catalogName = getDatabaseName(ctx);
                 String clearType = geometryObjectDefinition.get(PgsqlConfiguration.GEOMETRIC_OBJECT_CLEAR_TYPE);
                 String protectedType = geometryObjectDefinition.get(PgsqlConfiguration.GEOMETRIC_OBJECT_PROTECTED_TYPE);
-                if (!clearType.equalsIgnoreCase(protectedType)
+                if (!Objects.equals(clearType, protectedType)
                         || backendDatabaseNames.stream().anyMatch(dbn -> !dbn.equals(catalogName))) {
                     String geometricDataId = geometryObjectDefinition.get(PgsqlConfiguration.GEOMETRIC_DATA_ID);
                     int start = 0;
@@ -1974,7 +1975,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                             ? IntStream.range(0, dataIds.size())
                                     .filter(i -> dataIds.get(i).endsWith("geometry_columns/f_table_catalog")).toArray()
                             : new int[0];
-                    int[] typeIndexes = !clearType.equalsIgnoreCase(protectedType)
+                    int[] typeIndexes = !Objects.equals(clearType, protectedType)
                             ? IntStream.range(0, dataIds.size())
                                     .filter(i -> dataIds.get(i).endsWith("geometry_columns/type")).toArray()
                             : new int[0];

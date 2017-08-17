@@ -1,4 +1,4 @@
-include 'proxy-common', 'proxy-main', 'proxy-plugin-tcp', 'proxy-plugin-http', 'proxy-plugin-pgsql', 'proxy-module-anonymization', 'proxy-module-splitting'
+include 'proxy-common', 'proxy-main', 'proxy-plugin-tcp', 'proxy-plugin-http', 'proxy-plugin-pgsql', 'proxy-module-anonymization', 'proxy-module-splitting', 'proxy-module-encryption'
 
 project(':proxy-common').projectDir = new File(settingsDir, 'common')
 project(':proxy-main').projectDir = new File(settingsDir, 'main')
@@ -7,3 +7,4 @@ project(':proxy-plugin-http').projectDir = new File(settingsDir, 'plugins/http')
 project(':proxy-plugin-pgsql').projectDir = new File(settingsDir, 'plugins/pgsql')
 project(':proxy-module-anonymization').projectDir = new File(settingsDir, 'modules/anonymization')
 project(':proxy-module-splitting').projectDir = new File(settingsDir, 'modules/splitting')
+project(':proxy-module-encryption').projectDir = new File(settingsDir, 'modules/encryption')
