@@ -53,8 +53,7 @@ public class BackendSidePipelineInitializer extends ChannelInitializer<Channel> 
     protected void initChannel(Channel ch) throws Exception {
         Configuration configuration = ch.attr(PgsqlConstants.CONFIGURATION_KEY).get();
         ChannelPipeline pipeline = ch.pipeline();
-        pipeline.addLast("PgsqlPartCodec",
-                new PgsqlRawPartCodec(false, configuration.getFramePartMaxLength()));
+        pipeline.addLast("PgsqlPartCodec", new PgsqlRawPartCodec(false, configuration.getFramePartMaxLength()));
         if (parserGroup == null) {
             parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
         }

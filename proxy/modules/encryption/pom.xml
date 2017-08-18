@@ -8,8 +8,8 @@
     <relativePath>../..</relativePath>
   </parent>
   <groupId>eu.clarussecure</groupId>
-  <artifactId>proxy-plugin-http</artifactId>
-  <name>HTTP protocol plugin for the CLARUS proxy</name>
+  <artifactId>proxy-module-encryption</artifactId>
+  <name>Encryption module for the CLARUS proxy</name>
   <dependencies>
     <dependency>
       <groupId>org.slf4j</groupId>
@@ -43,38 +43,14 @@
     </dependency>
     <dependency>
       <groupId>eu.clarussecure</groupId>
-      <artifactId>proxy-plugin-tcp</artifactId>
-      <version>1.1-SNAPSHOT</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
-      <groupId>io.netty</groupId>
-      <artifactId>netty-all</artifactId>
-      <version>4.1.4.Final</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.github.jsqlparser</groupId>
-      <artifactId>jsqlparser</artifactId>
-      <version>0.9.6-CLARUS-SNAPSHOT</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.commons</groupId>
-      <artifactId>commons-lang3</artifactId>
-      <version>3.0</version>
+      <artifactId>dataoperations.encryption</artifactId>
+      <version>0.1-SNAPSHOT</version>
       <scope>compile</scope>
     </dependency>
     <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
       <version>4.12</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>postgresql</groupId>
-      <artifactId>postgresql</artifactId>
-      <version>9.1-901-1.jdbc4</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
@@ -180,11 +156,4 @@
       </build>
     </profile>
   </profiles>
-  <repositories>
-    <repository>
-      <id>repo-1</id>
-      <name>maven</name>
-      <url>https://oss.sonatype.org/content/groups/public/</url>
-    </repository>
-  </repositories>
 </project>

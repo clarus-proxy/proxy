@@ -13,7 +13,7 @@ import eu.clarussecure.proxy.spi.Mode;
 import eu.clarussecure.proxy.spi.Operation;
 import eu.clarussecure.proxy.spi.protocol.ProtocolServiceNoop;
 
-public class SessionIT {
+public class Session {
 
     PgsqlProtocol pgsqlProtocol = null;
 

@@ -14,3 +14,17 @@ dependencies {
     // MongoDB
     testCompile group: 'de.flapdoodle.embed', name: 'de.flapdoodle.embed.mongo', version: '2.0.0'
 }
+
+test {
+    pluginProjects.each {
+        dependsOn("${it.path}:test" )
+    }
+    moduleProjects.each {
+        dependsOn("${it.path}:test" )
+    }
+
+    jvmArgs '-Djava.ext.dirs=' + System.getProperty('java.ext.dirs') + File.pathSeparator + project.projectDir.toPath().resolve("../install/ext-libs")
+
+    // integration tests are not supported (issue with java.ext.dirs, gradle and slf4j)
+    exclude '/**'
+}

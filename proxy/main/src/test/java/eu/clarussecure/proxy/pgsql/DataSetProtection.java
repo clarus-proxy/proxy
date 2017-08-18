@@ -390,7 +390,8 @@ public abstract class DataSetProtection {
             if (runtimeConfig == null) {
                 String hostName = System.getProperty("http.proxyHost", System.getProperty("https.proxyHost"));
                 if (hostName != null) {
-                    int port = Integer.parseInt(System.getProperty("http.proxyPort", System.getProperty("https.proxyPort")));
+                    int port = Integer
+                            .parseInt(System.getProperty("http.proxyPort", System.getProperty("https.proxyPort")));
                     Command command = Command.MongoD;
                     runtimeConfig = new RuntimeConfigBuilder().defaults(command)
                             .artifactStore(
@@ -716,6 +717,7 @@ public abstract class DataSetProtection {
                 BufferedReader bufferedReader = new BufferedReader(reader)) {
             connectionResource.getConnection().setAutoCommit(true);
             ScriptRunner scriptRunner = new ScriptRunner(connectionResource.getConnection());
+            scriptRunner.setLogWriter(null);
             scriptRunner.setSendFullScript("simple".equals(connectionResource.getPreferQueryMode()));
             scriptRunner.setAutoCommit(true);
             scriptRunner.runScript(bufferedReader);

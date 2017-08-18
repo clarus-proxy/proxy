@@ -5,11 +5,13 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <team.name>CLARUS Team</team.name>
-    <maven.test.skip>true</maven.test.skip>
+    <!--<maven.test.skip>true</maven.test.skip> -->
+    <skip.surefire.tests>true</skip.surefire.tests>
     <doc.generation.skip>true</doc.generation.skip>
     <install.dir>${basedir}/install</install.dir>
     <!-- Plugins versions -->
     <plugin.compiler.version>3.5.1</plugin.compiler.version>
+    <plugin.surefire.version>2.12.4</plugin.surefire.version>
     <plugin.failsafe.version>2.19.1</plugin.failsafe.version>
     <plugin.dependency.version>2.10</plugin.dependency.version>
     <plugin.resources.version>3.0.1</plugin.resources.version>
@@ -86,32 +88,14 @@
             <target>${jdk.version}</target>
           </configuration>
         </plugin>
-<!--
         <plugin>
-          <groupId>org.eclipse.m2e</groupId>
-          <artifactId>lifecycle-mapping</artifactId>
-          <version>1.0.0</version>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>${plugin.surefire.version}</version>
           <configuration>
-            <lifecycleMappingMetadata>
-              <pluginExecutions>
-                <pluginExecution>
-                  <pluginExecutionFilter>
-                    <groupId>net.revelc.code.formatter</groupId>
-                    <artifactId>formatter-maven-plugin</artifactId>
-                    <versionRange>[2.0.0,)</versionRange>
-                    <goals>
-                      <goal>format</goal>
-                    </goals>
-                  </pluginExecutionFilter>
-                  <action>
-                    <ignore/>
-                  </action>
-                </pluginExecution>
-              </pluginExecutions>
-            </lifecycleMappingMetadata>
+            <skipTests>${skip.surefire.tests}</skipTests>
           </configuration>
         </plugin>
- -->
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-failsafe-plugin</artifactId>
@@ -130,6 +114,11 @@
               </goals>
             </execution>
           </executions>
+          <configuration>
+            <forkCount>1</forkCount>
+            <reuseForks>false</reuseForks>
+            <argLine>-Djava.ext.dirs="${java.ext.dirs}";${project.parent.relativePath}/install/ext-libs</argLine>
+          </configuration>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>

@@ -24,7 +24,7 @@ import eu.clarussecure.proxy.spi.Operation;
 import eu.clarussecure.proxy.spi.protocol.ProtocolServiceNoop;
 
 @RunWith(Theories.class)
-public class SessionIT2 {
+public class Session2 {
 
     @DataPoints("nb_backends")
     public static final int[] NB_BACKENDS = { 1, 2 };
