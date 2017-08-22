@@ -37,24 +37,8 @@ import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
 import org.postgresql.util.PSQLState;
 
-import de.flapdoodle.embed.mongo.Command;
-import de.flapdoodle.embed.mongo.MongodExecutable;
-import de.flapdoodle.embed.mongo.MongodProcess;
-import de.flapdoodle.embed.mongo.MongodStarter;
-import de.flapdoodle.embed.mongo.config.DownloadConfigBuilder;
-import de.flapdoodle.embed.mongo.config.ExtractedArtifactStoreBuilder;
-import de.flapdoodle.embed.mongo.config.MongodConfigBuilder;
-import de.flapdoodle.embed.mongo.config.Net;
-import de.flapdoodle.embed.mongo.config.RuntimeConfigBuilder;
-import de.flapdoodle.embed.mongo.distribution.Version;
-import de.flapdoodle.embed.process.config.IRuntimeConfig;
-import de.flapdoodle.embed.process.config.store.HttpProxyFactory;
-import de.flapdoodle.embed.process.extract.ITempNaming;
-import de.flapdoodle.embed.process.extract.UUIDTempNaming;
-import de.flapdoodle.embed.process.io.directories.FixedPath;
-import de.flapdoodle.embed.process.io.directories.IDirectory;
-import de.flapdoodle.embed.process.runtime.Network;
 import eu.clarussecure.proxy.Proxy;
+import eu.clarussecure.proxy.protection.mongodb.EmbeddedMongoDB;
 import eu.clarussecure.proxy.spi.StringUtilities;
 
 @RunWith(Parameterized.class)
@@ -215,7 +199,7 @@ public abstract class DataSetProtection {
                         String expectedClearColumnName = expectedClearColumnNames[c];
                         String expectedColumnName = expectedColumnNames[c];
                         String actualColumnName = resultSet.getMetaData().getColumnLabel(c + 1);
-                        if (expectedColumnName.contains("?")) {
+                        if (expectedColumnName.endsWith("?")) {
                             int index = actualColumnName.lastIndexOf('.');
                             index = actualColumnName.lastIndexOf('.', index - 1) + 1;
                             String actualShortColumnName = actualColumnName.substring(index);
@@ -292,6 +276,17 @@ public abstract class DataSetProtection {
     protected DatasetContext buildTableContext(int nbCSPs, String script, String databaseName, String schemaName,
             String tableName, String[] columnNames, String protectedDatabaseName, String protectedSchemaName,
             String protectedTableName, String[] protectedColumnNames, String whereClause) {
+        boolean[] columnProtectionFlags = new boolean[columnNames.length];
+        IntStream.range(0, columnNames.length).forEach(c -> columnProtectionFlags[c] = c < protectedColumnNames.length
+                ? !columnNames[c].equals(protectedColumnNames[c]) : true);
+        return buildTableContext(nbCSPs, script, databaseName, schemaName, tableName, columnNames,
+                columnProtectionFlags, protectedDatabaseName, protectedSchemaName, protectedTableName,
+                protectedColumnNames, whereClause);
+    }
+
+    protected DatasetContext buildTableContext(int nbCSPs, String script, String databaseName, String schemaName,
+            String tableName, String[] columnNames, boolean[] columnProtectionFlags, String protectedDatabaseName,
+            String protectedSchemaName, String protectedTableName, String[] protectedColumnNames, String whereClause) {
         String[] protectedDatabaseNames = IntStream.range(0, nbCSPs).mapToObj(csp -> protectedDatabaseName)
                 .toArray(String[]::new);
         String[] protectedSchemaNames = IntStream.range(0, nbCSPs).mapToObj(csp -> protectedSchemaName)
@@ -299,10 +294,8 @@ public abstract class DataSetProtection {
         String[] protectedTableNames = IntStream.range(0, nbCSPs).mapToObj(csp -> protectedTableName)
                 .toArray(String[]::new);
         String[][] allProtectedColumnNames = IntStream.range(0, nbCSPs).mapToObj(csp -> IntStream
-                .range(0, columnNames.length).mapToObj(c -> protectedColumnNames[c]).toArray(String[]::new))
+                .range(0, protectedColumnNames.length).mapToObj(c -> protectedColumnNames[c]).toArray(String[]::new))
                 .toArray(String[][]::new);
-        boolean[] columnProtectionFlags = new boolean[columnNames.length];
-        Arrays.fill(columnProtectionFlags, false);
         return buildTableContext(script, databaseName, schemaName, tableName, columnNames, columnProtectionFlags,
                 protectedDatabaseNames, protectedSchemaNames, protectedTableNames, allProtectedColumnNames,
                 whereClause);
@@ -359,62 +352,20 @@ public abstract class DataSetProtection {
     };
 
     protected static class MongoDBServerResource extends ExternalResource {
-        private final String host;
-        private final int port;
-        private MongodExecutable mongodExecutable;
-        private MongodProcess mongodProcess;
+        private final EmbeddedMongoDB server;
 
         public MongoDBServerResource(String host, int port) {
-            this.host = host;
-            this.port = port;
+            server = new EmbeddedMongoDB(host, port);
         }
 
         @Override
         protected void before() throws Throwable {
-            IRuntimeConfig runtimeConfig = null;
-            if (runtimeConfig == null) {
-                String artifactStorePath = System.getProperty("mongodb.artifact.store.path");
-                if (artifactStorePath != null) {
-                    IDirectory artifactStoreDirectoryPath = new FixedPath(artifactStorePath);
-                    ITempNaming executableNaming = new UUIDTempNaming();
-                    Command command = Command.MongoD;
-
-                    runtimeConfig = new RuntimeConfigBuilder().defaults(command)
-                            .artifactStore(new ExtractedArtifactStoreBuilder().defaults(command)
-                                    .download(new DownloadConfigBuilder().defaultsForCommand(command)
-                                            .artifactStorePath(artifactStoreDirectoryPath).build())
-                                    .executableNaming(executableNaming))
-                            .build();
-                }
-            }
-            if (runtimeConfig == null) {
-                String hostName = System.getProperty("http.proxyHost", System.getProperty("https.proxyHost"));
-                if (hostName != null) {
-                    int port = Integer
-                            .parseInt(System.getProperty("http.proxyPort", System.getProperty("https.proxyPort")));
-                    Command command = Command.MongoD;
-                    runtimeConfig = new RuntimeConfigBuilder().defaults(command)
-                            .artifactStore(
-                                    new ExtractedArtifactStoreBuilder().defaults(command)
-                                            .download(new DownloadConfigBuilder().defaultsForCommand(command)
-                                                    .proxyFactory(new HttpProxyFactory(hostName, port)).build()))
-                            .build();
-                }
-            }
-            if (runtimeConfig == null) {
-                runtimeConfig = new RuntimeConfigBuilder().defaults(Command.MongoD).build();
-            }
-            MongodStarter starter = MongodStarter.getInstance(runtimeConfig);
-
-            mongodExecutable = starter.prepare(new MongodConfigBuilder().version(Version.Main.PRODUCTION)
-                    .net(new Net(host, port, Network.localhostIsIPv6())).build());
-            mongodProcess = mongodExecutable.start();
+            server.start();
         }
 
         @Override
         protected void after() {
-            mongodProcess.stop();
-            mongodExecutable.stop();
+            server.stop();
         }
     };
 

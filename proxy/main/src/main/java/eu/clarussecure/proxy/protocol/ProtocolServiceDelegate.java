@@ -8,8 +8,10 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -24,6 +26,7 @@ import eu.clarussecure.proxy.spi.DataOperation;
 import eu.clarussecure.proxy.spi.InboundDataOperation;
 import eu.clarussecure.proxy.spi.MetadataOperation;
 import eu.clarussecure.proxy.spi.OutboundDataOperation;
+import eu.clarussecure.proxy.spi.OutboundDataOperation.Criterion;
 import eu.clarussecure.proxy.spi.StringUtilities;
 import eu.clarussecure.proxy.spi.protection.ProtectionModule;
 import eu.clarussecure.proxy.spi.protocol.ProtocolService;
@@ -70,6 +73,8 @@ public class ProtocolServiceDelegate implements ProtocolService {
                                 .map(map -> map.get(an)).map(CString::valueOf).collect(Collectors.toList())
                                 : Collections.<CString>emptyList()));
         metadataOperation.setMetadata(metadata.entrySet().stream().collect(Collectors.toList()));
+        metadataOperation.setInvolvedCSPs(
+                IntStream.range(0, mapping.size()).mapToObj(Integer::valueOf).collect(Collectors.toList()));
         metadataOperation.setModified(true);
         return metadataOperation;
     }
@@ -222,8 +227,18 @@ public class ProtocolServiceDelegate implements ProtocolService {
                     newOutboundDataOperation.setUsingHeadOperation(outboundDataOperation.isUsingHeadOperation());
                     newOutboundDataOperation
                             .setUnprotectingDataEnabled(outboundDataOperation.isUnprotectingDataEnabled());
-                    List<CString> dataIds = Arrays.stream(newAttributeNames[csp]).map(CString::valueOf)
-                            .collect(Collectors.toList());
+                    List<CString> dataIds = new ArrayList<>(protectedAttributes.size());
+                    for (int c = 0; c < protectedAttributes.size(); c++) {
+                        if (protectedAttributes.get(c)) {
+                            String newAttributeName = cspMapping.get(allAttributeNames[c]);
+                            if (newAttributeName != null && Arrays.stream(newAttributeNames[csp])
+                                    .anyMatch(nan -> nan.equals(newAttributeName))) {
+                                dataIds.add(CString.valueOf(newAttributeName));
+                            }
+                        } else {
+                            dataIds.add(CString.valueOf(allAttributeNames[c]));
+                        }
+                    }
                     newOutboundDataOperation.setDataIds(dataIds);
                     String[][] cspNewContents = newContents[csp];
                     List<List<CString>> newDataValues = new ArrayList<>(allContents.length);
@@ -244,7 +259,9 @@ public class ProtocolServiceDelegate implements ProtocolService {
                         newDataValues.add(rowDataValues);
                     }
                     newOutboundDataOperation.setDataValues(newDataValues);
-                    newOutboundDataOperation.setCriterions(outboundDataOperation.getCriterions());
+                    Map<CString, CString> dataIdMapping = cspMapping.entrySet().stream().collect(
+                            Collectors.toMap(e -> CString.valueOf(e.getKey()), e -> CString.valueOf(e.getValue())));
+                    newOutboundDataOperation.setDataIdMapping(dataIdMapping);
                     newOutboundDataOperation.setModified(true);
                     newOutboundDataOperation.setInvolvedCSP(csp);
                     newOutboundDataOperations.add(newOutboundDataOperation);
@@ -258,6 +275,9 @@ public class ProtocolServiceDelegate implements ProtocolService {
                 outboundDataOperation.getInvolvedCSPs().removeIf(csp -> csp != 0);
             }
             if (outboundDataOperation.getInvolvedCSPs() == null || !outboundDataOperation.getInvolvedCSPs().isEmpty()) {
+                Map<CString, CString> dataIdMapping = outboundDataOperation.getDataIds().stream().distinct()
+                        .collect(Collectors.toMap(Function.identity(), Function.identity()));
+                outboundDataOperation.setDataIdMapping(dataIdMapping);
                 outboundDataOperation.setInvolvedCSP(0);
                 newOutboundDataOperations = Collections.singletonList(outboundDataOperation);
             } else {
@@ -278,10 +298,12 @@ public class ProtocolServiceDelegate implements ProtocolService {
         // (in order to pass only attributes that have to be protected)
         String[] allAttributeNames = outboundDataOperation.getDataIds().stream().map(CString::toString)
                 .toArray(String[]::new);
-        String[] allCriteriaAttributeNames = outboundDataOperation.getCriterions().stream()
-                .map(OutboundDataOperation.Criterion::getDataId).map(CString::toString).toArray(String[]::new);
+        List<Criterion> allCriterions = outboundDataOperation.getCriterions();
+        String[] allCriteriaAttributeNames = allCriterions.stream()
+                .map(criterion -> criterion != null ? criterion.getDataId().toString() : null).toArray(String[]::new);
         List<Map<String, String>> mappings = head(Stream
-                .concat(Stream.of(allAttributeNames), Stream.of(allCriteriaAttributeNames)).toArray(String[]::new));
+                .concat(Stream.of(allAttributeNames), Stream.of(allCriteriaAttributeNames).filter(can -> can != null))
+                .toArray(String[]::new));
         int numberOfCSPs = mappings.size();
         List<String> fqAttributeNames = mappings.stream().map(Map::keySet).flatMap(Set::stream).distinct()
                 .collect(Collectors.toList());
@@ -317,14 +339,17 @@ public class ProtocolServiceDelegate implements ProtocolService {
                 .mapToObj(c -> protectedAttributes.get(c)
                         && Arrays.asList(allFQAttributeNames).indexOf(allFQAttributeNames[c]) == c)
                 .collect(Collectors.toList());
-        Criteria[] allCriteria = outboundDataOperation.getCriterions().stream()
-                .map(criterion -> new Criteria(criterion.getDataId().toString(), criterion.getOperator().toString(),
-                        criterion.getValue().toString()))
+        Criteria[] allCriteria = allCriterions.stream()
+                .map(criterion -> criterion != null ? new Criteria(criterion.getDataId().toString(),
+                        criterion.getOperator().toString(), criterion.getValue().toString()) : null)
                 .toArray(Criteria[]::new);
         List<Boolean> protectedCriteria = Arrays.stream(allCriteriaAttributeNames)
-                .map(can -> mappings.stream().anyMatch(map -> map.containsKey(can))).collect(Collectors.toList());
+                .map(can -> can != null && mappings.stream().anyMatch(map -> map.containsKey(can)))
+                .collect(Collectors.toList());
         Criteria[] criteria = IntStream.range(0, allCriteria.length).filter(i -> protectedCriteria.get(i))
                 .mapToObj(i -> allCriteria[i]).toArray(Criteria[]::new);
+        int[] criteriaMapping = IntStream.range(0, allCriteria.length)
+                .map(i -> protectedCriteria.get(i) ? Arrays.asList(criteria).indexOf(allCriteria[i]) : -1).toArray();
         if (attributeNames.length > 0 || criteria.length > 0) {
             // at least one attribute or criteria has to be protected
             List<DataOperationCommand> promise = get(attributeNames, criteria);
@@ -359,8 +384,18 @@ public class ProtocolServiceDelegate implements ProtocolService {
                     newOutboundDataOperation.setUsingHeadOperation(outboundDataOperation.isUsingHeadOperation());
                     newOutboundDataOperation
                             .setUnprotectingDataEnabled(outboundDataOperation.isUnprotectingDataEnabled());
-                    List<CString> dataIds = Arrays.stream(newAttributeNames[csp]).map(CString::valueOf)
-                            .collect(Collectors.toList());
+                    List<CString> dataIds = new ArrayList<>(protectedAttributes.size());
+                    for (int c = 0; c < protectedAttributes.size(); c++) {
+                        if (protectedAttributes.get(c)) {
+                            String newAttributeName = cspMapping.get(allFQAttributeNames[c]);
+                            if (newAttributeName != null && Arrays.stream(newAttributeNames[csp])
+                                    .anyMatch(nan -> nan.equals(newAttributeName))) {
+                                dataIds.add(CString.valueOf(newAttributeName));
+                            }
+                        } else {
+                            dataIds.add(CString.valueOf(allFQAttributeNames[c]));
+                        }
+                    }
                     newOutboundDataOperation.setDataIds(dataIds);
                     List<List<CString>> newDataValues = new ArrayList<>(allFQDataValues.length);
                     for (int r = 0; r < allFQDataValues.length; r++) {
@@ -379,10 +414,23 @@ public class ProtocolServiceDelegate implements ProtocolService {
                         newDataValues.add(newRow);
                     }
                     newOutboundDataOperation.setDataValues(newDataValues);
-                    List<OutboundDataOperation.Criterion> criterions = Arrays.stream(newCriteria[csp])
-                            .map(nc -> new OutboundDataOperation.Criterion(CString.valueOf(nc.getAttributeName()),
-                                    CString.valueOf(nc.getOperator()), CString.valueOf(nc.getValue())))
-                            .collect(Collectors.toList());
+                    Map<CString, CString> dataIdMapping = cspMapping.entrySet().stream().collect(
+                            Collectors.toMap(e -> CString.valueOf(e.getKey()), e -> CString.valueOf(e.getValue())));
+                    newOutboundDataOperation.setDataIdMapping(dataIdMapping);
+                    List<OutboundDataOperation.Criterion> criterions = new ArrayList<>(protectedCriteria.size());
+                    for (int i = 0; i < protectedCriteria.size(); i++) {
+                        if (protectedCriteria.get(i)) {
+                            int idx = criteriaMapping[i];
+                            if (idx != -1) {
+                                criterions.add(new OutboundDataOperation.Criterion(
+                                        CString.valueOf(newCriteria[csp][idx].getAttributeName()),
+                                        CString.valueOf(newCriteria[csp][idx].getOperator()),
+                                        CString.valueOf(newCriteria[csp][idx].getValue())));
+                            }
+                        } else {
+                            criterions.add(allCriterions.get(i));
+                        }
+                    }
                     newOutboundDataOperation.setCriterions(criterions);
                     newOutboundDataOperation.setPromise(promise);
                     boolean modified = outboundDataOperation.isModified();
@@ -422,6 +470,9 @@ public class ProtocolServiceDelegate implements ProtocolService {
             if (outboundDataOperation.getInvolvedCSPs() == null || !outboundDataOperation.getInvolvedCSPs().isEmpty()) {
                 if (outboundDataOperation.getInvolvedCSPs() == null
                         || outboundDataOperation.getInvolvedCSPs().size() == 1 || !outboundDataOperation.isModified()) {
+                    Map<CString, CString> dataIdMapping = outboundDataOperation.getDataIds().stream().distinct()
+                            .collect(Collectors.toMap(Function.identity(), Function.identity()));
+                    outboundDataOperation.setDataIdMapping(dataIdMapping);
                     newOutboundDataOperations = Collections.singletonList(outboundDataOperation);
                 } else {
                     // broadcast operation to all involved CSPs
@@ -433,9 +484,16 @@ public class ProtocolServiceDelegate implements ProtocolService {
                         newOutboundDataOperation.setUsingHeadOperation(outboundDataOperation.isUsingHeadOperation());
                         newOutboundDataOperation
                                 .setUnprotectingDataEnabled(outboundDataOperation.isUnprotectingDataEnabled());
-                        newOutboundDataOperation.setDataIds(outboundDataOperation.getDataIds());
-                        newOutboundDataOperation.setDataValues(outboundDataOperation.getDataValues());
-                        newOutboundDataOperation.setCriterions(outboundDataOperation.getCriterions());
+                        newOutboundDataOperation.setDataIds(new ArrayList<>(outboundDataOperation.getDataIds()));
+                        newOutboundDataOperation.setDataValues(new ArrayList<>(outboundDataOperation.getDataValues()));
+                        Map<CString, CString> dataIdMapping = newOutboundDataOperation.getDataIds().stream().distinct()
+                                .collect(Collectors.toMap(Function.identity(), Function.identity()));
+                        newOutboundDataOperation.setDataIdMapping(dataIdMapping);
+                        newOutboundDataOperation
+                                .setCriterions(outboundDataOperation.getCriterions().stream()
+                                        .map(criterion -> new OutboundDataOperation.Criterion(criterion.getDataId(),
+                                                criterion.getOperator(), criterion.getValue()))
+                                        .collect(Collectors.toList()));
                         newOutboundDataOperation.setPromise(outboundDataOperation.getPromise());
                         newOutboundDataOperation.setModified(true);
                         newOutboundDataOperation.setInvolvedCSP(csp);
@@ -625,6 +683,8 @@ public class ProtocolServiceDelegate implements ProtocolService {
                 // prepare flags to know if content must be duplicated
                 boolean[][] newContentFlags = Arrays.stream(newContents).map(row -> new boolean[row.length])
                         .peek(row -> Arrays.fill(row, false)).toArray(boolean[][]::new);
+                int[] positions = new int[mappings.size()];
+                Arrays.fill(positions, 0);
                 // all the unprotected content (including unprotected content
                 // returned by the protection module and including content that
                 // didn't need to be unprotected)
@@ -640,11 +700,21 @@ public class ProtocolServiceDelegate implements ProtocolService {
                             newContentFlags[r][idx] = true;
                         } else {
                             int csp = IntStream.range(0, mappings.size())
-                                    .filter(i -> mappings.get(i).containsKey(attributeName)).findFirst().getAsInt();
-                            String protectedAttributeName = mappings.get(csp).get(attributeName);
-                            idx = allProtectedAttributeNameIndexes.get(csp).stream()
-                                    .filter(e -> e.getKey().equals(protectedAttributeName)).map(Map.Entry::getValue)
-                                    .mapToInt(Integer::intValue).findFirst().getAsInt();
+                                    .filter(i -> mappings.get(i).containsKey(attributeName)).findFirst().orElse(-1);
+                            if (csp != -1) {
+                                String protectedAttributeName = mappings.get(csp).get(attributeName);
+                                List<Entry<String, Integer>> panIndexes = allProtectedAttributeNameIndexes.get(csp);
+                                panIndexes = panIndexes.subList(positions[csp], panIndexes.size());
+                                idx = panIndexes.stream().filter(e -> e.getKey().equals(protectedAttributeName))
+                                        .map(Map.Entry::getValue).mapToInt(Integer::intValue).findFirst().getAsInt();
+                                positions[csp] = idx + 1;
+                            } else {
+                                csp = 0;
+                                List<String> pans = Arrays.asList(allProtectedAttributeNames.get(csp));
+                                pans = pans.subList(positions[csp], pans.size());
+                                idx = pans.indexOf(attributeName);
+                                positions[csp] = idx + 1;
+                            }
                             value = allProtectedContents.get(csp)[r][idx];
                         }
                         newRow[c] = value;
@@ -688,6 +758,11 @@ public class ProtocolServiceDelegate implements ProtocolService {
                         .setUnprotectingDataEnabled(inboundDataOperations.get(0).isUnprotectingDataEnabled());
                 newInboundDataOperation.setDataIds(inboundDataOperations.get(0).getClearDataIds());
                 newInboundDataOperation.setDataValues(newDataValues);
+                List<Map<CString, CString>> dataIdMappings = mappings.stream()
+                        .map(map -> map.entrySet().stream().collect(
+                                Collectors.toMap(e -> CString.valueOf(e.getKey()), e -> CString.valueOf(e.getValue()))))
+                        .collect(Collectors.toList());
+                newInboundDataOperation.setDataIdMappings(dataIdMappings);
                 newInboundDataOperation.setPromise(promise);
                 newInboundDataOperation.setModified(true);
                 newInboundDataOperation.setInvolvedCSPs(
@@ -712,6 +787,15 @@ public class ProtocolServiceDelegate implements ProtocolService {
                     .setUnprotectingDataEnabled(inboundDataOperations.get(0).isUnprotectingDataEnabled());
             newInboundDataOperation.setDataIds(inboundDataOperations.get(0).getClearDataIds());
             newInboundDataOperation.setDataValues(inboundDataOperations.get(0).getDataValues());
+            List<Map<CString, CString>> dataIdMappings;
+            if (mappings.isEmpty()) {
+                dataIdMappings = Collections.singletonList(inboundDataOperations.get(0).getDataIds().stream().distinct()
+                        .collect(Collectors.toMap(Function.identity(), Function.identity())));
+            } else {
+                dataIdMappings = Collections.singletonList(mappings.get(0).entrySet().stream().collect(
+                        Collectors.toMap(e -> CString.valueOf(e.getKey()), e -> CString.valueOf(e.getValue()))));
+            }
+            newInboundDataOperation.setDataIdMappings(dataIdMappings);
             newInboundDataOperation.setPromise(inboundDataOperations.get(0).getPromise());
             newInboundDataOperation.setModified(true);
             newInboundDataOperation.setInvolvedCSPs(inboundDataOperations.stream().map(DataOperation::getInvolvedCSPs)
@@ -729,23 +813,28 @@ public class ProtocolServiceDelegate implements ProtocolService {
         // (in order to pass only attributes that have to be protected)
         String[] allAttributeNames = outboundDataOperation.getDataIds().stream().map(CString::toString)
                 .toArray(String[]::new);
-        String[] allCriteriaAttributeNames = outboundDataOperation.getCriterions().stream()
-                .map(OutboundDataOperation.Criterion::getDataId).map(CString::toString).toArray(String[]::new);
+        List<Criterion> allCriterions = outboundDataOperation.getCriterions();
+        String[] allCriteriaAttributeNames = allCriterions.stream()
+                .map(criterion -> criterion != null ? criterion.getDataId().toString() : null).toArray(String[]::new);
         List<Map<String, String>> mappings = head(Stream
-                .concat(Stream.of(allAttributeNames), Stream.of(allCriteriaAttributeNames)).toArray(String[]::new));
+                .concat(Stream.of(allAttributeNames), Stream.of(allCriteriaAttributeNames).filter(can -> can != null))
+                .toArray(String[]::new));
         int numberOfCSPs = mappings.size();
         List<Boolean> protectedAttributes = Arrays.stream(allAttributeNames)
                 .map(an -> mappings.stream().anyMatch(map -> map.containsKey(an))).collect(Collectors.toList());
         String[] attributeNames = IntStream.range(0, allAttributeNames.length).filter(i -> protectedAttributes.get(i))
                 .mapToObj(i -> allAttributeNames[i]).toArray(String[]::new);
-        Criteria[] allCriteria = outboundDataOperation.getCriterions().stream()
-                .map(criterion -> new Criteria(criterion.getDataId().toString(), criterion.getOperator().toString(),
-                        criterion.getValue().toString()))
+        Criteria[] allCriteria = allCriterions.stream()
+                .map(criterion -> criterion != null ? new Criteria(criterion.getDataId().toString(),
+                        criterion.getOperator().toString(), criterion.getValue().toString()) : null)
                 .toArray(Criteria[]::new);
         List<Boolean> protectedCriteria = Arrays.stream(allCriteriaAttributeNames)
-                .map(can -> mappings.stream().anyMatch(map -> map.containsKey(can))).collect(Collectors.toList());
+                .map(can -> can != null && mappings.stream().anyMatch(map -> map.containsKey(can)))
+                .collect(Collectors.toList());
         Criteria[] criteria = IntStream.range(0, allCriteria.length).filter(i -> protectedCriteria.get(i))
                 .mapToObj(i -> allCriteria[i]).toArray(Criteria[]::new);
+        int[] criteriaMapping = IntStream.range(0, allCriteria.length)
+                .map(i -> protectedCriteria.get(i) ? Arrays.asList(criteria).indexOf(allCriteria[i]) : -1).toArray();
         if (attributeNames.length > 0 || criteria.length > 0) {
             // at least one attribute has to be protected
             String[][] allContents;
@@ -833,8 +922,18 @@ public class ProtocolServiceDelegate implements ProtocolService {
                     newOutboundDataOperation.setUsingHeadOperation(outboundDataOperation.isUsingHeadOperation());
                     newOutboundDataOperation
                             .setUnprotectingDataEnabled(outboundDataOperation.isUnprotectingDataEnabled());
-                    List<CString> dataIds = Arrays.stream(newAttributeNames[csp]).map(CString::valueOf)
-                            .collect(Collectors.toList());
+                    List<CString> dataIds = new ArrayList<>(protectedAttributes.size());
+                    for (int c = 0; c < protectedAttributes.size(); c++) {
+                        if (protectedAttributes.get(c)) {
+                            String newAttributeName = cspMapping.get(allAttributeNames[c]);
+                            if (newAttributeName != null && Arrays.stream(newAttributeNames[csp])
+                                    .anyMatch(nan -> nan.equals(newAttributeName))) {
+                                dataIds.add(CString.valueOf(newAttributeName));
+                            }
+                        } else {
+                            dataIds.add(CString.valueOf(allAttributeNames[c]));
+                        }
+                    }
                     newOutboundDataOperation.setDataIds(dataIds);
                     String[][] cspNewContents = newContents[csp];
                     List<List<CString>> newDataValues = new ArrayList<>(allContents.length);
@@ -855,10 +954,23 @@ public class ProtocolServiceDelegate implements ProtocolService {
                         newDataValues.add(rowDataValues);
                     }
                     newOutboundDataOperation.setDataValues(newDataValues);
-                    List<OutboundDataOperation.Criterion> criterions = Arrays.stream(newCriteria[csp])
-                            .map(nc -> new OutboundDataOperation.Criterion(CString.valueOf(nc.getAttributeName()),
-                                    CString.valueOf(nc.getOperator()), CString.valueOf(nc.getValue())))
-                            .collect(Collectors.toList());
+                    Map<CString, CString> dataIdMapping = cspMapping.entrySet().stream().collect(
+                            Collectors.toMap(e -> CString.valueOf(e.getKey()), e -> CString.valueOf(e.getValue())));
+                    newOutboundDataOperation.setDataIdMapping(dataIdMapping);
+                    List<OutboundDataOperation.Criterion> criterions = new ArrayList<>(protectedCriteria.size());
+                    for (int i = 0; i < protectedCriteria.size(); i++) {
+                        if (protectedCriteria.get(i)) {
+                            int idx = criteriaMapping[i];
+                            if (idx != -1) {
+                                criterions.add(new OutboundDataOperation.Criterion(
+                                        CString.valueOf(newCriteria[csp][idx].getAttributeName()),
+                                        CString.valueOf(newCriteria[csp][idx].getOperator()),
+                                        CString.valueOf(newCriteria[csp][idx].getValue())));
+                            }
+                        } else {
+                            criterions.add(allCriterions.get(i));
+                        }
+                    }
                     newOutboundDataOperation.setCriterions(criterions);
                     newOutboundDataOperation.setModified(true);
                     newOutboundDataOperation.setInvolvedCSP(csp);
@@ -874,6 +986,9 @@ public class ProtocolServiceDelegate implements ProtocolService {
             }
             if (outboundDataOperation.getInvolvedCSPs() == null || !outboundDataOperation.getInvolvedCSPs().isEmpty()) {
                 outboundDataOperation.setInvolvedCSP(0);
+                Map<CString, CString> dataIdMapping = outboundDataOperation.getDataIds().stream().distinct()
+                        .collect(Collectors.toMap(Function.identity(), Function.identity()));
+                outboundDataOperation.setDataIdMapping(dataIdMapping);
                 newOutboundDataOperations = Collections.singletonList(outboundDataOperation);
             } else {
                 newOutboundDataOperations = Collections.emptyList();
@@ -888,10 +1003,12 @@ public class ProtocolServiceDelegate implements ProtocolService {
         // (in order to pass only attributes that have to be deleted)
         String[] allAttributeNames = outboundDataOperation.getDataIds().stream().map(CString::toString)
                 .toArray(String[]::new);
-        String[] allCriteriaAttributeNames = outboundDataOperation.getCriterions().stream()
-                .map(OutboundDataOperation.Criterion::getDataId).map(CString::toString).toArray(String[]::new);
+        List<Criterion> allCriterions = outboundDataOperation.getCriterions();
+        String[] allCriteriaAttributeNames = allCriterions.stream()
+                .map(criterion -> criterion != null ? criterion.getDataId().toString() : null).toArray(String[]::new);
         List<Map<String, String>> mappings = head(Stream
-                .concat(Stream.of(allAttributeNames), Stream.of(allCriteriaAttributeNames)).toArray(String[]::new));
+                .concat(Stream.of(allAttributeNames), Stream.of(allCriteriaAttributeNames).filter(can -> can != null))
+                .toArray(String[]::new));
         int numberOfCSPs = mappings.size();
         List<String> fqAttributeNames = mappings.stream().map(Map::keySet).flatMap(Set::stream).distinct()
                 .collect(Collectors.toList());
@@ -909,14 +1026,17 @@ public class ProtocolServiceDelegate implements ProtocolService {
                 .map(an -> mappings.stream().anyMatch(map -> map.containsKey(an))).collect(Collectors.toList());
         String[] attributeNames = IntStream.range(0, allFQAttributeNames.length).filter(i -> protectedAttributes.get(i))
                 .mapToObj(i -> allFQAttributeNames[i]).distinct().toArray(String[]::new);
-        Criteria[] allCriteria = outboundDataOperation.getCriterions().stream()
-                .map(criterion -> new Criteria(criterion.getDataId().toString(), criterion.getOperator().toString(),
-                        criterion.getValue().toString()))
+        Criteria[] allCriteria = allCriterions.stream()
+                .map(criterion -> criterion != null ? new Criteria(criterion.getDataId().toString(),
+                        criterion.getOperator().toString(), criterion.getValue().toString()) : null)
                 .toArray(Criteria[]::new);
         List<Boolean> protectedCriteria = Arrays.stream(allCriteriaAttributeNames)
-                .map(can -> mappings.stream().anyMatch(map -> map.containsKey(can))).collect(Collectors.toList());
+                .map(can -> can != null && mappings.stream().anyMatch(map -> map.containsKey(can)))
+                .collect(Collectors.toList());
         Criteria[] criteria = IntStream.range(0, allCriteria.length).filter(i -> protectedCriteria.get(i))
                 .mapToObj(i -> allCriteria[i]).toArray(Criteria[]::new);
+        int[] criteriaMapping = IntStream.range(0, allCriteria.length)
+                .map(i -> protectedCriteria.get(i) ? Arrays.asList(criteria).indexOf(allCriteria[i]) : -1).toArray();
         if (attributeNames.length > 0 || criteria.length > 0) {
             // at least one attribute has to be deleted
             String[][] newAttributeNames;
@@ -965,14 +1085,36 @@ public class ProtocolServiceDelegate implements ProtocolService {
                     newOutboundDataOperation.setUsingHeadOperation(outboundDataOperation.isUsingHeadOperation());
                     newOutboundDataOperation
                             .setUnprotectingDataEnabled(outboundDataOperation.isUnprotectingDataEnabled());
-                    List<CString> dataIds = Arrays.stream(newAttributeNames[csp]).map(CString::valueOf)
-                            .collect(Collectors.toList());
+                    List<CString> dataIds = new ArrayList<>(protectedAttributes.size());
+                    for (int c = 0; c < protectedAttributes.size(); c++) {
+                        if (protectedAttributes.get(c)) {
+                            String newAttributeName = cspMapping.get(allFQAttributeNames[c]);
+                            if (newAttributeName != null && Arrays.stream(newAttributeNames[csp])
+                                    .anyMatch(nan -> nan.equals(newAttributeName))) {
+                                dataIds.add(CString.valueOf(newAttributeName));
+                            }
+                        } else {
+                            dataIds.add(CString.valueOf(allFQAttributeNames[c]));
+                        }
+                    }
                     newOutboundDataOperation.setDataIds(dataIds);
-                    newOutboundDataOperation.setDataValues(outboundDataOperation.getDataValues());
-                    List<OutboundDataOperation.Criterion> criterions = Arrays.stream(newCriteria[csp])
-                            .map(nc -> new OutboundDataOperation.Criterion(CString.valueOf(nc.getAttributeName()),
-                                    CString.valueOf(nc.getOperator()), CString.valueOf(nc.getValue())))
-                            .collect(Collectors.toList());
+                    Map<CString, CString> dataIdMapping = cspMapping.entrySet().stream().collect(
+                            Collectors.toMap(e -> CString.valueOf(e.getKey()), e -> CString.valueOf(e.getValue())));
+                    newOutboundDataOperation.setDataIdMapping(dataIdMapping);
+                    List<OutboundDataOperation.Criterion> criterions = new ArrayList<>(protectedCriteria.size());
+                    for (int i = 0; i < protectedCriteria.size(); i++) {
+                        if (protectedCriteria.get(i)) {
+                            int idx = criteriaMapping[i];
+                            if (idx != -1) {
+                                criterions.add(new OutboundDataOperation.Criterion(
+                                        CString.valueOf(newCriteria[csp][idx].getAttributeName()),
+                                        CString.valueOf(newCriteria[csp][idx].getOperator()),
+                                        CString.valueOf(newCriteria[csp][idx].getValue())));
+                            }
+                        } else {
+                            criterions.add(allCriterions.get(i));
+                        }
+                    }
                     newOutboundDataOperation.setCriterions(criterions);
                     newOutboundDataOperation.setModified(true);
                     newOutboundDataOperation.setInvolvedCSP(csp);
@@ -988,6 +1130,9 @@ public class ProtocolServiceDelegate implements ProtocolService {
             }
             if (outboundDataOperation.getInvolvedCSPs() == null || !outboundDataOperation.getInvolvedCSPs().isEmpty()) {
                 outboundDataOperation.setInvolvedCSP(0);
+                Map<CString, CString> dataIdMapping = outboundDataOperation.getDataIds().stream().distinct()
+                        .collect(Collectors.toMap(Function.identity(), Function.identity()));
+                outboundDataOperation.setDataIdMapping(dataIdMapping);
                 newOutboundDataOperations = Collections.singletonList(outboundDataOperation);
             } else {
                 newOutboundDataOperations = Collections.emptyList();
@@ -1007,9 +1152,17 @@ public class ProtocolServiceDelegate implements ProtocolService {
                 newOutboundDataOperation.setRequestId(outboundDataOperation.getRequestId());
                 newOutboundDataOperation.setOperation(outboundDataOperation.getOperation());
                 newOutboundDataOperation.setUsingHeadOperation(outboundDataOperation.isUsingHeadOperation());
-                newOutboundDataOperation.setDataIds(outboundDataOperation.getDataIds());
-                newOutboundDataOperation.setDataValues(outboundDataOperation.getDataValues());
-                newOutboundDataOperation.setCriterions(outboundDataOperation.getCriterions());
+                newOutboundDataOperation.setDataIds(new ArrayList<>(outboundDataOperation.getDataIds()));
+                newOutboundDataOperation.setDataValues(new ArrayList<>(outboundDataOperation.getDataValues()));
+                Map<CString, CString> dataIdMapping = outboundDataOperation.getDataIds().stream().distinct()
+                        .collect(Collectors.toMap(Function.identity(), Function.identity()));
+                newOutboundDataOperation.setDataIdMapping(dataIdMapping);
+                newOutboundDataOperation
+                        .setCriterions(
+                                outboundDataOperation.getCriterions().stream()
+                                        .map(criterion -> new OutboundDataOperation.Criterion(criterion.getDataId(),
+                                                criterion.getOperator(), criterion.getValue()))
+                                        .collect(Collectors.toList()));
                 newOutboundDataOperation.setPromise(outboundDataOperation.getPromise());
                 newOutboundDataOperation.setUnprotectingDataEnabled(outboundDataOperation.isUnprotectingDataEnabled());
                 return newOutboundDataOperation;

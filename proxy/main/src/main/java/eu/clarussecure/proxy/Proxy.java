@@ -19,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import org.xml.sax.SAXException;
 
 import eu.clarussecure.proxy.protection.ProtectionModuleLoader;
+import eu.clarussecure.proxy.protection.mongodb.EmbeddedMongoDB;
 import eu.clarussecure.proxy.protocol.ProtocolLoader;
 import eu.clarussecure.proxy.protocol.ProtocolServiceDelegate;
 import eu.clarussecure.proxy.spi.Mode;
@@ -200,11 +201,23 @@ public class Proxy {
     }
 
     public static void main(String[] args) throws Exception {
-        Proxy proxy = builder(args);
-        if (proxy != null) {
-            proxy.initialize();
-            proxy.start();
-            proxy.sync();
+        EmbeddedMongoDB mongoDBServer = null;
+        try {
+            String url = System.getProperty("EMBEDDED_MONGO_DB");
+            if (url != null) {
+                mongoDBServer = new EmbeddedMongoDB(url);
+                mongoDBServer.start();
+            }
+            Proxy proxy = builder(args);
+            if (proxy != null) {
+                proxy.initialize();
+                proxy.start();
+                proxy.sync();
+            }
+        } finally {
+            if (mongoDBServer != null) {
+                mongoDBServer.stop();
+            }
         }
     }
 

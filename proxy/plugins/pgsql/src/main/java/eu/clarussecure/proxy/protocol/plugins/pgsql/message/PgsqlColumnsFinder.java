@@ -5,10 +5,8 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 import net.sf.jsqlparser.expression.AllComparisonExpression;
@@ -60,6 +58,7 @@ import net.sf.jsqlparser.expression.operators.arithmetic.Multiplication;
 import net.sf.jsqlparser.expression.operators.arithmetic.Subtraction;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
 import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
+import net.sf.jsqlparser.expression.operators.relational.Array;
 import net.sf.jsqlparser.expression.operators.relational.ArrayElement;
 import net.sf.jsqlparser.expression.operators.relational.Between;
 import net.sf.jsqlparser.expression.operators.relational.EqualsTo;
@@ -86,7 +85,7 @@ import net.sf.jsqlparser.statement.select.SubSelect;
  */
 public class PgsqlColumnsFinder implements ExpressionVisitor {
 
-    private List<Map.Entry<Expression, Set<Column>>> expressionsWithColumns;
+    private List<Map.Entry<Expression, List<Column>>> expressionsWithColumns;
     private Map<Expression, Expression> expressionsToParents;
     private Deque<Expression> currentExpressions;
 
@@ -99,16 +98,16 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
         }
     }
 
-    public Set<Column> getColumns() {
-        return expressionsWithColumns.stream().map(Map.Entry::getValue).flatMap(Set::stream)
-                .collect(Collectors.toSet());
+    public List<Column> getColumns() {
+        return expressionsWithColumns.stream().map(Map.Entry::getValue).flatMap(List::stream)
+                .collect(Collectors.toList());
     }
 
     public List<Expression> getExpressionsWithColumns() {
         return expressionsWithColumns.stream().map(Map.Entry::getKey).collect(Collectors.toList());
     }
 
-    public List<Map.Entry<Expression, Set<Column>>> getExpressionsWithColumnsToColumns() {
+    public List<Map.Entry<Expression, List<Column>>> getExpressionsWithColumnsToColumns() {
         return expressionsWithColumns;
     }
 
@@ -149,6 +148,16 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
     }
 
     @Override
+    public void visit(Array array) {
+        expressionsToParents.put(array, currentExpressions.peek());
+        currentExpressions.push(array);
+        for (Expression element : array.getElements()) {
+            element.accept(this);
+        }
+        currentExpressions.pop();
+    }
+
+    @Override
     public void visit(Between between) {
         expressionsToParents.put(between, currentExpressions.peek());
         currentExpressions.push(between);
@@ -170,11 +179,11 @@ public class PgsqlColumnsFinder implements ExpressionVisitor {
                 && column.getColumnName().substring(1).chars().allMatch(c -> Character.isDigit(c))) {
             return;
         }
-        Map.Entry<Expression, Set<Column>> entry = expressionsWithColumns.isEmpty() ? null
+        Map.Entry<Expression, List<Column>> entry = expressionsWithColumns.isEmpty() ? null
                 : expressionsWithColumns.get(expressionsWithColumns.size() - 1);
         Expression currentExpression = currentExpressions.peek();
         if (entry == null || entry.getKey() != currentExpression) {
-            entry = new SimpleEntry<>(currentExpression, new HashSet<>());
+            entry = new SimpleEntry<>(currentExpression, new ArrayList<>());
             expressionsWithColumns.add(entry);
         }
         entry.getValue().add(column);

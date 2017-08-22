@@ -58,7 +58,7 @@ public class DataOperation extends ModuleOperation {
 
     @Override
     public void addDataIds(List<CString> dataIds) {
-        dataIds.forEach(dataId -> getDataIds().add(dataId));
+        dataIds.forEach(dataId -> addDataId(dataId));
     }
 
     @Override
@@ -77,8 +77,12 @@ public class DataOperation extends ModuleOperation {
         this.dataValues = dataValues;
     }
 
-    public void addDataValues(List<CString> dataValues) {
-        getDataValues().add(dataValues);
+    public void addDataValues(List<List<CString>> dataValues) {
+        dataValues.forEach(dataValue -> addDataValue(dataValue));
+    }
+
+    public void addDataValue(List<CString> dataValue) {
+        getDataValues().add(dataValue);
     }
 
     public List<DataOperationCommand> getPromise() {

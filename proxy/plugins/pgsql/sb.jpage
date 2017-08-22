@@ -28,3 +28,17 @@ java.util.regex.Pattern.compile("FOO?").matcher("FOOOO").matches();
 (int)((long) 0xffff & 0xffffl)(int) 65535
 
 "st_asbinary(\"geom\",'NDR'),\"gid\"".split(",(?![^(]*\\))")[0](java.lang.String) st_asbinary("geom",'NDR')
+
+
+java.util.regex.Pattern p = java.util.regex.Pattern.compile("(a\\.?)?(b\\.?)?(c\\.?)?(d)?");
+for (String s: new String[] { "a", "a.b", "a.b.c", "a.b.c.d", "b.c.d", "c.d", "d", "b.c", "b", "c",
+                              "A", "A.b", "A.b.c", "A.b.c.d", "B.c.d", "C.d", "D", "B.c", "B", "C"}) {
+    System.out.print(String.format("'%s' -> ", s));
+    java.util.regex.Matcher m = p.matcher(s);
+    if (m.matches()) {
+        System.out.print(m.groupCount());
+        System.out.println(m.replaceFirst(" 1:$1 2:$2 3:$3 4:$4"));
+    } else {
+        System.out.println("don't match");
+    }
+}
