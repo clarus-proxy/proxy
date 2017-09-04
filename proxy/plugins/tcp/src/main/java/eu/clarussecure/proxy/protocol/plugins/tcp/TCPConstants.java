@@ -1,5 +1,7 @@
 package eu.clarussecure.proxy.protocol.plugins.tcp;
 
+import java.util.Map;
+
 import eu.clarussecure.proxy.spi.protocol.Configuration;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
@@ -8,6 +10,9 @@ import io.netty.util.AttributeKey;
 public interface TCPConstants {
 
     AttributeKey<Configuration> CONFIGURATION_KEY = AttributeKey.<Configuration>newInstance("CONFIGURATION_KEY");
+
+    AttributeKey<Map<String, Object>> CUSTOM_DATA_KEY = AttributeKey
+            .<Map<String, Object>>newInstance("CUSTOM_DATA_KEY");
 
     AttributeKey<TCPSession> SESSION_KEY = AttributeKey.<TCPSession>newInstance("SESSION_KEY");
 

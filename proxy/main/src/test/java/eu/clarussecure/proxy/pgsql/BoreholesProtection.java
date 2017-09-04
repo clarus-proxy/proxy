@@ -14,15 +14,16 @@ import eu.clarussecure.proxy.spi.StringUtilities;
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public abstract class BoreholesProtection extends DataSetProtection {
 
-    protected static final String BOREHOLES_SCRIPT = "./src/test/resources/datasets/boreholes_3857bis_WKT.sql";
-    protected static final String BOREHOLES_TABLE_NAME = "coarsen_boreholes_3857bis";
+    protected static final String BOREHOLES_SCRIPT = "./src/test/resources/datasets/boreholes_3857_WKT.sql";
+    protected static final String BOREHOLES_TABLE_NAME_IN_SCRIPT = "boreholes_3857";
+
     protected static final String[] BOREHOLES_COLUMN_NAMES = new String[] { "gid", "nom_com", "adresse", "code_bss",
             "denominati", "type_point", "district", "circonscri", "precision", "altitude", "prof_max", "geom" };
     protected static final String BOREHOLES_WHERE_CLAUSE = "gid = 2";
+
     protected static final String GEOMETRY_COLUMNS_TABLE_NAME = "geometry_columns";
     protected static final String[] GEOMETRY_COLUMNS_COLUMN_NAMES = new String[] { "f_table_catalog", "f_table_schema",
             "f_table_name", "f_geometry_column", "coord_dimension", "srid", "type" };
-    protected static final String GEOMETRY_COLUMNS_WHERE_CLAUSE = "f_table_name = '" + BOREHOLES_TABLE_NAME + "'";
 
     protected abstract DatasetContext getBoreholes();
 

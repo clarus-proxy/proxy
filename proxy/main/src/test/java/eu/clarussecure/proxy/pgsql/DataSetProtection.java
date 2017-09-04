@@ -1,6 +1,5 @@
 package eu.clarussecure.proxy.pgsql;
 
-import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -46,15 +45,17 @@ public abstract class DataSetProtection {
 
     protected class DatasetContext {
         private final String script;
+        private final String tableNameInScript;
         private final String tableName;
         private final String[] columnNames;
         private final String[][] protectedColumnNames;
         private final boolean[] columnProtectionFlags;
         private final String whereClause;
 
-        public DatasetContext(String script, String tableName, String[] columnNames, String[][] protectedColumnNames,
-                boolean[] columnProtectedFlags, String whereClause) {
+        public DatasetContext(String script, String tableNameInScript, String tableName, String[] columnNames,
+                String[][] protectedColumnNames, boolean[] columnProtectedFlags, String whereClause) {
             this.script = script;
+            this.tableNameInScript = tableNameInScript;
             this.tableName = tableName;
             this.columnNames = columnNames;
             this.protectedColumnNames = protectedColumnNames;
@@ -64,6 +65,10 @@ public abstract class DataSetProtection {
 
         public String getScript() {
             return script;
+        }
+
+        public String getTableNameInScript() {
+            return tableNameInScript;
         }
 
         public String getTableName() {
@@ -184,9 +189,9 @@ public abstract class DataSetProtection {
                             .map(selectItem -> StringUtilities.unquote(selectItem))
                             .map(selectItem -> toColumnName(selectItem, csp)).filter(cn -> cn != null))
                     .flatMap(stream -> stream).toArray(String[]::new);
-            String query = "select " + selectItems + " from " + getTableName();
+            String query = "SELECT " + selectItems + " FROM " + getTableName();
             if (whereClause != null) {
-                query = query + " where " + whereClause;
+                query = query + " WHERE " + whereClause;
             }
             List<List<String>> result = null;
             try (Statement statement = connectionResource.getConnection().createStatement()) {
@@ -263,30 +268,31 @@ public abstract class DataSetProtection {
     protected static final String DATABASE_NAME = "postgres";
     protected static final String SCHEMA_NAME = "public";
 
-    protected DatasetContext buildTableContext(int nbCSPs, String script, String databaseName, String schemaName,
-            String tableName, String[] columnNames, String whereClause) {
+    protected DatasetContext buildTableContext(int nbCSPs, String script, String tableNameInScript, String databaseName,
+            String schemaName, String tableName, String[] columnNames, String whereClause) {
         String protectedDatabaseName = databaseName;
         String protectedSchemaName = schemaName;
         String protectedTableName = tableName;
         String[] protectedColumnNames = columnNames;
-        return buildTableContext(nbCSPs, script, databaseName, schemaName, tableName, columnNames,
+        return buildTableContext(nbCSPs, script, tableNameInScript, databaseName, schemaName, tableName, columnNames,
                 protectedDatabaseName, protectedSchemaName, protectedTableName, protectedColumnNames, whereClause);
     }
 
-    protected DatasetContext buildTableContext(int nbCSPs, String script, String databaseName, String schemaName,
-            String tableName, String[] columnNames, String protectedDatabaseName, String protectedSchemaName,
-            String protectedTableName, String[] protectedColumnNames, String whereClause) {
+    protected DatasetContext buildTableContext(int nbCSPs, String script, String tableNameInScript, String databaseName,
+            String schemaName, String tableName, String[] columnNames, String protectedDatabaseName,
+            String protectedSchemaName, String protectedTableName, String[] protectedColumnNames, String whereClause) {
         boolean[] columnProtectionFlags = new boolean[columnNames.length];
         IntStream.range(0, columnNames.length).forEach(c -> columnProtectionFlags[c] = c < protectedColumnNames.length
                 ? !columnNames[c].equals(protectedColumnNames[c]) : true);
-        return buildTableContext(nbCSPs, script, databaseName, schemaName, tableName, columnNames,
+        return buildTableContext(nbCSPs, script, tableNameInScript, databaseName, schemaName, tableName, columnNames,
                 columnProtectionFlags, protectedDatabaseName, protectedSchemaName, protectedTableName,
                 protectedColumnNames, whereClause);
     }
 
-    protected DatasetContext buildTableContext(int nbCSPs, String script, String databaseName, String schemaName,
-            String tableName, String[] columnNames, boolean[] columnProtectionFlags, String protectedDatabaseName,
-            String protectedSchemaName, String protectedTableName, String[] protectedColumnNames, String whereClause) {
+    protected DatasetContext buildTableContext(int nbCSPs, String script, String tableNameInScript, String databaseName,
+            String schemaName, String tableName, String[] columnNames, boolean[] columnProtectionFlags,
+            String protectedDatabaseName, String protectedSchemaName, String protectedTableName,
+            String[] protectedColumnNames, String whereClause) {
         String[] protectedDatabaseNames = IntStream.range(0, nbCSPs).mapToObj(csp -> protectedDatabaseName)
                 .toArray(String[]::new);
         String[] protectedSchemaNames = IntStream.range(0, nbCSPs).mapToObj(csp -> protectedSchemaName)
@@ -296,15 +302,15 @@ public abstract class DataSetProtection {
         String[][] allProtectedColumnNames = IntStream.range(0, nbCSPs).mapToObj(csp -> IntStream
                 .range(0, protectedColumnNames.length).mapToObj(c -> protectedColumnNames[c]).toArray(String[]::new))
                 .toArray(String[][]::new);
-        return buildTableContext(script, databaseName, schemaName, tableName, columnNames, columnProtectionFlags,
-                protectedDatabaseNames, protectedSchemaNames, protectedTableNames, allProtectedColumnNames,
-                whereClause);
+        return buildTableContext(script, tableNameInScript, databaseName, schemaName, tableName, columnNames,
+                columnProtectionFlags, protectedDatabaseNames, protectedSchemaNames, protectedTableNames,
+                allProtectedColumnNames, whereClause);
     }
 
-    protected DatasetContext buildTableContext(String script, String databaseName, String schemaName, String tableName,
-            String[] columnNames, boolean[] columnProtectionFlags, String[] protectedDatabaseNames,
-            String[] protectedSchemaNames, String[] protectedTableNames, String[][] protectedColumnNames,
-            String whereClause) {
+    protected DatasetContext buildTableContext(String script, String tableNameInScript, String databaseName,
+            String schemaName, String tableName, String[] columnNames, boolean[] columnProtectionFlags,
+            String[] protectedDatabaseNames, String[] protectedSchemaNames, String[] protectedTableNames,
+            String[][] protectedColumnNames, String whereClause) {
         String[][] fqProtectedColumnNames = IntStream.range(0, protectedColumnNames.length)
                 .mapToObj(csp -> IntStream.range(0, protectedColumnNames[csp].length)
                         .mapToObj(c -> protectedColumnNames[csp][c] != null ? "csp" + (csp + 1) + "."
@@ -312,8 +318,8 @@ public abstract class DataSetProtection {
                                 + protectedTableNames[csp] + "." + protectedColumnNames[csp][c] : null)
                         .toArray(String[]::new))
                 .toArray(String[][]::new);
-        return new DatasetContext(script, tableName, columnNames, fqProtectedColumnNames, columnProtectionFlags,
-                whereClause);
+        return new DatasetContext(script, tableNameInScript, tableName, columnNames, fqProtectedColumnNames,
+                columnProtectionFlags, whereClause);
     }
 
     protected static class ProxyResource extends ExternalResource {
@@ -434,15 +440,17 @@ public abstract class DataSetProtection {
         }
 
         private final String script;
+        private final String tableNameInScript;
         private final String schemaName;
         private final String tableName;
         private final ConnectionResource connectionResource;
         private boolean skipInitialization = false;
         private boolean skipCleanup = false;
 
-        public DatasetResource(String script, String schemaName, String tableName,
+        public DatasetResource(String script, String tableNameInScript, String schemaName, String tableName,
                 ConnectionResource connectionResource) {
             this.script = script;
+            this.tableNameInScript = tableNameInScript;
             this.schemaName = schemaName;
             this.tableName = tableName;
             this.connectionResource = connectionResource;
@@ -474,42 +482,32 @@ public abstract class DataSetProtection {
         @Override
         protected void before() throws Throwable {
             if (!skipInitialization) {
-                boolean exist = doesTableExist();
-                if (!exist) {
-                    try (FileInputStream in = new FileInputStream(script);
-                            InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
-                            BufferedReader bufferedReader = new BufferedReader(reader)) {
-                        connectionResource.getConnection().setAutoCommit(true);
-                        ScriptRunner scriptRunner = new ScriptRunner(connectionResource.getConnection());
-                        scriptRunner.setSendFullScript("simple".equals(connectionResource.getPreferQueryMode()));
-                        scriptRunner.setAutoCommit(true);
-                        scriptRunner.runScript(bufferedReader);
-                    }
-                } else {
-                    skipCleanup = true;
+                removeTableIfExist();
+                try (FileInputStream fin = new FileInputStream(script);
+                        ReplacingInputStream rin = new ReplacingInputStream(fin,
+                                tableNameInScript.getBytes(StandardCharsets.UTF_8),
+                                tableName.getBytes(StandardCharsets.UTF_8));
+                        InputStreamReader reader = new InputStreamReader(rin, StandardCharsets.UTF_8)) {
+                    connectionResource.getConnection().setAutoCommit(true);
+                    ScriptRunner scriptRunner = new ScriptRunner(connectionResource.getConnection());
+                    scriptRunner.setSendFullScript("simple".equals(connectionResource.getPreferQueryMode()));
+                    scriptRunner.setAutoCommit(true);
+                    scriptRunner.runScript(reader);
                 }
             }
         }
 
-        private boolean doesTableExist() throws SQLException {
-            boolean exist = false;
-            try (Statement statement = connectionResource.getConnection().createStatement();
-                    ResultSet resultSet = statement.executeQuery(String.format(
-                            "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = '%s' AND tablename = '%s');",
-                            schemaName, tableName))) {
-                Assert.assertNotNull(resultSet);
-                if (resultSet.next()) {
-                    exist = resultSet.getBoolean(1);
-                }
+        private void removeTableIfExist() throws SQLException {
+            try (Statement statement = connectionResource.getConnection().createStatement()) {
+                statement.executeUpdate(String.format("DROP TABLE IF EXISTS %s.%s", schemaName, tableName));
             }
-            return exist;
         }
 
         @Override
         protected void after() {
             if (!skipCleanup) {
                 try (Statement statement = connectionResource.getConnection().createStatement()) {
-                    statement.executeUpdate("drop table " + tableName);
+                    statement.executeUpdate(String.format("DROP TABLE %s.%s", schemaName, tableName));
                 } catch (SQLException e) {
                     // should not occur
                     e.printStackTrace();
@@ -518,10 +516,11 @@ public abstract class DataSetProtection {
         }
     };
 
-    protected static RuleChain getRuleChain(ProxyResource proxyResource, String script, String schemaName,
-            String tableName) {
+    protected static RuleChain getRuleChain(ProxyResource proxyResource, String script, String tableNameInScript,
+            String schemaName, String tableName) {
         ConnectionResource connectionResource = new ConnectionResource();
-        DatasetResource datasetResource = new DatasetResource(script, schemaName, tableName, connectionResource);
+        DatasetResource datasetResource = new DatasetResource(script, tableNameInScript, schemaName, tableName,
+                connectionResource);
         return RuleChain.outerRule(proxyResource).around(connectionResource).around(datasetResource);
     }
 
@@ -663,21 +662,23 @@ public abstract class DataSetProtection {
 
     protected void createDataset(DatasetContext tableContext) throws FileNotFoundException, IOException, SQLException {
         String script = tableContext.getScript();
-        try (FileInputStream in = new FileInputStream(script);
-                InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
-                BufferedReader bufferedReader = new BufferedReader(reader)) {
+        try (FileInputStream fin = new FileInputStream(script);
+                ReplacingInputStream rin = new ReplacingInputStream(fin,
+                        tableContext.getTableNameInScript().getBytes(StandardCharsets.UTF_8),
+                        tableContext.getTableName().getBytes(StandardCharsets.UTF_8));
+                InputStreamReader reader = new InputStreamReader(rin, StandardCharsets.UTF_8)) {
             connectionResource.getConnection().setAutoCommit(true);
             ScriptRunner scriptRunner = new ScriptRunner(connectionResource.getConnection());
             scriptRunner.setLogWriter(null);
             scriptRunner.setSendFullScript("simple".equals(connectionResource.getPreferQueryMode()));
             scriptRunner.setAutoCommit(true);
-            scriptRunner.runScript(bufferedReader);
+            scriptRunner.runScript(reader);
         }
     }
 
     protected void deleteDataset(DatasetContext tableContext) throws SQLException {
         try (Statement statement = connectionResource.getConnection().createStatement()) {
-            statement.executeUpdate("drop table " + tableContext.getTableName());
+            statement.executeUpdate(String.format("DROP TABLE %s", tableContext.getTableName()));
         }
     }
 

@@ -29,9 +29,6 @@ import io.netty.buffer.UnpooledByteBufAllocator;
 public class TypeParser {
 
     public static Object parse(Type type, int typeModifier, CString value) {
-        //        if (value != null) {
-        //            value = value.trim();
-        //        }
         if (type.isPGArray()) {
             return parsePGArray(value, type, typeModifier);
         } else {
@@ -389,6 +386,19 @@ public class TypeParser {
 
     private static PGbox3d parsePGbox3d(CString value) {
         try {
+            String expected = new PGbox3d().getPrefix().toLowerCase();
+            String actual = value.toString();
+            if (actual.startsWith("SRID=")) {
+                String[] temp = PGgeometry.splitSRID(actual);
+                actual = temp[1].trim();
+            }
+            int index = actual.indexOf('(');
+            if (index == -1) {
+                throw new IllegalArgumentException(String.format("value doesn't start with '%s('", expected));
+            }
+            if (!actual.substring(0, index).trim().equalsIgnoreCase(expected)) {
+                throw new IllegalArgumentException(String.format("value doesn't start with '%s'", expected));
+            }
             return new PGbox3d(value.toString());
         } catch (SQLException e) {
             throw new IllegalArgumentException(e.getMessage());
@@ -397,6 +407,19 @@ public class TypeParser {
 
     private static PGbox2d parsePGbox2d(CString value) {
         try {
+            String expected = new PGbox2d().getPrefix().toLowerCase();
+            String actual = value.toString();
+            if (actual.startsWith("SRID=")) {
+                String[] temp = PGgeometry.splitSRID(actual);
+                actual = temp[1].trim();
+            }
+            int index = actual.indexOf('(');
+            if (index == -1) {
+                throw new IllegalArgumentException(String.format("value doesn't start with '%s('", expected));
+            }
+            if (!actual.substring(0, index).trim().equalsIgnoreCase(expected)) {
+                throw new IllegalArgumentException(String.format("value doesn't start with '%s'", expected));
+            }
             return new PGbox2d(value.toString());
         } catch (SQLException e) {
             throw new IllegalArgumentException(e.getMessage());

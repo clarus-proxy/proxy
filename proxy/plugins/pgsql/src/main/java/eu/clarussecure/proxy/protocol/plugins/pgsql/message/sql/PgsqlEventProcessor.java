@@ -32,6 +32,8 @@ import java.util.stream.Stream;
 
 import javax.xml.bind.DatatypeConverter;
 
+import org.postgis.Geometry;
+import org.postgis.PGboxbase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -157,18 +159,25 @@ public class PgsqlEventProcessor implements EventProcessor {
     private final static int AUTHENTICATION_CLEARTEXT_PASSWORD = 3;
     private final static int AUTHENTICATION_MD5_PASSWORD = 5;
 
-    // significant functions to intercept
+    // significant functions
     public static final String FUNCTION_METADATA = "CLARUS_METADATA";
     public static final String FUNCTION_PROTECTED = "CLARUS_PROTECTED";
-    public static final String FUNCTION_ADD_GEOMETRY_COLUMN = "AddGeometryColumn";
-    public static final String FUNCTION_ST_ESTIMATED_EXTENT = "ST_EstimatedExtent";
     public static final String FUNCTION_HAS_COLUMN_PRIVILEGE = "has_column_privilege";
+    public static final String FUNCTION_ADD_GEOMETRY_COLUMN = "AddGeometryColumn";
+    public static final String FUNCTION_ST_AS_BINARY = "ST_AsBinary";
+    public static final String FUNCTION_ST_AS_TEXT = "ST_AsText";
+    public static final String FUNCTION_ST_EXTENT = "ST_Extent";
+    public static final String FUNCTION_ST_ESTIMATED_EXTENT = "ST_EstimatedExtent";
+    public static final String FUNCTION_UPPER = "upper";
 
-    public String[] FUNCTIONS_WITH_SUPPORTED_RETURN_TYPE = new String[] { "st_asbinary", "st_astext" };
+    public String[] FUNCTIONS_WITH_SUPPORTED_RETURN_TYPE = new String[] { FUNCTION_ST_AS_BINARY, FUNCTION_ST_AS_TEXT,
+            FUNCTION_ST_EXTENT, FUNCTION_ST_ESTIMATED_EXTENT, FUNCTION_UPPER };
 
     // Pattern to test if a data identifier is formatted as 'database/schema.table/column'
     private static final Pattern FQ_DATA_ID_PATTERN = Pattern
             .compile("([\\w_\\*]+)/([\\w_\\*]+)\\.([\\w_\\*]+)/([\\w_\\*]+)");
+
+    private static final String SQL_DATABASE_SCHEMA = "SQL_DATABASE_SCHEMA";
 
     @Override
     public MessageTransferMode<Map<CString, CString>, Void> processUserIdentification(ChannelHandlerContext ctx,
@@ -1854,13 +1863,13 @@ public class PgsqlEventProcessor implements EventProcessor {
         if (outboundDataOperation.getOperation() == Operation.READ
                 && outboundDataOperation.getCriterions().stream().filter(c -> c != null)
                         .map(OutboundDataOperation.Criterion::getDataId).anyMatch(id -> id.endsWith("pg_type/oid"))) {
-            SQLSession session = getSession(ctx);
+            SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
             List<OutboundDataOperation.Criterion> criterions = outboundDataOperation.getCriterions();
             List<Integer> involvedBackends = criterions.stream().filter(c -> c != null)
                     .filter(c -> c.getDataId().endsWith("pg_type/oid")).map(OutboundDataOperation.Criterion::getValue)
-                    .map(CString::toString).mapToLong(Long::valueOf).mapToObj(oid -> session.getTypeOIDBackends(oid))
-                    .filter(backends -> backends != null).flatMap(SortedSet::stream).distinct()
-                    .collect(Collectors.toList());
+                    .map(CString::toString).mapToLong(Long::valueOf)
+                    .mapToObj(oid -> databaseSchema.getTypeOIDBackends(oid)).filter(backends -> backends != null)
+                    .flatMap(SortedSet::stream).distinct().collect(Collectors.toList());
             if (!involvedBackends.isEmpty()) {
                 if (outboundDataOperation.getInvolvedCSPs() != null) {
                     involvedBackends.removeAll(outboundDataOperation.getInvolvedCSPs());
@@ -2312,6 +2321,25 @@ public class PgsqlEventProcessor implements EventProcessor {
                         .forEach(i -> dataIds.set(i, modifyDatabaseName(dataIds.get(i), databaseName)));
             });
         }
+        inboundDataOperations.stream().forEach(inboundDataOperation -> {
+            if (inboundDataOperation.getOperation() == Operation.READ && inboundDataOperation.getDataIds().stream()
+                    .anyMatch(id -> Stream.of("typname", "typelem").anyMatch(cn -> id.endsWith("pg_types/" + cn)))) {
+                List<CString> dataIds = inboundDataOperation.getDataIds();
+                int typnameIndex = IntStream.range(0, dataIds.size())
+                        .filter(i -> dataIds.get(i).endsWith("pg_types/typname")).findFirst().orElse(-1);
+                int typelemIndex = IntStream.range(0, dataIds.size())
+                        .filter(i -> dataIds.get(i).endsWith("pg_types/typelem")).findFirst().orElse(-1);
+                if (Stream.of(typnameIndex, typelemIndex).allMatch(idx -> idx != -1)) {
+                    List<List<CString>> dataValues = inboundDataOperation.getDataValues();
+                    Types backendTypes = getTypes(ctx, inboundDataOperation.getInvolvedCSP());
+                    dataValues.forEach(row -> {
+                        String typname = row.get(typnameIndex).toString();
+                        String typelem = row.get(typelemIndex).toString();
+                        backendTypes.setTypeOid(typname, Long.parseLong(typelem));
+                    });
+                }
+            }
+        });
         InboundDataOperation newInboundDataOperation = getProtocolService(ctx)
                 .newInboundDataOperation(inboundDataOperations);
         if (!backendDatabaseNames.isEmpty()) {
@@ -2324,8 +2352,25 @@ public class PgsqlEventProcessor implements EventProcessor {
                     i -> dataIds.set(i, modifyDatabaseName(dataIds.get(i), backendDatabaseNames.get(backend))));
         }
         if (newInboundDataOperation.getOperation() == Operation.READ && newInboundDataOperation.getDataIds().stream()
+                .anyMatch(id -> Stream.of("typname", "typelem").anyMatch(cn -> id.endsWith("pg_types/" + cn)))) {
+            List<CString> dataIds = newInboundDataOperation.getDataIds();
+            int typnameIndex = IntStream.range(0, dataIds.size())
+                    .filter(i -> dataIds.get(i).endsWith("pg_types/typname")).findFirst().orElse(-1);
+            int typelemIndex = IntStream.range(0, dataIds.size())
+                    .filter(i -> dataIds.get(i).endsWith("pg_types/typelem")).findFirst().orElse(-1);
+            if (Stream.of(typnameIndex, typelemIndex).allMatch(idx -> idx != -1)) {
+                List<List<CString>> dataValues = newInboundDataOperation.getDataValues();
+                Types types = getTypes(ctx, -1);
+                dataValues.forEach(row -> {
+                    String typname = row.get(typnameIndex).toString();
+                    String typelem = row.get(typelemIndex).toString();
+                    types.setTypeOid(typname, Long.parseLong(typelem));
+                });
+            }
+        }
+        if (newInboundDataOperation.getOperation() == Operation.READ && newInboundDataOperation.getDataIds().stream()
                 .anyMatch(id -> Stream
-                        .of("f_table_catalog", "f_table_schema", "f_table_name", "f_geometry_column", "type")
+                        .of("f_table_catalog", "f_table_schema", "f_table_name", "f_geometry_column", "srid", "type")
                         .anyMatch(cn -> id.endsWith("geometry_columns/" + cn)))) {
             Map<String, String> geometryObjectDefinition = getGeometryObjectDefinition(ctx);
             if (!geometryObjectDefinition.isEmpty()) {
@@ -2416,6 +2461,33 @@ public class PgsqlEventProcessor implements EventProcessor {
                                         .forEach(idx -> row.set(idx, CString.valueOf(clearType))))
                                 .count();
                         newInboundDataOperation.setModified(nbRows > 0);
+                    }
+                }
+                if (geometricDataId != null) {
+                    List<CString> dataIds = newInboundDataOperation.getDataIds();
+                    int catalogIndex = IntStream.range(0, dataIds.size())
+                            .filter(i -> dataIds.get(i).endsWith("geometry_columns/f_table_catalog")).findFirst()
+                            .orElse(-1);
+                    int schemaIndex = IntStream.range(0, dataIds.size())
+                            .filter(i -> dataIds.get(i).endsWith("geometry_columns/f_table_schema")).findFirst()
+                            .orElse(-1);
+                    int tableIndex = IntStream.range(0, dataIds.size())
+                            .filter(i -> dataIds.get(i).endsWith("geometry_columns/f_table_name")).findFirst()
+                            .orElse(-1);
+                    int sridIndex = IntStream.range(0, dataIds.size())
+                            .filter(i -> dataIds.get(i).endsWith("geometry_columns/srid")).findFirst().orElse(-1);
+                    if (Stream.of(tableIndex, sridIndex).allMatch(idx -> idx != -1)) {
+                        List<List<CString>> dataValues = newInboundDataOperation.getDataValues();
+                        dataValues.forEach(row -> {
+                            String catalog = catalogIndex != -1 ? row.get(catalogIndex).toString()
+                                    : getDatabaseName(ctx);
+                            String schema = schemaIndex != -1 ? row.get(schemaIndex).toString() : "public";
+                            String table = row.get(tableIndex).toString();
+                            String datasetSrid = String.format("%s/%s.%s", catalog, schema, table);
+                            String srid = row.get(sridIndex).toString();
+                            SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+                            databaseSchema.addDatasetSrid(datasetSrid, srid);
+                        });
                     }
                 }
             }
@@ -2568,8 +2640,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                 .collect(Collectors.toList());
         outboundDataOperation.addAttribute("columnDefinitionIds", columnDefinitionIds);
         // Save the table definition for future insert
-        SQLSession session = getSession(ctx);
-        session.addDatasetDefinition(CString.valueOf(datasetId), dataIds);
+        SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+        databaseSchema.addDatasetDefinition(datasetId,
+                dataIds.stream().map(CString::toString).collect(Collectors.toList()));
         return outboundDataOperation;
     }
 
@@ -2814,16 +2887,16 @@ public class PgsqlEventProcessor implements EventProcessor {
                             .collect(Collectors.toList()));
         }
         // Save the table definition for future insert
-        SQLSession session = getSession(ctx);
-        List<CString> datasetDefinition = session.getDatasetDefinition(CString.valueOf(datasetId));
+        SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+        List<String> datasetDefinition = databaseSchema.getDatasetDefinition(datasetId);
         if (datasetDefinition == null) {
-            datasetDefinition = dataIds;
-            session.addDatasetDefinition(CString.valueOf(datasetId), datasetDefinition);
+            datasetDefinition = dataIds.stream().map(CString::toString).collect(Collectors.toList());
+            databaseSchema.addDatasetDefinition(datasetId, datasetDefinition);
         }
         for (AlterExpression alterExpression : stmt.getAlterExpressions()) {
             String columnName = alterExpression.getColumnName();
             if (columnName != null) {
-                CString dataId = CString.valueOf(datasetId + columnName);
+                String dataId = datasetId + columnName;
                 if (alterExpression.getOperation() == AlterOperation.ADD) {
                     if (!datasetDefinition.contains(dataId)) {
                         datasetDefinition.add(dataId);
@@ -3356,9 +3429,12 @@ public class PgsqlEventProcessor implements EventProcessor {
             outboundDataOperation.addAttribute("tableId", tableId);
             // Extract data ids
             if (stmt.getColumns() == null) {
-                SQLSession session = getSession(ctx);
-                List<CString> dataIds = session.getDatasetDefinition(CString.valueOf(datasetId));
-                if (dataIds == null) {
+                SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+                List<String> datasetDefinition = databaseSchema.getDatasetDefinition(datasetId);
+                List<CString> dataIds;
+                if (datasetDefinition != null) {
+                    dataIds = datasetDefinition.stream().map(CString::valueOf).collect(Collectors.toList());
+                } else {
                     MetadataOperation metadataOperation = new MetadataOperation();
                     metadataOperation.addDataId(CString.valueOf(datasetId + "*"));
                     dataIds = newMetaDataOperation(ctx, metadataOperation).getDataIds();
@@ -3429,7 +3505,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                                     // get the parameter value
                                     ParameterValue parameterValue = parameterValues.get(idx);
                                     // convert parameter value to string
-                                    value = convertToText(parameterValue.getType(), -1, parameterValue.getFormat(),
+                                    Types types = getTypes(ctx, -1);
+                                    Type parameterType = types.getType(parameterValue.getType());
+                                    value = convertToText(parameterType, -1, parameterValue.getFormat(),
                                             parameterValue.getValue());
                                 }
                             }
@@ -3464,8 +3542,6 @@ public class PgsqlEventProcessor implements EventProcessor {
 
         int involvedBackend = outboundDataOperation.getInvolvedCSP() == -1 ? getPreferredBackend(ctx)
                 : outboundDataOperation.getInvolvedCSP();
-
-        SQLSession session = getSession(ctx);
 
         List<Integer> newDataIdIndexes;
         Map.Entry<String, String> tableIdMapping;
@@ -3599,8 +3675,12 @@ public class PgsqlEventProcessor implements EventProcessor {
             newTableId = newTableId.substring(0, newTableId.lastIndexOf('/'));
 
             // 1.3 Retrieve the mapping between clear and protected data ids
-            List<CString> allDataIds1 = session.getDatasetDefinition(CString.valueOf(tableId));
-            if (allDataIds1 == null) {
+            SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+            List<String> datasetDefinition = databaseSchema.getDatasetDefinition(tableId);
+            List<CString> allDataIds1;
+            if (datasetDefinition != null) {
+                allDataIds1 = datasetDefinition.stream().map(CString::valueOf).collect(Collectors.toList());
+            } else {
                 allDataIds1 = Collections.singletonList(CString.valueOf(tableId + "*"));
             }
             // call metadata operation
@@ -3737,8 +3817,10 @@ public class PgsqlEventProcessor implements EventProcessor {
                                     // get the parameter value
                                     ParameterValue parameterValue = parameterValues.get(paramIndex);
                                     // convert string to ByteBuf
-                                    ByteBuf value = convertToByteBuf(parameterValue.getType(), -1,
-                                            parameterValue.getFormat(), dataValues.get(newDataIdIndex));
+                                    Types backendTypes = getTypes(ctx, involvedBackend);
+                                    Type parameterType = backendTypes.getType(parameterValue.getType());
+                                    ByteBuf value = convertToByteBuf(parameterType, -1, parameterValue.getFormat(),
+                                            dataValues.get(newDataIdIndex));
                                     // modify parameter value
                                     parameterValue.setValue(value);
                                 }
@@ -3938,16 +4020,18 @@ public class PgsqlEventProcessor implements EventProcessor {
                             operation = Operation.UPDATE;
                         }
                         usingHeadOperation = true;
-                        String dataId = buildDataIdFromAddGeometryColumn(ctx,
-                                function.getParameters().getExpressions());
+                        String dataId = buildDataIdFromFunction(ctx, function.getParameters().getExpressions());
                         selectItemIds.add(new SimpleEntry<>(selectItem, Collections.singletonList(dataId)));
+                        String datasetId = dataId.substring(0, dataId.lastIndexOf('/'));
+                        String srid = getSridFromAddGeometryColumn(ctx, function.getParameters().getExpressions());
+                        SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+                        databaseSchema.addDatasetSrid(datasetId, srid);
                     } else if (FUNCTION_ST_ESTIMATED_EXTENT.equalsIgnoreCase(function.getName())
                             && function.getParameters() != null && function.getParameters().getExpressions() != null) {
                         if (outboundDataOperation != null) {
                             operation = outboundDataOperation.getOperation();
                         }
-                        String dataId = buildDataIdFromAddGeometryColumn(ctx,
-                                function.getParameters().getExpressions());
+                        String dataId = buildDataIdFromFunction(ctx, function.getParameters().getExpressions());
                         selectItemIds.add(new SimpleEntry<>(selectItem, Collections.singletonList(dataId)));
                     } else if (FUNCTION_HAS_COLUMN_PRIVILEGE.equalsIgnoreCase(function.getName())
                             && function.getParameters() != null && function.getParameters().getExpressions() != null) {
@@ -4100,8 +4184,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                         // get the parameter value
                         ParameterValue parameterValue = parameterValues.get(idx);
                         // convert parameter value to string
-                        value = convertToText(parameterValue.getType(), -1, parameterValue.getFormat(),
-                                parameterValue.getValue());
+                        Types types = getTypes(ctx, -1);
+                        Type parameterType = types.getType(parameterValue.getType());
+                        value = convertToText(parameterType, -1, parameterValue.getFormat(), parameterValue.getValue());
                         criterion.setValue(value);
                     }
                 }
@@ -4120,7 +4205,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         return moduleOperation;
     }
 
-    private String buildDataIdFromAddGeometryColumn(ChannelHandlerContext ctx, List<Expression> parameters) {
+    private String buildDataIdFromFunction(ChannelHandlerContext ctx, List<Expression> parameters) {
         StringBuilder sb = new StringBuilder();
         int nbSep = 0;
         for (Expression parameter : parameters) {
@@ -4152,6 +4237,15 @@ public class PgsqlEventProcessor implements EventProcessor {
         }
         String dataId = sb.toString();
         return dataId;
+    }
+
+    private String getSridFromAddGeometryColumn(ChannelHandlerContext ctx, List<Expression> parameters) {
+        for (Expression parameter : parameters) {
+            if (parameter instanceof StringValue && ((StringValue) parameter).getValue().matches("\\d+")) {
+                return ((StringValue) parameter).getValue();
+            }
+        }
+        return null;
     }
 
     private String buildDataIdFromHasColumnPrivilege(ChannelHandlerContext ctx, List<Expression> parameters) {
@@ -7308,12 +7402,10 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<Map.Entry<String, List<PgsqlRowDescriptionMessage.Field>>> expectedFieldToRowDescription;
         List<PgsqlRowDescriptionMessage.Field> newFields;
         if (newList) {
-            // Track backend of table OIDs and type OIDs
+            // Track backend of type OIDs
+            SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
             allFields.entrySet().forEach(e -> e.getValue().forEach(f -> {
-                if (f.getTableOID() != 0) {
-                    session.addTableOIDBackend(f.getTableOID(), e.getKey());
-                }
-                session.addTypeOIDBackend(f.getTypeOID(), e.getKey());
+                databaseSchema.addTypeOIDBackend(f.getTypeOID(), e.getKey());
             }));
             // map expected clear field names to the fields, modifying their
             // name if necessary
@@ -7820,6 +7912,19 @@ public class PgsqlEventProcessor implements EventProcessor {
             List<CString> clearDataIds = expectedFields.stream().filter(ep -> ep.getPosition() != -1)
                     .map(ExpectedField::getAttributes).flatMap(List::stream).map(Map.Entry::getKey)
                     .map(CString::valueOf).collect(Collectors.toList());
+            SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+            Integer srid = clearDataIds.stream().map(CString::toString).filter(this::isFullyQualifiedDataId)
+                    .map(did -> did.substring(0, did.lastIndexOf('/'))).map(databaseSchema::getDatasetSrid)
+                    .filter(s -> s != null).map(Integer::valueOf).findFirst().orElse(null);
+            List<PgsqlRowDescriptionMessage.Field> fields = session.getRowDescription();
+            if (fields == null && session.getCurrentDescribeStepStatus() != null) {
+                fields = session.getCurrentDescribeStepStatus().getRowDescription();
+            }
+            if (fields == null) {
+                throw new IllegalStateException("unexpected");
+            }
+            boolean[] sridAddedFlags = new boolean[fields.size()];
+            Arrays.fill(sridAddedFlags, false);
             List<InboundDataOperation> inboundDataOperations = new ArrayList<>(maxBackend + 1);
             for (int backend = 0; backend < maxBackend + 1; backend++) {
                 if (!involvedBackends.contains(backend)) {
@@ -7831,7 +7936,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                 inboundDataOperation.setClearDataIds(clearDataIds);
                 inboundDataOperation.setPromise(session.getPromise());
                 int csp = backend;
-                List<CString> dataIds = expectedFields.stream().filter(ep -> ep.getPosition() != -1)
+                List<CString> dataIds = expectedFields.stream().filter(ef -> ef.getPosition() != -1)
                         .map(ExpectedField::getProtectedFields).map(Map::entrySet).flatMap(Set::stream)
                         .filter(e -> e.getKey() == csp).map(Map.Entry::getValue).flatMap(List::stream)
                         .flatMap(epf -> epf.getAttributes().stream().map(Map.Entry::getKey)).map(CString::valueOf)
@@ -7847,8 +7952,52 @@ public class PgsqlEventProcessor implements EventProcessor {
                             for (Map.Entry<String, Integer> entry2 : protectedField.getAttributes()) {
                                 int position = entry2.getValue();
                                 PgsqlRowDescriptionMessage.Field field = backendFields.get(backend).get(position);
-                                CString dataValue = convertToText(field.getTypeOID(), field.getTypeModifier(),
-                                        field.getFormat(), values.get(position));
+                                Types backendTypes = getTypes(ctx, backend);
+                                Type type = backendTypes.getType(field.getTypeOID());
+                                CString dataValue = convertToText(type, field.getTypeModifier(), field.getFormat(),
+                                        values.get(position));
+                                if (srid != null) {
+                                    if (type == null) {
+                                        for (Type typeWithUnfixedOid : backendTypes.getTypesWithUnfixedOid()) {
+                                            try {
+                                                TypeParser.parse(typeWithUnfixedOid, field.getTypeModifier(),
+                                                        dataValue);
+                                                type = typeWithUnfixedOid;
+                                                backendTypes.setTypeOid(type.getName(), field.getTypeOID());
+                                                break;
+                                            } catch (IllegalArgumentException e) {
+                                                // not critical
+                                            }
+                                        }
+                                    }
+                                    if (type != null) {
+                                        boolean sridModified = false;
+                                        Object object = TypeParser.parse(type, field.getTypeModifier(), dataValue);
+                                        if (object instanceof Geometry) {
+                                            Geometry geometry = (Geometry) object;
+                                            if (geometry.getSrid() == 0) {
+                                                geometry.setSrid(srid);
+                                                dataValue = TypeWriter.toCString(type, geometry);
+                                                sridModified = true;
+                                            }
+                                        } else if (object instanceof PGboxbase) {
+                                            PGboxbase box = (PGboxbase) object;
+                                            if (box.getLLB().getSrid() == 0 || box.getURT().getSrid() == 0) {
+                                                if (box.getLLB().getSrid() == 0) {
+                                                    box.getLLB().setSrid(srid);
+                                                }
+                                                if (box.getURT().getSrid() == 0) {
+                                                    box.getURT().setSrid(srid);
+                                                }
+                                                dataValue = TypeWriter.toCString(type, box);
+                                                sridModified = true;
+                                            }
+                                        }
+                                        if (sridModified) {
+                                            sridAddedFlags[expectedField.getPosition()] = true;
+                                        }
+                                    }
+                                }
                                 dataValues.add(dataValue);
                             }
                         }
@@ -7864,13 +8013,6 @@ public class PgsqlEventProcessor implements EventProcessor {
                     throw new IllegalStateException("unexpected");
                 }
                 List<CString> dataValues = newInboundDataOperation.getDataValues().get(0);
-                List<PgsqlRowDescriptionMessage.Field> fields = session.getRowDescription();
-                if (fields == null && session.getCurrentDescribeStepStatus() != null) {
-                    fields = session.getCurrentDescribeStepStatus().getRowDescription();
-                }
-                if (fields == null) {
-                    throw new IllegalStateException("unexpected");
-                }
                 newValues = Stream.generate((Supplier<ByteBuf>) () -> null).limit(fields.size())
                         .collect(Collectors.toList());
                 int index = 0;
@@ -7884,8 +8026,46 @@ public class PgsqlEventProcessor implements EventProcessor {
                         int position = entry.getValue();
                         if (newValues.get(position) == null) {
                             PgsqlRowDescriptionMessage.Field field = fields.get(position);
-                            ByteBuf byteBuf = convertToByteBuf(field.getTypeOID(), field.getTypeModifier(),
-                                    field.getFormat(), dataValues.get(index));
+                            CString dataValue = dataValues.get(index);
+                            Types types = getTypes(ctx, -1);
+                            Type type = types.getType(field.getTypeOID());
+                            if (sridAddedFlags[position]) {
+                                if (type == null) {
+                                    for (Type typeWithUnfixedOid : types.getTypesWithUnfixedOid()) {
+                                        try {
+                                            TypeParser.parse(typeWithUnfixedOid, field.getTypeModifier(), dataValue);
+                                            type = typeWithUnfixedOid;
+                                            types.setTypeOid(type.getName(), field.getTypeOID());
+                                            break;
+                                        } catch (IllegalArgumentException e) {
+                                            // not critical
+                                        }
+                                    }
+                                }
+                                if (type != null) {
+                                    Object object = TypeParser.parse(type, field.getTypeModifier(), dataValue);
+                                    if (object instanceof Geometry) {
+                                        Geometry geometry = (Geometry) object;
+                                        if (geometry.getSrid() != 0) {
+                                            geometry.setSrid(0);
+                                            dataValue = TypeWriter.toCString(type, geometry);
+                                        }
+                                    } else if (object instanceof PGboxbase) {
+                                        PGboxbase box = (PGboxbase) object;
+                                        if (box.getLLB().getSrid() != 0 || box.getURT().getSrid() != 0) {
+                                            if (box.getLLB().getSrid() != 0) {
+                                                box.getLLB().setSrid(0);
+                                            }
+                                            if (box.getURT().getSrid() != 0) {
+                                                box.getURT().setSrid(0);
+                                            }
+                                            dataValue = TypeWriter.toCString(type, box);
+                                        }
+                                    }
+                                }
+                            }
+                            ByteBuf byteBuf = convertToByteBuf(type, field.getTypeModifier(), field.getFormat(),
+                                    dataValue);
                             newValues.set(position, byteBuf);
                         }
                         index++;
@@ -7917,32 +8097,29 @@ public class PgsqlEventProcessor implements EventProcessor {
         return newValues;
     }
 
-    private CString convertToText(long typeOID, int typeModifier, short format, ByteBuf value) {
+    private CString convertToText(Type type, int typeModifier, short format, ByteBuf value) {
         CString cs;
         if (format == 0) {
             // Text format
             cs = value != null ? CString.valueOf(value, value.capacity()) : null;
             // Special case for geometry type: remove '\x'
-            Type type = Types.getType(typeOID);
             if (type == Type.BYTEA && cs.startsWith("\\x")) {
                 cs = cs.substring("\\x".length());
             }
         } else {
             // Binary format
-            Type type = Types.getType(typeOID);
             Object object = TypeParser.parse(type, typeModifier, value);
             cs = TypeWriter.toCString(type, object);
         }
         return cs;
     }
 
-    private ByteBuf convertToByteBuf(long typeOID, int typeModifier, short format, CString cs) {
+    private ByteBuf convertToByteBuf(Type type, int typeModifier, short format, CString cs) {
         ByteBuf value;
         if (format == 0) {
             // Text format
             if (cs != null) {
                 // Special case for geometry type: prepend with '\x'
-                Type type = Types.getType(typeOID);
                 if (type == Type.BYTEA && !cs.startsWith("\\x")) {
                     cs = CString.valueOf("\\x").append(cs);
                 }
@@ -7952,7 +8129,6 @@ public class PgsqlEventProcessor implements EventProcessor {
             }
         } else {
             // Binary format
-            Type type = Types.getType(typeOID);
             Object object = TypeParser.parse(type, typeModifier, cs);
             value = TypeWriter.getBytes(type, object);
         }
@@ -8383,6 +8559,22 @@ public class PgsqlEventProcessor implements EventProcessor {
     private SQLSession getSession(ChannelHandlerContext ctx) {
         PgsqlSession pgsqlSession = getPgsqlSession(ctx);
         return pgsqlSession.getSqlSession();
+    }
+
+    private SQLDatabaseSchema getDatabaseSchema(ChannelHandlerContext ctx) {
+        Map<String, Object> customData = ctx.channel().attr(PgsqlConstants.CUSTOM_DATA_KEY).get();
+        SQLDatabaseSchema sqlDatabaseSchema = (SQLDatabaseSchema) customData.get(SQL_DATABASE_SCHEMA);
+        if (sqlDatabaseSchema == null) {
+            sqlDatabaseSchema = new SQLDatabaseSchema();
+            customData.put(SQL_DATABASE_SCHEMA, sqlDatabaseSchema);
+        }
+        return sqlDatabaseSchema;
+    }
+
+    private Types getTypes(ChannelHandlerContext ctx, int backend) {
+        SQLDatabaseSchema sqlDatabaseSchema = getDatabaseSchema(ctx);
+        Types types = backend != -1 ? sqlDatabaseSchema.getBackendTypes(backend) : sqlDatabaseSchema.getTypes();
+        return types;
     }
 
     private Mode getProcessingMode(ChannelHandlerContext ctx, boolean wholeDataset, Operation operation) {

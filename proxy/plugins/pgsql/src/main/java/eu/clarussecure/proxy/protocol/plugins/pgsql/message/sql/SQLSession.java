@@ -13,9 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.SortedMap;
-import java.util.SortedSet;
 import java.util.TreeMap;
-import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.CountDownLatch;
@@ -730,7 +728,6 @@ public class SQLSession {
     private List<DataOperationCommand> promise;
     private boolean resultProcessingEnabled = true;
     private boolean unprotectingDataEnabled = false;
-    private Map<CString, List<CString>> datasetDefinitions;
     private Deque<List<Integer>> commandsInvolvedBackends;
     private List<Integer> queryInvolvedBackends;
     private List<ExpectedField> expectedFields;
@@ -741,8 +738,6 @@ public class SQLSession {
     private Map<Map.Entry<QueryResponseType, Integer>, QueryResponseStatus<?>> queryResponses;
     private SortedMap<Integer, List<PgsqlRowDescriptionMessage.Field>> backendRowDescriptions;
     private List<PgsqlRowDescriptionMessage.Field> rowDescription;
-    private Map<Integer, SortedSet<Integer>> tableOIDBackends;
-    private Map<Long, SortedSet<Integer>> typeOIDBackends;
     private Map<Integer, List<Integer>> joinFieldIndexes;
     private Deque<QueryResponseType> queryResponsesToIgnore;
     private SortedMap<CString, ExtendedQueryStatus<ParseStep>> parseStepStatuses;
@@ -864,35 +859,6 @@ public class SQLSession {
 
     public void setUnprotectingDataEnabled(boolean unprotectingDataEnabled) {
         this.unprotectingDataEnabled = unprotectingDataEnabled;
-    }
-
-    public Map<CString, List<CString>> getDatasetDefinitions() {
-        if (datasetDefinitions == null) {
-            datasetDefinitions = Collections.synchronizedMap(new HashMap<>());
-        }
-        return datasetDefinitions;
-    }
-
-    public void setDatasetDefinitions(Map<CString, List<CString>> datasetDefinitions) {
-        this.datasetDefinitions = datasetDefinitions;
-    }
-
-    public void addDatasetDefinition(CString datasetId, List<CString> dataIds) {
-        getDatasetDefinitions().put(datasetId, dataIds);
-    }
-
-    public void removeDatasetDefinition(CString datasetId) {
-        getDatasetDefinitions().remove(datasetId);
-    }
-
-    public void resetDatasetDefinition() {
-        if (datasetDefinitions != null) {
-            datasetDefinitions.clear();
-        }
-    }
-
-    public List<CString> getDatasetDefinition(CString datasetId) {
-        return getDatasetDefinitions().get(datasetId);
     }
 
     public synchronized List<Integer> getCommandInvolvedBackends() {
@@ -1207,64 +1173,6 @@ public class SQLSession {
         }
     }
 
-    public Map<Integer, SortedSet<Integer>> getTableOIDBackends() {
-        if (tableOIDBackends == null) {
-            tableOIDBackends = new ConcurrentHashMap<>();
-        }
-        return tableOIDBackends;
-    }
-
-    public void setTableOIDBackends(Map<Integer, SortedSet<Integer>> tableOIDBackends) {
-        this.tableOIDBackends = tableOIDBackends;
-    }
-
-    public void addTableOIDBackend(int tableOID, int backend) {
-        SortedSet<Integer> backends = getTableOIDBackends().get(tableOID);
-        if (backends == null) {
-            synchronized (getTableOIDBackends()) {
-                backends = getTableOIDBackends().get(tableOID);
-                if (backends == null) {
-                    backends = new TreeSet<>();
-                    getTableOIDBackends().put(tableOID, backends);
-                }
-            }
-        }
-        backends.add(backend);
-    }
-
-    public SortedSet<Integer> getTableOIDBackends(int tableOID) {
-        return getTableOIDBackends().get(tableOID);
-    }
-
-    public Map<Long, SortedSet<Integer>> getTypeOIDBackends() {
-        if (typeOIDBackends == null) {
-            typeOIDBackends = new ConcurrentHashMap<>();
-        }
-        return typeOIDBackends;
-    }
-
-    public void setTypeOIDBackends(Map<Long, SortedSet<Integer>> typeOIDBackends) {
-        this.typeOIDBackends = typeOIDBackends;
-    }
-
-    public void addTypeOIDBackend(long typeOID, int backend) {
-        SortedSet<Integer> backends = getTypeOIDBackends().get(typeOID);
-        if (backends == null) {
-            synchronized (getTypeOIDBackends()) {
-                backends = getTypeOIDBackends().get(typeOID);
-                if (backends == null) {
-                    backends = new TreeSet<>();
-                    getTypeOIDBackends().put(typeOID, backends);
-                }
-            }
-        }
-        backends.add(backend);
-    }
-
-    public SortedSet<Integer> getTypeOIDBackends(long typeOID) {
-        return getTypeOIDBackends().get(typeOID);
-    }
-
     public Deque<QueryResponseType> getQueryResponsesToIgnore() {
         if (queryResponsesToIgnore == null) {
             queryResponsesToIgnore = new ConcurrentLinkedDeque<>();
@@ -1572,7 +1480,6 @@ public class SQLSession {
         setAuthenticationPhase(null);
         setTransactionStatus((byte) 'I');
         setInDatasetCreation(false);
-        resetDatasetDefinition();
         setTransferMode(null);
         setTableDefinitionEnabled(false);
         resetCurrentCommand();

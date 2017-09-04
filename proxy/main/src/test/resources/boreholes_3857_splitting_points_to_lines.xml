@@ -23,14 +23,21 @@
             attribute_type="non_confidential" data_type="numeric_continuous" />
         <attribute name="*/geom" attribute_type="identifier"
             data_type="geometric_object" />
+        <attribute name="*/gid" attribute_type="technical_identifier"
+            data_type="numeric_continuous" />
     </data>
-    <protection module="encryption">
+    <protection module="splitting">
         <attribute_types>
+            <attribute_type type="technical_identifier"
+                protection="replicate" clouds="2"/>
             <attribute_type type="identifier"
-                protection="encryption" id_key="176" />
+                protection="splitting" clouds="2" splitting_type="lines" />
             <attribute_type type="non_confidential"
-                protection="null" />
+                protection="splitting" clouds="1" />
         </attribute_types>
     </protection>
-    <protocol plugin="PostgreSQL" />
+    <protocol plugin="PostgreSQL">
+        <parameter param="csp1" value="database=geodata1" />
+        <parameter param="csp2" value="database=geodata2" />
+    </protocol>
 </schema>

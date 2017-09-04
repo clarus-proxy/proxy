@@ -1,6 +1,8 @@
 package eu.clarussecure.proxy.protocol.plugins.tcp;
 
 import java.net.InetSocketAddress;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +25,8 @@ public class TCPServer<CI extends ChannelInitializer<Channel>, SI extends Channe
 
     private final Configuration configuration;
 
+    private final Map<String, Object> customData;
+
     private final Class<CI> clientSideChannelInitializerType;
 
     private final Class<SI> serverSideChannelInitializerType;
@@ -34,6 +38,7 @@ public class TCPServer<CI extends ChannelInitializer<Channel>, SI extends Channe
     public TCPServer(Configuration configuration, Class<CI> clientSideChannelInitializerType,
             Class<SI> serverSideChannelInitializerType, int preferredServerEndpoint) {
         this.configuration = configuration;
+        this.customData = new HashMap<>();
         this.clientSideChannelInitializerType = clientSideChannelInitializerType;
         this.serverSideChannelInitializerType = serverSideChannelInitializerType;
         this.preferredServerEndpoint = preferredServerEndpoint;
@@ -50,6 +55,7 @@ public class TCPServer<CI extends ChannelInitializer<Channel>, SI extends Channe
             bootstrap.group(acceptorGroup, childGroup).channel(NioServerSocketChannel.class)
                     .localAddress(new InetSocketAddress(configuration.getListenPort()))
                     .childAttr(TCPConstants.CONFIGURATION_KEY, configuration)
+                    .childAttr(TCPConstants.CUSTOM_DATA_KEY, customData)
                     .childAttr(TCPConstants.PREFERRED_SERVER_ENDPOINT_KEY, preferredServerEndpoint)
                     .childAttr(TCPConstants.SERVER_INITIALIZER_KEY, serverSidePipelineInitializer)
                     .childHandler(clientSidePipelineInitializer).childOption(ChannelOption.AUTO_READ, false);
