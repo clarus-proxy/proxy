@@ -16,13 +16,15 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.SortedSet;
-import java.util.TreeMap;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -30,9 +32,12 @@ import java.util.stream.Stream;
 
 import javax.xml.bind.DatatypeConverter;
 
+import org.postgis.Geometry;
+import org.postgis.PGboxbase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import eu.clarussecure.dataoperations.DataOperationCommand;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.GeometryType;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlConfiguration;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.PgsqlConstants;
@@ -53,12 +58,14 @@ import eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.data.Types;
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
 import eu.clarussecure.proxy.spi.CString;
 import eu.clarussecure.proxy.spi.DataOperation;
+import eu.clarussecure.proxy.spi.InboundDataOperation;
 import eu.clarussecure.proxy.spi.MetadataOperation;
 import eu.clarussecure.proxy.spi.Mode;
 import eu.clarussecure.proxy.spi.ModuleOperation;
 import eu.clarussecure.proxy.spi.Operation;
+import eu.clarussecure.proxy.spi.OutboundDataOperation;
+import eu.clarussecure.proxy.spi.OutboundDataOperation.Criterion;
 import eu.clarussecure.proxy.spi.StringUtilities;
-import eu.clarussecure.proxy.spi.protection.DefaultPromise;
 import eu.clarussecure.proxy.spi.protocol.Configuration;
 import eu.clarussecure.proxy.spi.protocol.ProtocolService;
 import io.netty.buffer.ByteBuf;
@@ -67,11 +74,26 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.ReferenceCounted;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.expression.BinaryExpression;
+import net.sf.jsqlparser.expression.CaseExpression;
+import net.sf.jsqlparser.expression.CastExpression;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.Function;
+import net.sf.jsqlparser.expression.Not;
 import net.sf.jsqlparser.expression.NullValue;
+import net.sf.jsqlparser.expression.OracleHierarchicalExpression;
+import net.sf.jsqlparser.expression.Parenthesis;
+import net.sf.jsqlparser.expression.RowConstructor;
+import net.sf.jsqlparser.expression.SignedExpression;
 import net.sf.jsqlparser.expression.StringValue;
+import net.sf.jsqlparser.expression.WhenClause;
+import net.sf.jsqlparser.expression.WithinGroupExpression;
+import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
+import net.sf.jsqlparser.expression.operators.relational.ArrayElement;
+import net.sf.jsqlparser.expression.operators.relational.Between;
+import net.sf.jsqlparser.expression.operators.relational.ExistsExpression;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
+import net.sf.jsqlparser.expression.operators.relational.InExpression;
+import net.sf.jsqlparser.expression.operators.relational.IsNullExpression;
 import net.sf.jsqlparser.expression.operators.relational.ItemsList;
 import net.sf.jsqlparser.expression.operators.relational.MultiExpressionList;
 import net.sf.jsqlparser.parser.CCJSqlParser;
@@ -91,6 +113,7 @@ import net.sf.jsqlparser.statement.alter.AlterExpression.ColumnDataType;
 import net.sf.jsqlparser.statement.alter.AlterOperation;
 import net.sf.jsqlparser.statement.close.CursorClose;
 import net.sf.jsqlparser.statement.commit.Commit;
+import net.sf.jsqlparser.statement.create.index.CreateIndex;
 import net.sf.jsqlparser.statement.create.table.ColumnDefinition;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
 import net.sf.jsqlparser.statement.create.table.Index;
@@ -136,9 +159,25 @@ public class PgsqlEventProcessor implements EventProcessor {
     private final static int AUTHENTICATION_CLEARTEXT_PASSWORD = 3;
     private final static int AUTHENTICATION_MD5_PASSWORD = 5;
 
+    // significant functions
     public static final String FUNCTION_METADATA = "CLARUS_METADATA";
     public static final String FUNCTION_PROTECTED = "CLARUS_PROTECTED";
+    public static final String FUNCTION_HAS_COLUMN_PRIVILEGE = "has_column_privilege";
     public static final String FUNCTION_ADD_GEOMETRY_COLUMN = "AddGeometryColumn";
+    public static final String FUNCTION_ST_AS_BINARY = "ST_AsBinary";
+    public static final String FUNCTION_ST_AS_TEXT = "ST_AsText";
+    public static final String FUNCTION_ST_EXTENT = "ST_Extent";
+    public static final String FUNCTION_ST_ESTIMATED_EXTENT = "ST_EstimatedExtent";
+    public static final String FUNCTION_UPPER = "upper";
+
+    public String[] FUNCTIONS_WITH_SUPPORTED_RETURN_TYPE = new String[] { FUNCTION_ST_AS_BINARY, FUNCTION_ST_AS_TEXT,
+            FUNCTION_ST_EXTENT, FUNCTION_ST_ESTIMATED_EXTENT, FUNCTION_UPPER };
+
+    // Pattern to test if a data identifier is formatted as 'database/schema.table/column'
+    private static final Pattern FQ_DATA_ID_PATTERN = Pattern
+            .compile("([\\w_\\*]+)/([\\w_\\*]+)\\.([\\w_\\*]+)/([\\w_\\*]+)");
+
+    private static final String SQL_DATABASE_SCHEMA = "SQL_DATABASE_SCHEMA";
 
     @Override
     public MessageTransferMode<Map<CString, CString>, Void> processUserIdentification(ChannelHandlerContext ctx,
@@ -500,7 +539,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 break;
             }
             case ALTER_TABLE:
-            case ADD_GEOMETRY_COLUMN: {
+            case ADD_GEOMETRY_COLUMN:
+            case CREATE_INDEX: {
                 boolean inDatasetCreation = session.isInDatasetCreation();
                 operation = inDatasetCreation ? Operation.CREATE : Operation.UPDATE;
                 Mode processingMode = getProcessingMode(ctx, session.getTransactionStatus() == (byte) 'T', operation);
@@ -514,8 +554,13 @@ public class PgsqlEventProcessor implements EventProcessor {
                         if (inDatasetCreation) {
                             transferMode = TransferMode.FORGET;
                             if (sqlStatement instanceof SimpleQuery) {
-                                completeTag = CString
-                                        .valueOf(type == SQLCommandType.ALTER_TABLE ? "ALTER TABLE" : "SELECT 1");
+                                switch (type) {
+                                case ADD_GEOMETRY_COLUMN:
+                                    completeTag = CString.valueOf("SELECT 1");
+                                    break;
+                                default:
+                                    completeTag = CString.valueOf(type.getPattern());
+                                }
                             }
                         } else {
                             // Should not occur
@@ -808,11 +853,14 @@ public class PgsqlEventProcessor implements EventProcessor {
         SQLSession session = getSession(ctx);
         List<Statement> referencedStatements = new ArrayList<>(session.getBufferedQueries().size());
         List<List<ParameterValue>> referencedParameterValues = new ArrayList<>(session.getBufferedQueries().size());
-        List<DataOperation> referencedDataOperations = new ArrayList<>(session.getBufferedQueries().size());
+        List<OutboundDataOperation> referencedOutboundDataOperations = new ArrayList<>(
+                session.getBufferedQueries().size());
         List<Integer> referencedRows = new ArrayList<>(session.getBufferedQueries().size());
-        // Track indexes of parse steps (necessary for bind, describe and close steps)
+        // Track indexes of parse steps (necessary for bind, describe and close
+        // steps)
         Map<CString, Integer> lastParseStepIndexes = new HashMap<>();
-        // Track indexes of bind steps (necessary for describe, execute and close steps)
+        // Track indexes of bind steps (necessary for describe, execute and
+        // close steps)
         Map<CString, Integer> lastBindStepIndexes = new HashMap<>();
         // Track usage of parse steps and bind steps to know if they must be
         // closed
@@ -822,15 +870,14 @@ public class PgsqlEventProcessor implements EventProcessor {
         Map<CString, Integer> bindStepCounters = session.getBindStepStatuses().keySet().stream()
                 // Initialize bind step counters
                 .collect(Collectors.toMap(java.util.function.Function.identity(), i -> 1));
-        // Track data operations
-        Map<Operation, DataOperation> dataOperations = new HashMap<>();
+        // Track outbound data operations
+        OutboundDataOperation lastOutboundDataOperation = null;
         int queryIndex = 0;
         int row = 0;
         for (Query bufferedQuery : session.getBufferedQueries()) {
             int refIndex = -1;
             Statement refStmt = null;
             List<ParameterValue> refParamVals = null;
-            DataOperation refDataOperation = null;
             Integer refRow = null;
             boolean extract = false;
             if (bufferedQuery instanceof SimpleQuery) {
@@ -926,9 +973,10 @@ public class PgsqlEventProcessor implements EventProcessor {
                             // Parse step was within buffered queries
                             refIndex = lastParseStepIndexes.get(describeStep.getName());
                             // Operation was already built
-                            refDataOperation = referencedDataOperations.get(refIndex);
+                            lastOutboundDataOperation = referencedOutboundDataOperations.get(refIndex);
                         } else {
-                            // Parse step was done long time ago (and is tracked by
+                            // Parse step was done long time ago (and is tracked
+                            // by
                             // session)
                             ExtendedQueryStatus<ParseStep> parseStepStatus = session
                                     .getParseStepStatus(describeStep.getName());
@@ -945,9 +993,10 @@ public class PgsqlEventProcessor implements EventProcessor {
                             // Bind step was within buffered queries
                             refIndex = lastBindStepIndexes.get(describeStep.getName());
                             // Operation was already built
-                            refDataOperation = referencedDataOperations.get(refIndex);
+                            lastOutboundDataOperation = referencedOutboundDataOperations.get(refIndex);
                         } else {
-                            // Bind step was done long time ago (and is tracked by
+                            // Bind step was done long time ago (and is tracked
+                            // by
                             // session)
                             ExtendedQueryStatus<BindStep> bindStepStatus = session
                                     .getBindStepStatus(describeStep.getName());
@@ -961,7 +1010,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                                     refStmt = parseSQL(ctx, parseStep.getSQL());
                                     // Build ParameterValue (type+format+value)
                                     refParamVals = bindStep.getParameterValues().stream()
-                                            // transform each parameter to a ParameterValue
+                                            // transform each parameter to a
+                                            // ParameterValue
                                             .map(ParameterValue::new)
                                             // save as a list
                                             .collect(Collectors.toList());
@@ -977,7 +1027,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                                         // set parameter value format
                                         parameterValue.setFormat(format);
                                     }
-                                    // Ready to extract and protect data for this query
+                                    // Ready to extract and protect data for
+                                    // this query
                                     extract = true;
                                 }
                             }
@@ -990,7 +1041,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                         // Bind step was within buffered queries
                         refIndex = lastBindStepIndexes.get(executeStep.getPortal());
                         // Operation was already built
-                        refDataOperation = referencedDataOperations.get(refIndex);
+                        lastOutboundDataOperation = referencedOutboundDataOperations.get(refIndex);
                     } else {
                         // Bind step was done long time ago (and is tracked by
                         // session)
@@ -1006,7 +1057,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                                 refStmt = parseSQL(ctx, parseStep.getSQL());
                                 // Build ParameterValue (type+format+value)
                                 refParamVals = bindStep.getParameterValues().stream()
-                                        // transform each parameter to a ParameterValue
+                                        // transform each parameter to a
+                                        // ParameterValue
                                         .map(ParameterValue::new)
                                         // save as a list
                                         .collect(Collectors.toList());
@@ -1022,7 +1074,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                                     // set parameter value format
                                     parameterValue.setFormat(format);
                                 }
-                                // Ready to extract and protect data for this query
+                                // Ready to extract and protect data for this
+                                // query
                                 extract = true;
                             }
                         }
@@ -1034,9 +1087,10 @@ public class PgsqlEventProcessor implements EventProcessor {
                             // Parse step was within buffered queries
                             refIndex = lastParseStepIndexes.get(closeStep.getName());
                             // Operation was already built
-                            refDataOperation = referencedDataOperations.get(refIndex);
+                            lastOutboundDataOperation = referencedOutboundDataOperations.get(refIndex);
                         } else {
-                            // Parse step was done long time ago (and is tracked by
+                            // Parse step was done long time ago (and is tracked
+                            // by
                             // session)
                             ExtendedQueryStatus<ParseStep> parseStepStatus = session
                                     .getParseStepStatus(closeStep.getName());
@@ -1056,9 +1110,10 @@ public class PgsqlEventProcessor implements EventProcessor {
                             // Bind step was within buffered queries
                             refIndex = lastBindStepIndexes.get(closeStep.getName());
                             // Operation was already built
-                            refDataOperation = referencedDataOperations.get(refIndex);
+                            lastOutboundDataOperation = referencedOutboundDataOperations.get(refIndex);
                         } else {
-                            // Bind step was done long time ago (and is tracked by
+                            // Bind step was done long time ago (and is tracked
+                            // by
                             // session)
                             ExtendedQueryStatus<BindStep> bindStepStatus = session
                                     .getBindStepStatus(closeStep.getName());
@@ -1072,7 +1127,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                                     refStmt = parseSQL(ctx, parseStep.getSQL());
                                     // Build ParameterValue (type+format+value)
                                     refParamVals = bindStep.getParameterValues().stream()
-                                            // transform each parameter to a ParameterValue
+                                            // transform each parameter to a
+                                            // ParameterValue
                                             .map(ParameterValue::new)
                                             // save as a list
                                             .collect(Collectors.toList());
@@ -1088,7 +1144,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                                         // set parameter value format
                                         parameterValue.setFormat(format);
                                     }
-                                    // Ready to extract and protect data for this query
+                                    // Ready to extract and protect data for
+                                    // this query
                                     extract = true;
                                 }
                             }
@@ -1102,14 +1159,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                         // Previous operation is the reference
                         refIndex = queryIndex - 1;
                         // Operation was already built
-                        refDataOperation = referencedDataOperations.get(refIndex);
+                        lastOutboundDataOperation = referencedOutboundDataOperations.get(refIndex);
                     }
                 } else if (query instanceof FlushStep) {
                     if (queryIndex > 0) {
                         // Previous operation is the reference
                         refIndex = queryIndex - 1;
                         // Operation was already built
-                        refDataOperation = referencedDataOperations.get(refIndex);
+                        lastOutboundDataOperation = referencedOutboundDataOperations.get(refIndex);
                     }
                 }
             }
@@ -1129,26 +1186,50 @@ public class PgsqlEventProcessor implements EventProcessor {
                     } else if (refStmt instanceof CreateTable) {
                         moduleOperation = extractCreateTableOperation(ctx, (CreateTable) refStmt);
                     } else if (refStmt instanceof Alter) {
-                        // Retrieve the data operation (if exist)
-                        refDataOperation = dataOperations.get(Operation.CREATE);
-                        if (refDataOperation == null) {
-                            refDataOperation = dataOperations.get(Operation.UPDATE);
+                        // Retrieve the outbound data operation (if exist)
+                        OutboundDataOperation refOutboundDataOperation = null;
+                        if (lastOutboundDataOperation != null
+                                && (lastOutboundDataOperation.getOperation() == Operation.CREATE
+                                        || lastOutboundDataOperation.getOperation() == Operation.UPDATE)
+                                && lastOutboundDataOperation.isUsingHeadOperation()) {
+                            refOutboundDataOperation = lastOutboundDataOperation;
                         }
-                        moduleOperation = extractAlterTableOperation(ctx, (Alter) refStmt, refDataOperation, null);
+                        moduleOperation = extractAlterTableOperation(ctx, (Alter) refStmt, refOutboundDataOperation,
+                                null);
+                    } else if (refStmt instanceof CreateIndex) {
+                        // Retrieve the outbound data operation (if exist)
+                        OutboundDataOperation refOutboundDataOperation = null;
+                        if (lastOutboundDataOperation != null
+                                && (lastOutboundDataOperation.getOperation() == Operation.CREATE
+                                        || lastOutboundDataOperation.getOperation() == Operation.UPDATE)
+                                && lastOutboundDataOperation.isUsingHeadOperation()) {
+                            refOutboundDataOperation = lastOutboundDataOperation;
+                        }
+                        moduleOperation = extractCreateIndexOperation(ctx, (CreateIndex) refStmt,
+                                refOutboundDataOperation, null);
                     } else if (refStmt instanceof Drop) {
                         moduleOperation = extractDropTableOperation(ctx, (Drop) refStmt);
                     } else if (refStmt instanceof Insert) {
-                        // Retrieve the data operation (if exist)
-                        refDataOperation = dataOperations.get(Operation.CREATE);
-                        moduleOperation = extractInsertOperation(ctx, (Insert) refStmt, refParamVals, refDataOperation);
-                    } else if (refStmt instanceof Select) {
-                        // Retrieve the data operation (if exist)
-                        refDataOperation = dataOperations.get(Operation.CREATE);
-                        if (refDataOperation == null) {
-                            refDataOperation = dataOperations.get(Operation.UPDATE);
+                        // Retrieve the outbound data operation (if exist)
+                        OutboundDataOperation refOutboundDataOperation = null;
+                        if (lastOutboundDataOperation != null
+                                && lastOutboundDataOperation.getOperation() == Operation.CREATE
+                                && !lastOutboundDataOperation.isUsingHeadOperation()) {
+                            refOutboundDataOperation = lastOutboundDataOperation;
                         }
-                        moduleOperation = extractSelectOperation(ctx, (Select) refStmt, refParamVals, refDataOperation,
-                                null);
+                        moduleOperation = extractInsertOperation(ctx, (Insert) refStmt, refParamVals,
+                                refOutboundDataOperation);
+                    } else if (refStmt instanceof Select) {
+                        // Retrieve the outbound data operation (if exist)
+                        OutboundDataOperation refOutboundDataOperation = null;
+                        if (lastOutboundDataOperation != null
+                                && (lastOutboundDataOperation.getOperation() == Operation.CREATE
+                                        || lastOutboundDataOperation.getOperation() == Operation.UPDATE)
+                                && lastOutboundDataOperation.isUsingHeadOperation()) {
+                            refOutboundDataOperation = lastOutboundDataOperation;
+                        }
+                        moduleOperation = extractSelectOperation(ctx, (Select) refStmt, refParamVals,
+                                refOutboundDataOperation, null);
                     } else if (refStmt instanceof DeclareCursor) {
                         moduleOperation = extractDeclareCursorOperation(ctx, (DeclareCursor) refStmt, refParamVals);
                     } else if (refStmt instanceof CursorFetch) {
@@ -1164,9 +1245,12 @@ public class PgsqlEventProcessor implements EventProcessor {
                         LOGGER.trace("Parsing error details:", e);
                     }
                 }
-                if (moduleOperation instanceof DataOperation) {
-                    refDataOperation = (DataOperation) moduleOperation;
-                    dataOperations.put(refDataOperation.getOperation(), refDataOperation);
+                if (moduleOperation instanceof OutboundDataOperation) {
+                    lastOutboundDataOperation = (OutboundDataOperation) moduleOperation;
+                } else if (moduleOperation instanceof InboundDataOperation) {
+                    // Unsupported inbound data operation in buffered queries
+                    // Should not occur
+                    throw new IOException("Inbound operation is unsupported in buffered queries");
                 } else if (moduleOperation instanceof MetadataOperation) {
                     // Unsupported metadata in buffered queries
                     // Should not occur
@@ -1177,9 +1261,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                             moduleOperation.getClass().getName()));
                 }
             }
-            referencedDataOperations.add(refDataOperation);
-            if (refIndex != -1 && referencedDataOperations.get(refIndex) == null) {
-                referencedDataOperations.set(refIndex, refDataOperation);
+            referencedOutboundDataOperations.add(lastOutboundDataOperation);
+            if (refIndex != -1) {
+                referencedOutboundDataOperations.set(refIndex, lastOutboundDataOperation);
             }
             queryIndex++;
         }
@@ -1194,16 +1278,17 @@ public class PgsqlEventProcessor implements EventProcessor {
                 session.removeParseStep(name);
             }
         });
-        // Process data operation
+        // Process outbound data operation
         boolean modifyRequests = false;
-        Map<DataOperation, List<DataOperation>> dataOperation2newDataOperations = new HashMap<>();
-        for (DataOperation dataOperation : referencedDataOperations) {
-            if (dataOperation != null) {
-                List<DataOperation> newDataOperations = dataOperation2newDataOperations.get(dataOperation);
-                if (newDataOperations == null) {
-                    newDataOperations = newDataOperation(ctx, dataOperation);
-                    dataOperation2newDataOperations.put(dataOperation, newDataOperations);
-                    modifyRequests |= newDataOperations.stream().anyMatch(DataOperation::isModified);
+        Map<OutboundDataOperation, List<OutboundDataOperation>> dataOperation2newDataOperations = new HashMap<>();
+        for (OutboundDataOperation outboundDataOperation : referencedOutboundDataOperations) {
+            if (outboundDataOperation != null) {
+                List<OutboundDataOperation> newOutboundDataOperations = dataOperation2newDataOperations
+                        .get(outboundDataOperation);
+                if (newOutboundDataOperations == null) {
+                    newOutboundDataOperations = newOutboundDataOperation(ctx, outboundDataOperation);
+                    dataOperation2newDataOperations.put(outboundDataOperation, newOutboundDataOperations);
+                    modifyRequests |= newOutboundDataOperations.stream().anyMatch(DataOperation::isModified);
                 }
             }
         }
@@ -1212,16 +1297,16 @@ public class PgsqlEventProcessor implements EventProcessor {
             // Modify SQL queries (and parameter values)
             queryIndex = 0;
             for (Query bufferedQuery : session.getBufferedQueries()) {
-                List<DataOperation> newDataOperations = null;
-                DataOperation dataOperation = referencedDataOperations.get(queryIndex);
-                if (dataOperation != null) {
-                    newDataOperations = dataOperation2newDataOperations.get(dataOperation);
+                List<OutboundDataOperation> newOutboundDataOperations = null;
+                OutboundDataOperation outboundDataOperation = referencedOutboundDataOperations.get(queryIndex);
+                if (outboundDataOperation != null) {
+                    newOutboundDataOperations = dataOperation2newDataOperations.get(outboundDataOperation);
                 }
-                boolean modifyRequest = newDataOperations != null && (FORCE_SQL_PROCESSING
-                        || newDataOperations.size() != 1 || newDataOperations.get(0).isModified());
+                boolean modifyRequest = newOutboundDataOperations != null && (FORCE_SQL_PROCESSING
+                        || newOutboundDataOperations.size() != 1 || newOutboundDataOperations.get(0).isModified());
                 if (modifyRequest) {
                     Statement refStmt = referencedStatements.get(queryIndex);
-                    for (DataOperation newDataOperation : newDataOperations) {
+                    for (OutboundDataOperation newOutboundDataOperation : newOutboundDataOperations) {
                         Query newQuery = bufferedQuery;
                         if (refStmt != null) {
                             // Modify SQL statement
@@ -1232,67 +1317,74 @@ public class PgsqlEventProcessor implements EventProcessor {
                                 PgsqlStatement<SetStatement> statement = new PgsqlStatement<>((SetStatement) refStmt,
                                         null, null, refParamVals, null, null);
                                 PgsqlStatement<SetStatement> newStatement = modifySetStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 newStmt = newStatement.getStatement();
                             } else if (refStmt instanceof StartTransaction) {
                                 PgsqlStatement<StartTransaction> statement = new PgsqlStatement<>(
                                         (StartTransaction) refStmt, null, null, refParamVals, null, null);
                                 PgsqlStatement<StartTransaction> newStatement = modifyStartTransactionStatement(ctx,
-                                        statement, newDataOperation, newDataOperations.size() > 1);
+                                        statement, newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 newStmt = newStatement.getStatement();
                             } else if (refStmt instanceof Commit) {
                                 PgsqlStatement<Commit> statement = new PgsqlStatement<>((Commit) refStmt, null, null,
                                         refParamVals, null, null);
                                 PgsqlStatement<Commit> newStatement = modifyCommitStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 newStmt = newStatement.getStatement();
                             } else if (refStmt instanceof CreateTable) {
                                 PgsqlStatement<CreateTable> statement = new PgsqlStatement<>((CreateTable) refStmt,
                                         null, null, refParamVals, null, null);
                                 PgsqlStatement<CreateTable> newStatement = modifyCreateTableStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 newStmt = newStatement.getStatement();
                             } else if (refStmt instanceof Alter) {
                                 PgsqlStatement<Alter> statement = new PgsqlStatement<>((Alter) refStmt, null, null,
                                         refParamVals, null, null);
                                 PgsqlStatement<Alter> newStatement = modifyAlterTableStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
+                                newStmt = newStatement.getStatement();
+                            } else if (refStmt instanceof CreateIndex) {
+                                PgsqlStatement<CreateIndex> statement = new PgsqlStatement<>((CreateIndex) refStmt,
+                                        null, null, refParamVals, null, null);
+                                PgsqlStatement<CreateIndex> newStatement = modifyCreateIndexStatement(ctx, statement,
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 newStmt = newStatement.getStatement();
                             } else if (refStmt instanceof Drop) {
                                 PgsqlStatement<Drop> statement = new PgsqlStatement<>((Drop) refStmt, null, null,
                                         refParamVals, null, null);
                                 PgsqlStatement<Drop> newStatement = modifyDropTableStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 newStmt = newStatement.getStatement();
                             } else if (refStmt instanceof Insert) {
                                 PgsqlStatement<Insert> statement = new PgsqlStatement<>((Insert) refStmt, null, null,
                                         refParamVals, null, null);
                                 PgsqlStatement<Insert> newStatement = modifyInsertStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1, refRow);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1, refRow);
                                 newStmt = newStatement.getStatement();
                             } else if (refStmt instanceof Select) {
                                 PgsqlStatement<Select> statement = new PgsqlStatement<>((Select) refStmt, null, null,
                                         refParamVals, null, null);
                                 PgsqlStatement<Select> newStatement = modifySelectStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1, null);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1, null);
                                 newStmt = newStatement.getStatement();
                             } else if (refStmt instanceof DeclareCursor) {
                                 PgsqlStatement<DeclareCursor> statement = new PgsqlStatement<>((DeclareCursor) refStmt,
                                         null, null, refParamVals, null, null);
                                 PgsqlStatement<DeclareCursor> newStatement = modifyDeclareCursorStatement(ctx,
-                                        statement, newDataOperation, newDataOperations.size() > 1, null);
+                                        statement, newOutboundDataOperation, newOutboundDataOperations.size() > 1,
+                                        null);
                                 newStmt = newStatement.getStatement();
                             } else if (refStmt instanceof CursorFetch) {
                                 PgsqlStatement<CursorFetch> statement = new PgsqlStatement<>((CursorFetch) refStmt,
                                         null, null, refParamVals, null, null);
                                 PgsqlStatement<CursorFetch> newStatement = modifyCursorFetchStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 newStmt = newStatement.getStatement();
                             } else if (refStmt instanceof CursorClose) {
                                 PgsqlStatement<CursorClose> statement = new PgsqlStatement<>((CursorClose) refStmt,
                                         null, null, refParamVals, null, null);
                                 PgsqlStatement<CursorClose> newStatement = modifyCursorCloseStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 newStmt = newStatement.getStatement();
                             }
                             if (bufferedQuery instanceof SimpleQuery) {
@@ -1319,7 +1411,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                                             // save as a list
                                             .collect(Collectors.toList());
                                     if (!parameterBinaryValues.equals(bindStep.getParameterValues())) {
-                                        // At least one parameter ByteBuf values has
+                                        // At least one parameter ByteBuf values
+                                        // has
                                         // been changed
                                         newQuery = new BindStep(bindStep.getName(), bindStep.getPreparedStatement(),
                                                 bindStep.getParameterFormats(), parameterBinaryValues,
@@ -1328,7 +1421,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                                 }
                             }
                         }
-                        int involvedBackend = newDataOperation.getInvolvedCSP();
+                        int involvedBackend = newOutboundDataOperation.getInvolvedCSP();
                         if (involvedBackend == -1) {
                             involvedBackend = getPreferredBackend(ctx);
                         }
@@ -1346,8 +1439,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                         newBackendQueries.add(newQuery);
                     }
                 } else {
-                    int involvedBackend = newDataOperations != null && newDataOperations.size() == 1
-                            ? newDataOperations.get(0).getInvolvedCSP() : -1;
+                    int involvedBackend = newOutboundDataOperations != null && newOutboundDataOperations.size() == 1
+                            ? newOutboundDataOperations.get(0).getInvolvedCSP() : -1;
                     if (involvedBackend == -1) {
                         involvedBackend = getPreferredBackend(ctx);
                     }
@@ -1460,6 +1553,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 moduleOperation = extractCreateTableOperation(ctx, (CreateTable) stmt);
             } else if (stmt instanceof Alter) {
                 moduleOperation = extractAlterTableOperation(ctx, (Alter) stmt, null, operation);
+            } else if (stmt instanceof CreateIndex) {
+                moduleOperation = extractCreateIndexOperation(ctx, (CreateIndex) stmt, null, operation);
             } else if (stmt instanceof Drop) {
                 moduleOperation = extractDropTableOperation(ctx, (Drop) stmt);
             } else if (stmt instanceof Insert) {
@@ -1512,7 +1607,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                             .collect(Collectors.toList());
                 }
                 // Build rows
-                List<List<ByteBuf>> rows = buildRows(metadata, -1);
+                List<List<ByteBuf>> rows = buildRows(metadata, involvedBackends, -1);
                 commandResults.setRows(rows);
                 // Build complete tag
                 commandResults.setCompleteTag(CString.valueOf("SELECT " + rows.size()));
@@ -1522,15 +1617,16 @@ public class PgsqlEventProcessor implements EventProcessor {
             result = Result.response(commandResults);
             // reset current command in session
             session.resetCurrentCommand();
-        } else if (moduleOperation instanceof DataOperation) {
-            DataOperation dataOperation = (DataOperation) moduleOperation;
+        } else if (moduleOperation instanceof OutboundDataOperation) {
+            OutboundDataOperation outboundDataOperation = (OutboundDataOperation) moduleOperation;
             // Process data operation
-            List<DataOperation> newDataOperations = newDataOperation(ctx, dataOperation);
+            List<OutboundDataOperation> newOutboundDataOperations = newOutboundDataOperation(ctx,
+                    outboundDataOperation);
             if (stmt instanceof SetStatement || stmt instanceof StartTransaction || stmt instanceof Commit
-                    || stmt instanceof CreateTable || stmt instanceof Alter || stmt instanceof Drop
-                    || stmt instanceof Insert || stmt instanceof Select || stmt instanceof DeclareCursor
-                    || stmt instanceof CursorFetch || stmt instanceof CursorClose) {
-                if (newDataOperations.isEmpty()) {
+                    || stmt instanceof CreateTable || stmt instanceof Alter || stmt instanceof CreateIndex
+                    || stmt instanceof Drop || stmt instanceof Insert || stmt instanceof Select
+                    || stmt instanceof DeclareCursor || stmt instanceof CursorFetch || stmt instanceof CursorClose) {
+                if (newOutboundDataOperations.isEmpty()) {
                     // Forget SQL statement, reply directly to the frontend
                     CommandResults commandResults = new CommandResults();
                     if (stmt instanceof SetStatement) {
@@ -1543,6 +1639,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                         commandResults.setCompleteTag(CString.valueOf("CREATE TABLE"));
                     } else if (stmt instanceof Alter) {
                         commandResults.setCompleteTag(CString.valueOf("ALTER TABLE"));
+                    } else if (stmt instanceof CreateIndex) {
+                        commandResults.setCompleteTag(CString.valueOf("CREATE INDEX"));
                     } else if (stmt instanceof Drop) {
                         commandResults.setCompleteTag(CString.valueOf("DROP TABLE"));
                     } else if (stmt instanceof Insert) {
@@ -1552,9 +1650,6 @@ public class PgsqlEventProcessor implements EventProcessor {
                     } else if (stmt instanceof Delete) {
                         commandResults.setCompleteTag(CString.valueOf("DELETE 0 1"));
                     } else if (stmt instanceof Select) {
-                        List<PgsqlRowDescriptionMessage.Field> description = Stream.of("?column?").map(CString::valueOf)
-                                .map(PgsqlRowDescriptionMessage.Field::new).collect(Collectors.toList());
-                        commandResults.setRowDescription(description);
                         commandResults.setCompleteTag(CString.valueOf("SELECT 0"));
                     } else if (stmt instanceof DeclareCursor) {
                         commandResults.setCompleteTag(CString.valueOf("DECLARE CURSOR"));
@@ -1570,81 +1665,89 @@ public class PgsqlEventProcessor implements EventProcessor {
                 } else {
                     List<Integer> involvedBackends;
                     List<ExpectedField> expectedFields = null;
-                    boolean requestModified = newDataOperations.size() > 1 || newDataOperations.get(0).isModified();
+                    boolean requestModified = newOutboundDataOperations.size() > 1
+                            || newOutboundDataOperations.get(0).isModified();
                     if (FORCE_SQL_PROCESSING || requestModified) {
-                        List<SimpleSQLStatement> sqlStatements = new ArrayList<>(newDataOperations.size());
-                        involvedBackends = new ArrayList<>(newDataOperations.size());
+                        List<SimpleSQLStatement> sqlStatements = new ArrayList<>(newOutboundDataOperations.size());
+                        involvedBackends = new ArrayList<>(newOutboundDataOperations.size());
                         if (session.getCurrentCommandOperation() == Operation.READ) {
                             expectedFields = new ArrayList<>();
                         }
                         // Modify SQL statement
-                        for (DataOperation newDataOperation : newDataOperations) {
+                        for (OutboundDataOperation newOutboundDataOperation : newOutboundDataOperations) {
                             String newSQL;
                             if (stmt instanceof SetStatement) {
                                 PgsqlStatement<SetStatement> statement = new PgsqlStatement<>((SetStatement) stmt);
                                 PgsqlStatement<SetStatement> newStatement = modifySetStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 SetStatement newSetStatement = newStatement.getStatement();
                                 newSQL = newSetStatement.toString();
                             } else if (stmt instanceof StartTransaction) {
                                 PgsqlStatement<StartTransaction> statement = new PgsqlStatement<>(
                                         (StartTransaction) stmt);
                                 PgsqlStatement<StartTransaction> newStatement = modifyStartTransactionStatement(ctx,
-                                        statement, newDataOperation, newDataOperations.size() > 1);
+                                        statement, newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 StartTransaction newStartTransaction = newStatement.getStatement();
                                 newSQL = newStartTransaction.toString();
                             } else if (stmt instanceof Commit) {
                                 PgsqlStatement<Commit> statement = new PgsqlStatement<>((Commit) stmt);
                                 PgsqlStatement<Commit> newStatement = modifyCommitStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 Commit newCommit = newStatement.getStatement();
                                 newSQL = newCommit.toString();
                             } else if (stmt instanceof CreateTable) {
                                 PgsqlStatement<CreateTable> statement = new PgsqlStatement<>((CreateTable) stmt);
                                 PgsqlStatement<CreateTable> newStatement = modifyCreateTableStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 CreateTable newCreateTable = newStatement.getStatement();
                                 newSQL = newCreateTable.toString();
                             } else if (stmt instanceof Alter) {
                                 PgsqlStatement<Alter> statement = new PgsqlStatement<>((Alter) stmt);
                                 PgsqlStatement<Alter> newStatement = modifyAlterTableStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 Alter newAlter = newStatement.getStatement();
                                 newSQL = newAlter.toString();
+                            } else if (stmt instanceof CreateIndex) {
+                                PgsqlStatement<CreateIndex> statement = new PgsqlStatement<>((CreateIndex) stmt);
+                                PgsqlStatement<CreateIndex> newStatement = modifyCreateIndexStatement(ctx, statement,
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
+                                CreateIndex newCreateIndex = newStatement.getStatement();
+                                newSQL = newCreateIndex.toString();
                             } else if (stmt instanceof Drop) {
                                 PgsqlStatement<Drop> statement = new PgsqlStatement<>((Drop) stmt);
                                 PgsqlStatement<Drop> newStatement = modifyDropTableStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 Drop newDropTable = newStatement.getStatement();
                                 newSQL = newDropTable.toString();
                             } else if (stmt instanceof Insert) {
                                 PgsqlStatement<Insert> statement = new PgsqlStatement<>((Insert) stmt);
                                 PgsqlStatement<Insert> newStatement = modifyInsertStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1, 0);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1, 0);
                                 Insert newInsert = newStatement.getStatement();
                                 newSQL = newInsert.toString();
                             } else if (stmt instanceof Select) {
                                 PgsqlStatement<Select> statement = new PgsqlStatement<>((Select) stmt);
                                 PgsqlStatement<Select> newStatement = modifySelectStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1, expectedFields);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1, expectedFields);
                                 Select newSelect = newStatement.getStatement();
                                 newSQL = newSelect.toString();
                             } else if (stmt instanceof DeclareCursor) {
                                 PgsqlStatement<DeclareCursor> statement = new PgsqlStatement<>((DeclareCursor) stmt);
                                 PgsqlStatement<DeclareCursor> newStatement = modifyDeclareCursorStatement(ctx,
-                                        statement, newDataOperation, newDataOperations.size() > 1, expectedFields);
+                                        statement, newOutboundDataOperation, newOutboundDataOperations.size() > 1,
+                                        expectedFields);
                                 DeclareCursor newDeclareCursor = newStatement.getStatement();
                                 newSQL = newDeclareCursor.toString();
                             } else if (stmt instanceof CursorFetch) {
                                 PgsqlStatement<CursorFetch> statement = new PgsqlStatement<>((CursorFetch) stmt);
                                 PgsqlStatement<CursorFetch> newStatement = modifyCursorFetchStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 CursorFetch newCursorFetch = newStatement.getStatement();
                                 newSQL = newCursorFetch.toString();
                             } else if (stmt instanceof CursorClose) {
                                 PgsqlStatement<CursorClose> statement = new PgsqlStatement<>((CursorClose) stmt);
                                 PgsqlStatement<CursorClose> newStatement = modifyCursorCloseStatement(ctx, statement,
-                                        newDataOperation, newDataOperations.size() > 1);
+                                        newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                 CursorClose newCursorClose = newStatement.getStatement();
                                 newSQL = newCursorClose.toString();
                             } else {
@@ -1652,7 +1755,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                             }
                             newSQL = StringUtilities.addIrrelevantCharacters(newSQL, sqlStatement.getSQL(), " \t\r\n;");
                             sqlStatement = new SimpleSQLStatement(CString.valueOf(newSQL));
-                            int involvedBackend = newDataOperation.getInvolvedCSP();
+                            int involvedBackend = newOutboundDataOperation.getInvolvedCSP();
                             if (involvedBackend == -1) {
                                 involvedBackend = getPreferredBackend(ctx);
                             }
@@ -1666,14 +1769,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                         }
                         result = Result.queries(sqlStatements);
                     } else {
-                        involvedBackends = newDataOperations.get(0).getInvolvedCSPs();
+                        involvedBackends = newOutboundDataOperations.get(0).getInvolvedCSPs();
                         if (involvedBackends == null) {
                             involvedBackends = Collections.singletonList(getPreferredBackend(ctx));
                         }
                         result = Result.query(sqlStatement);
                         if (session.getCurrentCommandOperation() == Operation.READ) {
                             @SuppressWarnings("unchecked")
-                            List<Map.Entry<SelectItem, List<String>>> selectItemIds = (List<Map.Entry<SelectItem, List<String>>>) dataOperation
+                            List<Map.Entry<SelectItem, List<String>>> selectItemIds = (List<Map.Entry<SelectItem, List<String>>>) outboundDataOperation
                                     .getAttribute("selectItemIds");
                             expectedFields = selectItemIds.stream().map(e -> {
                                 SelectItem item = e.getKey();
@@ -1694,9 +1797,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                     session.setCommandInvolvedBackends(involvedBackends);
                     if (session.getCurrentCommandOperation() == Operation.READ) {
                         session.setResultProcessingEnabled(
-                                requestModified || !dataOperation.isUnprotectingDataEnabled());
-                        session.setPromise(newDataOperations.get(0).getPromise());
-                        session.setUnprotectingDataEnabled(dataOperation.isUnprotectingDataEnabled());
+                                requestModified || !outboundDataOperation.isUnprotectingDataEnabled());
+                        session.setPromise(newOutboundDataOperations.get(0).getPromise());
+                        session.setUnprotectingDataEnabled(outboundDataOperation.isUnprotectingDataEnabled());
                         session.setExpectedFields(expectedFields);
                         if (stmt instanceof DeclareCursor) {
                             // Save cursor context
@@ -1729,34 +1832,70 @@ public class PgsqlEventProcessor implements EventProcessor {
 
     private MetadataOperation newMetaDataOperation(ChannelHandlerContext ctx, MetadataOperation metadataOperation) {
         MetadataOperation newMetaDataOperation = getProtocolService(ctx).newMetadataOperation(metadataOperation);
+        int maxBackend = newMetaDataOperation.getInvolvedCSPs().stream().max(Comparator.naturalOrder()).orElse(-1);
+        String[] geometryColumnsDataids = Stream
+                .of("f_table_catalog", "f_table_schema", "f_table_name", "f_geometry_column", "type")
+                .map(cn -> "geometry_columns/" + cn).toArray(String[]::new);
+        String[] pgStatsDataids = Stream.of("schemaname", "tablename", "attname").map(cn -> "pg_stats/" + cn)
+                .toArray(String[]::new);
+        newMetaDataOperation.getMetadata().stream()
+                .filter(e -> Stream.concat(Stream.of(geometryColumnsDataids), Stream.of(pgStatsDataids))
+                        .anyMatch(cid -> e.getKey().endsWith(cid)))
+                .filter(e -> e.getValue().isEmpty()).forEach(e -> {
+                    e.setValue(IntStream.range(0, maxBackend + 1).mapToObj(
+                            backend -> newMetaDataOperation.getInvolvedCSPs().contains(backend) ? e.getKey() : null)
+                            .collect(Collectors.toList()));
+                });
+        List<String> backendDatabaseNames = getBackendDatabaseNames(ctx);
+        if (!backendDatabaseNames.isEmpty()) {
+            // Modify data ids (replace database name by the back-end database
+            // name)
+            newMetaDataOperation.getMetadata()
+                    .forEach(e -> IntStream.range(0, e.getValue().size()).filter(csp -> e.getValue().get(csp) != null)
+                            .forEach(csp -> e.getValue().set(csp,
+                                    modifyDatabaseName(e.getValue().get(csp), backendDatabaseNames.get(csp)))));
+        }
         return newMetaDataOperation;
     }
 
-    private List<DataOperation> newDataOperation(ChannelHandlerContext ctx, DataOperation dataOperation) {
-        if (dataOperation.getOperation() == Operation.READ) {
-            if (dataOperation.getDataValues().isEmpty()
-                    && dataOperation.getParameterIds().stream().anyMatch(id -> id.endsWith("pg_type/oid"))) {
-                SQLSession session = getSession(ctx);
-                List<CString> parameterIds = dataOperation.getParameterIds();
-                int[] indexes = IntStream.range(0, parameterIds.size())
-                        .filter(i -> parameterIds.get(i).endsWith("pg_type/oid")).toArray();
-                List<CString> parameterValues = dataOperation.getParameterValues();
-                List<Integer> involvedBackends = Arrays.stream(indexes).mapToObj(i -> parameterValues.get(i))
-                        .map(CString::toString).mapToLong(Long::valueOf)
-                        .mapToObj(oid -> session.getTypeOIDBackends(oid)).filter(backends -> backends != null)
-                        .flatMap(SortedSet::stream).distinct().collect(Collectors.toList());
-                if (!involvedBackends.isEmpty()) {
-                    if (dataOperation.getInvolvedCSPs() != null) {
-                        involvedBackends.removeAll(dataOperation.getInvolvedCSPs());
-                    }
-                    dataOperation.setInvolvedCSPs(involvedBackends);
-                    dataOperation.setModified(true);
+    private List<OutboundDataOperation> newOutboundDataOperation(ChannelHandlerContext ctx,
+            OutboundDataOperation outboundDataOperation) {
+        if (outboundDataOperation.getOperation() == Operation.READ
+                && outboundDataOperation.getCriterions().stream().filter(c -> c != null)
+                        .map(OutboundDataOperation.Criterion::getDataId).anyMatch(id -> id.endsWith("pg_type/oid"))) {
+            SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+            List<OutboundDataOperation.Criterion> criterions = outboundDataOperation.getCriterions();
+            List<Integer> involvedBackends = criterions.stream().filter(c -> c != null)
+                    .filter(c -> c.getDataId().endsWith("pg_type/oid")).map(OutboundDataOperation.Criterion::getValue)
+                    .map(CString::toString).mapToLong(Long::valueOf)
+                    .mapToObj(oid -> databaseSchema.getTypeOIDBackends(oid)).filter(backends -> backends != null)
+                    .flatMap(SortedSet::stream).distinct().collect(Collectors.toList());
+            if (!involvedBackends.isEmpty()) {
+                if (outboundDataOperation.getInvolvedCSPs() != null) {
+                    involvedBackends.removeAll(outboundDataOperation.getInvolvedCSPs());
                 }
+                outboundDataOperation.setInvolvedCSPs(involvedBackends);
+                outboundDataOperation.setModified(true);
             }
         }
-        List<DataOperation> newDataOperations = getProtocolService(ctx).newDataOperation(dataOperation);
+        List<OutboundDataOperation> newOutboundDataOperations = getProtocolService(ctx)
+                .newOutboundDataOperation(outboundDataOperation);
+        List<String> backendDatabaseNames = getBackendDatabaseNames(ctx);
+        if (!backendDatabaseNames.isEmpty()) {
+            // Modify data ids (replace database name by the back-end database
+            // name)
+            newOutboundDataOperations.forEach(newOutboundDataOperation -> {
+                int backend = newOutboundDataOperation.getInvolvedCSP() == -1 ? getPreferredBackend(ctx)
+                        : newOutboundDataOperation.getInvolvedCSP();
+                List<CString> dataIds = newOutboundDataOperation.getDataIds();
+                IntStream.range(0, dataIds.size()).forEach(
+                        i -> dataIds.set(i, modifyDatabaseName(dataIds.get(i), backendDatabaseNames.get(backend))));
+                newOutboundDataOperation.getCriterions().stream().filter(c -> c != null).forEach(
+                        c -> c.setDataId(modifyDatabaseName(c.getDataId(), backendDatabaseNames.get(backend))));
+            });
+        }
         @SuppressWarnings("unchecked")
-        List<Map.Entry<SelectItem, List<String>>> selectItemIds = (List<Map.Entry<SelectItem, List<String>>>) dataOperation
+        List<Map.Entry<SelectItem, List<String>>> selectItemIds = (List<Map.Entry<SelectItem, List<String>>>) outboundDataOperation
                 .getAttribute("selectItemIds");
         if (selectItemIds != null) {
             selectItemIds.forEach(entry -> {
@@ -1764,33 +1903,110 @@ public class PgsqlEventProcessor implements EventProcessor {
                 if (selectItem instanceof SelectExpressionItem
                         && ((SelectExpressionItem) selectItem).getExpression() instanceof Function) {
                     Function function = (Function) ((SelectExpressionItem) selectItem).getExpression();
-                    if (function.getParameters() != null) {
-                        if (FUNCTION_ADD_GEOMETRY_COLUMN.equalsIgnoreCase(function.getName())) {
-                            Map<String, String> geometryObjectDefinition = getGeometryObjectDefinition(ctx);
-                            String protectedType = null;
-                            if (!geometryObjectDefinition.isEmpty()) {
-                                protectedType = geometryObjectDefinition
-                                        .get(PgsqlConfiguration.GEOMETRIC_OBJECT_PROTECTED_TYPE);
-                            }
-                            if (protectedType != null) {
-                                CString parameterId = CString.valueOf(function.toString());
-                                int idx = dataOperation.getParameterIds().indexOf(parameterId);
-                                if (idx == -1) {
-                                    // should not occur
-                                    LOGGER.error("Parameter id '{}' not found in data operation", parameterId);
-                                }
-                                for (DataOperation newDataOperation : newDataOperations) {
-                                    String oldParameterValue = newDataOperation.getParameterValues().get(idx)
-                                            .toString();
-                                    String newParameterValue = oldParameterValue;
-                                    for (GeometryType geometryType : GeometryType.values()) {
-                                        newParameterValue = newParameterValue.replaceAll("(?i)" + geometryType,
-                                                protectedType);
-                                    }
-                                    if (newParameterValue != oldParameterValue) {
-                                        newDataOperation.getParameterValues().set(idx,
-                                                CString.valueOf(newParameterValue));
-                                        newDataOperation.setModified(true);
+                    if (function.getParameters() != null && function.getParameters().getExpressions() != null) {
+                        // for each dataId, prepare the possible modification of the
+                        // database name, of the schema name, of the table name and
+                        // of the column name
+                        List<String> dataIds = entry.getValue();
+                        List<Pattern> dataIdPatterns = dataIds
+                                .stream().map(
+                                        dataId -> isFullyQualifiedDataId(dataId)
+                                                ? Pattern.compile(String.format("(%s\\.?)?(%s\\.?)?(%s\\.?)?(%s)?",
+                                                        getDatabaseName(dataId), getSchemaName(dataId),
+                                                        getTableName(dataId), getColumnName(dataId)))
+                                                : null)
+                                .collect(Collectors.toList());
+                        List<List<Matcher>> parameterMatchers = function.getParameters().getExpressions().stream()
+                                .map(parameter -> parameter instanceof StringValue
+                                        ? ((StringValue) parameter).getValue() : parameter.toString())
+                                .map(StringUtilities::unquote).map(value -> value.replace("\".\"", "."))
+                                .map(value -> dataIdPatterns.stream()
+                                        .map(pattern -> pattern != null ? pattern.matcher(value) : null)
+                                        .collect(Collectors.toList()))
+                                .collect(Collectors.toList());
+                        if (parameterMatchers.stream().flatMap(List::stream).filter(matcher -> matcher != null)
+                                .anyMatch(Matcher::matches)) {
+                            // prepare extraction functions
+                            List<java.util.function.Function<String, String>> fctGetDataIdParts = Stream.<java.util.function.Function<String, String>>of(
+                                    this::getDatabaseName, this::getSchemaName, this::getTableName, this::getColumnName)
+                                    .collect(Collectors.toList());
+                            for (int backend = 0; backend < newOutboundDataOperations.size(); backend++) {
+                                OutboundDataOperation newOutboundDataOperation = newOutboundDataOperations.get(backend);
+                                Map<CString, CString> dataIdMapping = newOutboundDataOperation.getDataIdMapping();
+                                Map<String, String> mapping = dataIdMapping.entrySet().stream().collect(
+                                        Collectors.toMap(e -> e.getKey().toString(), e -> e.getValue().toString()));
+                                List<CString> newDataValues = newOutboundDataOperation.getDataValues().get(0);
+                                for (int c = 0; c < newDataValues.size(); c++) {
+                                    CString newDataValue = newDataValues.get(c);
+                                    if (newDataValue != null && newDataValue.equals(function.toString())) {
+                                        String dataValue = newDataValue.toString();
+                                        Function newFunction = null;
+                                        CCJSqlParser parser = new CCJSqlParser(new StringReader(dataValue));
+                                        try {
+                                            newFunction = parser.Function();
+                                        } catch (Exception e) {
+                                            LOGGER.error("Parsing error for {} : ", dataValue, e);
+                                        }
+                                        if (newFunction != null && newFunction.getParameters() != null
+                                                && newFunction.getParameters().getExpressions() != null) {
+                                            for (int p = 0; p < newFunction.getParameters().getExpressions()
+                                                    .size(); p++) {
+                                                for (int i = 0; i < parameterMatchers.get(p).size(); i++) {
+                                                    Matcher parameterMatcher = parameterMatchers.get(p).get(i);
+                                                    if (parameterMatcher != null && parameterMatcher.matches()) {
+                                                        String dataId = dataIds.get(i);
+                                                        if (isFullyQualifiedDataId(dataId)) {
+                                                            String protectedDataId = mapping.get(dataId);
+                                                            if (isFullyQualifiedDataId(protectedDataId)) {
+                                                                StringBuilder target = new StringBuilder();
+                                                                StringBuilder replacement = new StringBuilder();
+                                                                for (int g = 0; g < fctGetDataIdParts.size(); g++) {
+                                                                    String group = parameterMatcher.group(g + 1);
+                                                                    if (group != null && !group.isEmpty()) {
+                                                                        java.util.function.Function<String, String> fctGetDataIdPart = fctGetDataIdParts
+                                                                                .get(g);
+                                                                        if (target.length() > 0) {
+                                                                            target.append('.');
+                                                                        }
+                                                                        target.append(fctGetDataIdPart.apply(dataId));
+                                                                        if (protectedDataId != null) {
+                                                                            if (replacement.length() > 0) {
+                                                                                replacement.append('.');
+                                                                            }
+                                                                            replacement.append(fctGetDataIdPart
+                                                                                    .apply(protectedDataId));
+                                                                        }
+                                                                    }
+                                                                }
+                                                                Expression parameter = newFunction.getParameters()
+                                                                        .getExpressions().get(p);
+                                                                String value = parameter instanceof StringValue
+                                                                        ? ((StringValue) parameter).getValue()
+                                                                        : parameter.toString();
+                                                                boolean withQuotes = StringUtilities.hasQuote(value);
+                                                                if (withQuotes) {
+                                                                    value = StringUtilities.unquote(value)
+                                                                            .replace("\".\"", ".");
+                                                                }
+                                                                String newValue = value.replace(target.toString(),
+                                                                        replacement.toString());
+                                                                if (withQuotes) {
+                                                                    newValue = StringUtilities
+                                                                            .quote(newValue.replace(".", "\".\""));
+                                                                }
+                                                                Expression newParameter = buildExpression(parameter,
+                                                                        value, newValue);
+                                                                newFunction.getParameters().getExpressions().set(p,
+                                                                        newParameter);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            String modifiedDataValue = newFunction.toString();
+                                            newDataValues.set(c, CString.valueOf(modifiedDataValue));
+                                            newOutboundDataOperation.setModified(true);
+                                        }
                                     }
                                 }
                             }
@@ -1798,78 +2014,485 @@ public class PgsqlEventProcessor implements EventProcessor {
                     }
                 }
             });
+            if (outboundDataOperation.getOperation() == Operation.CREATE
+                    || outboundDataOperation.getOperation() == Operation.UPDATE) {
+                selectItemIds.forEach(entry -> {
+                    SelectItem selectItem = entry.getKey();
+                    if (selectItem instanceof SelectExpressionItem
+                            && ((SelectExpressionItem) selectItem).getExpression() instanceof Function) {
+                        Function function = (Function) ((SelectExpressionItem) selectItem).getExpression();
+                        if (FUNCTION_ADD_GEOMETRY_COLUMN.equalsIgnoreCase(function.getName())) {
+                            // prepare the possible modification of the geometry
+                            // type
+                            String protectedType = null;
+                            Map<String, String> geometryObjectDefinition = getGeometryObjectDefinition(ctx);
+                            if (!geometryObjectDefinition.isEmpty()) {
+                                protectedType = geometryObjectDefinition
+                                        .get(PgsqlConfiguration.GEOMETRIC_OBJECT_PROTECTED_TYPE);
+                            }
+                            // modify the geometry type if necessary
+                            if (protectedType != null) {
+                                for (DataOperation newOutboundDataOperation : newOutboundDataOperations) {
+                                    List<CString> newDataValues = newOutboundDataOperation.getDataValues().get(0);
+                                    for (int c = 0; c < newDataValues.size(); c++) {
+                                        CString newDataValue = newDataValues.get(c);
+                                        if (newDataValue != null && newDataValue.startsWith(function.getName())) {
+                                            String dataValue = newDataValue.toString();
+                                            String modifiedDataValue = dataValue;
+                                            for (GeometryType geometryType : GeometryType.values()) {
+                                                String clearType = geometryType.toString();
+                                                if (!clearType.equals(protectedType)) {
+                                                    modifiedDataValue = modifiedDataValue
+                                                            .replaceAll("(?i)\\b" + clearType + "\\b", protectedType);
+                                                }
+                                            }
+                                            if (!modifiedDataValue.equals(dataValue)) {
+                                                newDataValues.set(c, CString.valueOf(modifiedDataValue));
+                                                newOutboundDataOperation.setModified(true);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
         }
-        if (dataOperation.getOperation() == Operation.READ) {
-            if (dataOperation.getDataIds().stream().anyMatch(
-                    id -> id.endsWith("geometry_columns/f_table_catalog") || id.endsWith("geometry_columns/type"))) {
-                SQLSession session = getSession(ctx);
-                List<String> backendDatabaseNames = getBackendDatabaseNames(ctx);
-                Map<String, String> geometryObjectDefinition = getGeometryObjectDefinition(ctx);
-                if (!geometryObjectDefinition.isEmpty()) {
-                    String catalogName = session.getDatabaseName();
-                    String clearType = geometryObjectDefinition.get(PgsqlConfiguration.GEOMETRIC_OBJECT_CLEAR_TYPE);
-                    String protectedType = geometryObjectDefinition
-                            .get(PgsqlConfiguration.GEOMETRIC_OBJECT_PROTECTED_TYPE);
-                    if (!clearType.equalsIgnoreCase(protectedType)
-                            || backendDatabaseNames.stream().anyMatch(dbn -> !dbn.equals(catalogName))) {
-                        String geometricDataId = geometryObjectDefinition.get(PgsqlConfiguration.GEOMETRIC_DATA_ID);
-                        String defaultSchema = geometricDataId.substring(0, geometricDataId.indexOf('.'));
-                        String defaultTable = geometricDataId.substring(geometricDataId.indexOf('.') + 1,
-                                geometricDataId.indexOf('/'));
-                        String defaultColumn = geometricDataId.substring(geometricDataId.indexOf('/') + 1);
-                        Pattern pattern = Pattern.compile(escapeRegex(geometricDataId));
-                        newDataOperations.stream().forEach(newDataOperation -> {
-                            List<CString> dataIds = newDataOperation.getDataIds();
-                            int[] catalogIndexes = backendDatabaseNames.stream()
-                                    .anyMatch(dbn -> !dbn.equals(catalogName))
-                                            ? IntStream.range(0, dataIds.size())
-                                                    .filter(i -> dataIds.get(i)
-                                                            .endsWith("geometry_columns/f_table_catalog"))
-                                                    .toArray()
-                                            : new int[0];
-                            int[] typeIndexes = !clearType.equalsIgnoreCase(protectedType)
+        String[] geometryColumnsDataids = Stream
+                .of("f_table_catalog", "f_table_schema", "f_table_name", "f_geometry_column", "type")
+                .map(cn -> "geometry_columns/" + cn).toArray(String[]::new);
+        if (outboundDataOperation.getOperation() == Operation.READ && (outboundDataOperation.getDataIds().stream()
+                .anyMatch(id -> Stream.of(geometryColumnsDataids).anyMatch(cid -> id.endsWith(cid)))
+                || outboundDataOperation.getCriterions().stream().filter(c -> c != null)
+                        .map(OutboundDataOperation.Criterion::getDataId)
+                        .anyMatch(id -> Stream.of(geometryColumnsDataids).anyMatch(cid -> id.endsWith(cid))))) {
+            Map<String, String> geometryObjectDefinition = getGeometryObjectDefinition(ctx);
+            if (!geometryObjectDefinition.isEmpty()) {
+                boolean catalogProtected = backendDatabaseNames.stream()
+                        .anyMatch(dbn -> !dbn.equals(getDatabaseName(ctx)));
+                String geometricDataId = geometryObjectDefinition.get(PgsqlConfiguration.GEOMETRIC_DATA_ID);
+                List<CString> protectedGeometricDataIds = null;
+                if (geometricDataId != null) {
+                    MetadataOperation metadataOperation = new MetadataOperation();
+                    metadataOperation.addDataId(CString.valueOf(geometricDataId));
+                    List<Entry<CString, List<CString>>> metadata = newMetaDataOperation(ctx, metadataOperation)
+                            .getMetadata();
+                    protectedGeometricDataIds = !metadata.isEmpty() ? metadata.get(0).getValue() : null;
+                }
+                String protectedGeometricDataId = protectedGeometricDataIds != null
+                        && !protectedGeometricDataIds.isEmpty() ? protectedGeometricDataIds.get(0).toString() : null;
+                boolean dataIdProtected = geometricDataId != null && protectedGeometricDataId != null
+                        && !geometricDataId.equals(protectedGeometricDataId);
+                String clearType = geometryObjectDefinition.get(PgsqlConfiguration.GEOMETRIC_OBJECT_CLEAR_TYPE);
+                String protectedType = geometryObjectDefinition.get(PgsqlConfiguration.GEOMETRIC_OBJECT_PROTECTED_TYPE);
+                boolean typeProtected = !Objects.equals(clearType, protectedType);
+                if (catalogProtected || dataIdProtected || typeProtected) {
+                    String catalogName = dataIdProtected && !getDatabaseName(geometricDataId).equals("*")
+                            ? getDatabaseName(geometricDataId) : catalogProtected ? getDatabaseName(ctx) : "*";
+                    String schemaName = dataIdProtected ? getSchemaName(geometricDataId) : "*";
+                    String tableName = dataIdProtected ? getTableName(geometricDataId) : "*";
+                    String columnName = dataIdProtected ? getColumnName(geometricDataId) : "*";
+                    String protectedCatalogName = dataIdProtected ? getDatabaseName(protectedGeometricDataId)
+                            : catalogProtected ? backendDatabaseNames.get(0) : "*";
+                    String protectedSchemaName = dataIdProtected ? getSchemaName(protectedGeometricDataId) : "*";
+                    String protectedTableName = dataIdProtected ? getTableName(protectedGeometricDataId) : "*";
+                    String protectedColumnName = dataIdProtected ? getColumnName(protectedGeometricDataId) : "*";
+                    boolean protectCatalogName = !protectedCatalogName.equals("*") && !catalogName.equals("*")
+                            && !catalogName.equals(protectedCatalogName);
+                    boolean protectSchemaName = !protectedSchemaName.equals("*") && !schemaName.equals("*")
+                            && !schemaName.equals(protectedSchemaName);
+                    boolean protectTableName = !protectedTableName.equals("*") && !tableName.equals("*")
+                            && !tableName.equals(protectedTableName);
+                    boolean protectColumnName = !protectedColumnName.equals("*") && !columnName.equals("*")
+                            && !columnName.equals(protectedColumnName);
+                    newOutboundDataOperations.stream().forEach(newOutboundDataOperation -> {
+                        {
+                            // process data identifiers
+                            List<CString> dataIds = newOutboundDataOperation.getDataIds();
+                            int[] catalogIndexes = catalogProtected ? IntStream.range(0, dataIds.size())
+                                    .filter(i -> dataIds.get(i).endsWith("geometry_columns/f_table_catalog")).toArray()
+                                    : new int[0];
+                            int[] dataIdIndexes = dataIdProtected
+                                    ? IntStream.range(0, dataIds.size())
+                                            .filter(i -> Stream
+                                                    .of("f_table_catalog", "f_table_schema", "f_table_name",
+                                                            "f_geometry_column")
+                                                    .anyMatch(cn -> dataIds.get(i).endsWith("geometry_columns/" + cn)))
+                                            .toArray()
+                                    : new int[0];
+                            int[] typeIndexes = typeProtected
                                     ? IntStream.range(0, dataIds.size())
                                             .filter(i -> dataIds.get(i).endsWith("geometry_columns/type")).toArray()
                                     : new int[0];
-                            if (typeIndexes.length > 0 || catalogIndexes.length > 0) {
-                                int[] indexes = Stream.of("f_table_schema", "f_table_name", "f_geometry_column")
-                                        .map(s -> "geometry_columns/" + s)
-                                        .map(suffix -> IntStream.range(0, dataIds.size())
-                                                .filter(i -> dataIds.get(i).endsWith(suffix)).findFirst().orElse(-1))
-                                        .mapToInt(Integer::intValue).toArray();
-                                List<List<CString>> dataValues = newDataOperation.getDataValues();
-                                if (dataValues.isEmpty()) {
-                                    newDataOperation.setModified(true);
-                                } else {
-                                    long nbRows = dataValues.stream().filter(row -> {
-                                        String schema = indexes[0] != -1 ? row.get(indexes[0]).toString()
-                                                : defaultSchema;
-                                        String table = indexes[1] != -1 ? row.get(indexes[1]).toString() : defaultTable;
-                                        String column = indexes[2] != -1 ? row.get(indexes[2]).toString()
-                                                : defaultColumn;
-                                        CString rowDataId = CString.valueOf(schema).append('.').append(table)
-                                                .append('/').append(column);
-                                        return pattern.matcher(rowDataId).matches();
-                                    }).filter(row -> Arrays.stream(typeIndexes)
-                                            .anyMatch(idx -> !row.get(idx).equals(clearType))
-                                            || Arrays.stream(catalogIndexes)
-                                                    .anyMatch(idx -> !row.get(idx).equals(catalogName)))
-                                            .peek(row -> Arrays.stream(typeIndexes)
-                                                    .filter(idx -> !row.get(idx).equals(clearType))
-                                                    .forEach(idx -> row.set(idx, CString.valueOf(clearType))))
-                                            .peek(row -> Arrays.stream(catalogIndexes)
-                                                    .filter(idx -> !row.get(idx).equals(catalogName))
-                                                    .forEach(idx -> row.set(idx, CString.valueOf(catalogName))))
-                                            .count();
-                                    newDataOperation.setModified(nbRows > 0);
+                            if (Stream.of(catalogIndexes, dataIdIndexes, typeIndexes).anyMatch(arr -> arr.length > 0)) {
+                                newOutboundDataOperation.setModified(true);
+                            }
+                        }
+                        {
+                            // process criterions
+                            List<OutboundDataOperation.Criterion> criterions = newOutboundDataOperation.getCriterions();
+                            int[] catalogIndexes = protectCatalogName
+                                    ? IntStream.range(0, criterions.size()).filter(i -> criterions.get(i) != null)
+                                            .filter(i -> criterions.get(i).getDataId()
+                                                    .endsWith("geometry_columns/f_table_catalog"))
+                                            .toArray()
+                                    : new int[0];
+                            int[] schemaIndexes = protectSchemaName
+                                    ? IntStream.range(0, criterions.size()).filter(i -> criterions.get(i) != null)
+                                            .filter(i -> criterions.get(i).getDataId()
+                                                    .endsWith("geometry_columns/f_table_schema"))
+                                            .toArray()
+                                    : new int[0];
+                            int[] tableIndexes = protectTableName
+                                    ? IntStream.range(0, criterions.size())
+                                            .filter(i -> criterions.get(i) != null).filter(i -> criterions.get(i)
+                                                    .getDataId().endsWith("geometry_columns/f_table_name"))
+                                            .toArray()
+                                    : new int[0];
+                            int[] columnIndexes = protectColumnName
+                                    ? IntStream.range(0, criterions.size()).filter(i -> criterions.get(i) != null)
+                                            .filter(i -> criterions.get(i).getDataId()
+                                                    .endsWith("geometry_columns/f_geometry_column"))
+                                            .toArray()
+                                    : new int[0];
+                            int[] typeIndexes = typeProtected
+                                    ? IntStream.range(0, criterions.size())
+                                            .filter(i -> criterions.get(i) != null).filter(i -> criterions.get(i)
+                                                    .getDataId().endsWith("geometry_columns/type"))
+                                            .toArray()
+                                    : new int[0];
+                            if (Stream.of(catalogIndexes, schemaIndexes, tableIndexes, columnIndexes, typeIndexes)
+                                    .anyMatch(arr -> arr.length > 0)) {
+                                if (Arrays.stream(catalogIndexes)
+                                        .anyMatch(idx -> criterions.get(idx).getValue().equals(catalogName))
+                                        || Arrays.stream(schemaIndexes)
+                                                .anyMatch(idx -> criterions.get(idx).getValue().equals(schemaName))
+                                        || Arrays.stream(tableIndexes)
+                                                .anyMatch(idx -> criterions.get(idx).getValue().equals(tableName))
+                                        || Arrays.stream(columnIndexes)
+                                                .anyMatch(idx -> criterions.get(idx).getValue().equals(columnName))
+                                        || Arrays.stream(typeIndexes)
+                                                .anyMatch(idx -> criterions.get(idx).getValue().equals(clearType))) {
+                                    Arrays.stream(catalogIndexes)
+                                            .filter(idx -> criterions.get(idx).getValue().equals(catalogName))
+                                            .forEach(idx -> criterions.get(idx)
+                                                    .setValue(CString.valueOf(protectedCatalogName)));
+                                    Arrays.stream(schemaIndexes)
+                                            .filter(idx -> criterions.get(idx).getValue().equals(schemaName))
+                                            .forEach(idx -> criterions.get(idx)
+                                                    .setValue(CString.valueOf(protectedSchemaName)));
+                                    Arrays.stream(tableIndexes)
+                                            .filter(idx -> criterions.get(idx).getValue().equals(tableName))
+                                            .forEach(idx -> criterions.get(idx)
+                                                    .setValue(CString.valueOf(protectedTableName)));
+                                    Arrays.stream(columnIndexes)
+                                            .filter(idx -> criterions.get(idx).getValue().equals(columnName))
+                                            .forEach(idx -> criterions.get(idx)
+                                                    .setValue(CString.valueOf(protectedColumnName)));
+                                    Arrays.stream(typeIndexes)
+                                            .filter(idx -> criterions.get(idx).getValue().equals(clearType))
+                                            .forEach(idx -> criterions.get(idx)
+                                                    .setValue(CString.valueOf(protectedType)));
+                                    newOutboundDataOperation.setModified(true);
                                 }
                             }
+                        }
+                    });
+                }
+            }
+        }
+        String[] pgStatsDataids = Stream.of("schemaname", "tablename", "attname").map(cn -> "pg_stats/" + cn)
+                .toArray(String[]::new);
+        if (outboundDataOperation.getOperation() == Operation.READ && (outboundDataOperation.getCriterions().stream()
+                .filter(c -> c != null).map(OutboundDataOperation.Criterion::getDataId)
+                .anyMatch(id -> Stream.of(pgStatsDataids).anyMatch(cid -> id.endsWith(cid))))) {
+            newOutboundDataOperations.stream().forEach(newOutboundDataOperation -> {
+                // process criterions
+                List<OutboundDataOperation.Criterion> criterions = newOutboundDataOperation.getCriterions();
+                String clearDataId = "*/" + Stream.of(pgStatsDataids)
+                        .map(cid -> criterions.stream().filter(c -> c.getDataId().endsWith(cid))
+                                .map(OutboundDataOperation.Criterion::getValue).map(CString::toString).findFirst()
+                                .orElse("*"))
+                        .collect(Collectors.joining("/")).replaceFirst("/", ".");
+                MetadataOperation metadataOperation = new MetadataOperation();
+                metadataOperation.addDataId(CString.valueOf(clearDataId));
+                List<Entry<CString, List<CString>>> metadata = newMetaDataOperation(ctx, metadataOperation)
+                        .getMetadata();
+                List<CString> protectedDataIds = !metadata.isEmpty() ? metadata.get(0).getValue() : null;
+                String protectedDataId = protectedDataIds != null && !protectedDataIds.isEmpty()
+                        ? protectedDataIds.get(0).toString() : null;
+                boolean dataIdProtected = protectedDataId != null && !clearDataId.equals(protectedDataId);
+                if (dataIdProtected) {
+                    String schemaName = dataIdProtected ? getSchemaName(clearDataId) : "*";
+                    String tableName = dataIdProtected ? getTableName(clearDataId) : "*";
+                    String columnName = dataIdProtected ? getColumnName(clearDataId) : "*";
+                    String protectedSchemaName = dataIdProtected ? getSchemaName(protectedDataId) : "*";
+                    String protectedTableName = dataIdProtected ? getTableName(protectedDataId) : "*";
+                    String protectedColumnName = dataIdProtected ? getColumnName(protectedDataId) : "*";
+                    boolean protectSchemaName = !protectedSchemaName.equals("*") && !schemaName.equals("*")
+                            && !schemaName.equals(protectedSchemaName);
+                    boolean protectTableName = !protectedTableName.equals("*") && !tableName.equals("*")
+                            && !tableName.equals(protectedTableName);
+                    boolean protectColumnName = !protectedColumnName.equals("*") && !columnName.equals("*")
+                            && !columnName.equals(protectedColumnName);
+                    int[] schemaIndexes = protectSchemaName ? IntStream.range(0, criterions.size())
+                            .filter(i -> criterions.get(i) != null)
+                            .filter(i -> criterions.get(i).getDataId().endsWith("pg_stats/schemaname")).toArray()
+                            : new int[0];
+                    int[] tableIndexes = protectTableName
+                            ? IntStream.range(0, criterions.size()).filter(i -> criterions.get(i) != null)
+                                    .filter(i -> criterions.get(i).getDataId().endsWith("pg_stats/tablename")).toArray()
+                            : new int[0];
+                    int[] columnIndexes = protectColumnName
+                            ? IntStream.range(0, criterions.size()).filter(i -> criterions.get(i) != null)
+                                    .filter(i -> criterions.get(i).getDataId().endsWith("pg_stats/attname")).toArray()
+                            : new int[0];
+                    if (Stream.of(schemaIndexes, tableIndexes, columnIndexes).anyMatch(arr -> arr.length > 0)) {
+                        if (Arrays.stream(schemaIndexes)
+                                .anyMatch(idx -> criterions.get(idx).getValue().equals(schemaName))
+                                || Arrays.stream(tableIndexes)
+                                        .anyMatch(idx -> criterions.get(idx).getValue().equals(tableName))
+                                || Arrays.stream(columnIndexes)
+                                        .anyMatch(idx -> criterions.get(idx).getValue().equals(columnName))) {
+                            Arrays.stream(schemaIndexes)
+                                    .filter(idx -> criterions.get(idx).getValue().equals(schemaName))
+                                    .forEach(idx -> criterions.get(idx).setValue(CString.valueOf(protectedSchemaName)));
+                            Arrays.stream(tableIndexes).filter(idx -> criterions.get(idx).getValue().equals(tableName))
+                                    .forEach(idx -> criterions.get(idx).setValue(CString.valueOf(protectedTableName)));
+                            Arrays.stream(columnIndexes)
+                                    .filter(idx -> criterions.get(idx).getValue().equals(columnName))
+                                    .forEach(idx -> criterions.get(idx).setValue(CString.valueOf(protectedColumnName)));
+                            newOutboundDataOperation.setModified(true);
+                        }
+                    }
+                }
+            });
+        }
+        return newOutboundDataOperations;
+    }
+
+    private boolean isFullyQualifiedDataId(String dataId) {
+        Matcher matcher = FQ_DATA_ID_PATTERN.matcher(dataId);
+        return matcher.matches();
+    }
+
+    private String getDatabaseName(String dataId) {
+        Matcher matcher = FQ_DATA_ID_PATTERN.matcher(dataId);
+        if (matcher.matches()) {
+            return matcher.group(1);
+        }
+        return null;
+    }
+
+    private String getSchemaName(String dataId) {
+        Matcher matcher = FQ_DATA_ID_PATTERN.matcher(dataId);
+        if (matcher.matches()) {
+            return matcher.group(2);
+        }
+        return null;
+    }
+
+    private String getTableName(String dataId) {
+        Matcher matcher = FQ_DATA_ID_PATTERN.matcher(dataId);
+        if (matcher.matches()) {
+            return matcher.group(3);
+        }
+        return null;
+    }
+
+    private String getColumnName(String dataId) {
+        Matcher matcher = FQ_DATA_ID_PATTERN.matcher(dataId);
+        if (matcher.matches()) {
+            return matcher.group(4);
+        }
+        return null;
+    }
+
+    private InboundDataOperation newInboundDataOperation(ChannelHandlerContext ctx,
+            List<InboundDataOperation> inboundDataOperations) {
+        List<String> backendDatabaseNames = getBackendDatabaseNames(ctx);
+        if (!backendDatabaseNames.isEmpty()) {
+            // Modify data ids (replace back-end database name)
+            inboundDataOperations.stream().forEach(inboundDataOperation -> {
+                List<CString> dataIds = inboundDataOperation.getDataIds();
+                String databaseName = getDatabaseName(ctx);
+                IntStream.range(0, dataIds.size())
+                        .forEach(i -> dataIds.set(i, modifyDatabaseName(dataIds.get(i), databaseName)));
+            });
+        }
+        inboundDataOperations.stream().forEach(inboundDataOperation -> {
+            if (inboundDataOperation.getOperation() == Operation.READ && inboundDataOperation.getDataIds().stream()
+                    .anyMatch(id -> Stream.of("typname", "typelem").anyMatch(cn -> id.endsWith("pg_types/" + cn)))) {
+                List<CString> dataIds = inboundDataOperation.getDataIds();
+                int typnameIndex = IntStream.range(0, dataIds.size())
+                        .filter(i -> dataIds.get(i).endsWith("pg_types/typname")).findFirst().orElse(-1);
+                int typelemIndex = IntStream.range(0, dataIds.size())
+                        .filter(i -> dataIds.get(i).endsWith("pg_types/typelem")).findFirst().orElse(-1);
+                if (Stream.of(typnameIndex, typelemIndex).allMatch(idx -> idx != -1)) {
+                    List<List<CString>> dataValues = inboundDataOperation.getDataValues();
+                    Types backendTypes = getTypes(ctx, inboundDataOperation.getInvolvedCSP());
+                    dataValues.forEach(row -> {
+                        String typname = row.get(typnameIndex).toString();
+                        String typelem = row.get(typelemIndex).toString();
+                        backendTypes.setTypeOid(typname, Long.parseLong(typelem));
+                    });
+                }
+            }
+        });
+        InboundDataOperation newInboundDataOperation = getProtocolService(ctx)
+                .newInboundDataOperation(inboundDataOperations);
+        if (!backendDatabaseNames.isEmpty()) {
+            // Modify data ids (replace database name by the back-end database
+            // name)
+            int backend = newInboundDataOperation.getInvolvedCSP() == -1 ? getPreferredBackend(ctx)
+                    : newInboundDataOperation.getInvolvedCSP();
+            List<CString> dataIds = newInboundDataOperation.getDataIds();
+            IntStream.range(0, dataIds.size()).forEach(
+                    i -> dataIds.set(i, modifyDatabaseName(dataIds.get(i), backendDatabaseNames.get(backend))));
+        }
+        if (newInboundDataOperation.getOperation() == Operation.READ && newInboundDataOperation.getDataIds().stream()
+                .anyMatch(id -> Stream.of("typname", "typelem").anyMatch(cn -> id.endsWith("pg_types/" + cn)))) {
+            List<CString> dataIds = newInboundDataOperation.getDataIds();
+            int typnameIndex = IntStream.range(0, dataIds.size())
+                    .filter(i -> dataIds.get(i).endsWith("pg_types/typname")).findFirst().orElse(-1);
+            int typelemIndex = IntStream.range(0, dataIds.size())
+                    .filter(i -> dataIds.get(i).endsWith("pg_types/typelem")).findFirst().orElse(-1);
+            if (Stream.of(typnameIndex, typelemIndex).allMatch(idx -> idx != -1)) {
+                List<List<CString>> dataValues = newInboundDataOperation.getDataValues();
+                Types types = getTypes(ctx, -1);
+                dataValues.forEach(row -> {
+                    String typname = row.get(typnameIndex).toString();
+                    String typelem = row.get(typelemIndex).toString();
+                    types.setTypeOid(typname, Long.parseLong(typelem));
+                });
+            }
+        }
+        if (newInboundDataOperation.getOperation() == Operation.READ && newInboundDataOperation.getDataIds().stream()
+                .anyMatch(id -> Stream
+                        .of("f_table_catalog", "f_table_schema", "f_table_name", "f_geometry_column", "srid", "type")
+                        .anyMatch(cn -> id.endsWith("geometry_columns/" + cn)))) {
+            Map<String, String> geometryObjectDefinition = getGeometryObjectDefinition(ctx);
+            if (!geometryObjectDefinition.isEmpty()) {
+                boolean catalogProtected = backendDatabaseNames.stream()
+                        .anyMatch(dbn -> !dbn.equals(getDatabaseName(ctx)));
+                String geometricDataId = geometryObjectDefinition.get(PgsqlConfiguration.GEOMETRIC_DATA_ID);
+                List<CString> protectedGeometricDataIds = null;
+                if (geometricDataId != null) {
+                    MetadataOperation metadataOperation = new MetadataOperation();
+                    metadataOperation.addDataId(CString.valueOf(geometricDataId));
+                    List<Entry<CString, List<CString>>> metadata = newMetaDataOperation(ctx, metadataOperation)
+                            .getMetadata();
+                    protectedGeometricDataIds = !metadata.isEmpty() ? metadata.get(0).getValue() : null;
+                }
+                String protectedGeometricDataId = protectedGeometricDataIds != null
+                        && !protectedGeometricDataIds.isEmpty() ? protectedGeometricDataIds.get(0).toString() : null;
+                boolean dataIdProtected = geometricDataId != null && protectedGeometricDataId != null
+                        && !geometricDataId.equals(protectedGeometricDataId);
+                String clearType = geometryObjectDefinition.get(PgsqlConfiguration.GEOMETRIC_OBJECT_CLEAR_TYPE);
+                String protectedType = geometryObjectDefinition.get(PgsqlConfiguration.GEOMETRIC_OBJECT_PROTECTED_TYPE);
+                boolean typeProtected = !Objects.equals(clearType, protectedType);
+                if (catalogProtected || dataIdProtected || typeProtected) {
+                    String catalogName = dataIdProtected && !getDatabaseName(geometricDataId).equals("*")
+                            ? getDatabaseName(geometricDataId) : catalogProtected ? getDatabaseName(ctx) : "*";
+                    String schemaName = dataIdProtected ? getSchemaName(geometricDataId) : "*";
+                    String tableName = dataIdProtected ? getTableName(geometricDataId) : "*";
+                    String columnName = dataIdProtected ? getColumnName(geometricDataId) : "*";
+                    String protectedCatalogName = dataIdProtected ? getDatabaseName(protectedGeometricDataId)
+                            : catalogProtected ? backendDatabaseNames.get(0) : "*";
+                    String protectedSchemaName = dataIdProtected ? getSchemaName(protectedGeometricDataId) : "*";
+                    String protectedTableName = dataIdProtected ? getTableName(protectedGeometricDataId) : "*";
+                    String protectedColumnName = dataIdProtected ? getColumnName(protectedGeometricDataId) : "*";
+                    boolean unprotectCatalogName = !protectedCatalogName.equals("*") && !catalogName.equals("*")
+                            && !catalogName.equals(protectedCatalogName);
+                    boolean unprotectSchemaName = !protectedSchemaName.equals("*") && !schemaName.equals("*")
+                            && !schemaName.equals(protectedSchemaName);
+                    boolean unprotectTableName = !protectedTableName.equals("*") && !tableName.equals("*")
+                            && !tableName.equals(protectedTableName);
+                    boolean unprotectColumnName = !protectedColumnName.equals("*") && !columnName.equals("*")
+                            && !columnName.equals(protectedColumnName);
+                    List<CString> dataIds = newInboundDataOperation.getDataIds();
+                    int[] catalogIndexes = unprotectCatalogName
+                            ? IntStream.range(0, dataIds.size())
+                                    .filter(i -> dataIds.get(i).endsWith("geometry_columns/f_table_catalog")).toArray()
+                            : new int[0];
+                    int[] schemaIndexes = unprotectSchemaName
+                            ? IntStream.range(0, dataIds.size())
+                                    .filter(i -> dataIds.get(i).endsWith("geometry_columns/f_table_schema")).toArray()
+                            : new int[0];
+                    int[] tableIndexes = unprotectTableName
+                            ? IntStream.range(0, dataIds.size())
+                                    .filter(i -> dataIds.get(i).endsWith("geometry_columns/f_table_name")).toArray()
+                            : new int[0];
+                    int[] columnIndexes = unprotectColumnName ? IntStream.range(0, dataIds.size())
+                            .filter(i -> dataIds.get(i).endsWith("geometry_columns/f_geometry_column")).toArray()
+                            : new int[0];
+                    int[] typeIndexes = typeProtected
+                            ? IntStream.range(0, dataIds.size())
+                                    .filter(i -> dataIds.get(i).endsWith("geometry_columns/type")).toArray()
+                            : new int[0];
+                    if (Stream.of(catalogIndexes, schemaIndexes, tableIndexes, columnIndexes, typeIndexes)
+                            .anyMatch(arr -> arr.length > 0)) {
+                        List<List<CString>> dataValues = newInboundDataOperation.getDataValues();
+                        long nbRows = dataValues.stream().filter(row -> {
+                            return Arrays.stream(catalogIndexes)
+                                    .anyMatch(idx -> row.get(idx).equals(protectedCatalogName))
+                                    || Arrays.stream(schemaIndexes)
+                                            .anyMatch(idx -> row.get(idx).equals(protectedSchemaName))
+                                    || Arrays.stream(tableIndexes)
+                                            .anyMatch(idx -> row.get(idx).equals(protectedTableName))
+                                    || Arrays.stream(columnIndexes)
+                                            .anyMatch(idx -> row.get(idx).equals(protectedColumnName))
+                                    || Arrays.stream(typeIndexes).anyMatch(idx -> row.get(idx).equals(protectedType));
+                        }).peek(row -> Arrays.stream(catalogIndexes)
+                                .filter(idx -> row.get(idx).equals(protectedCatalogName))
+                                .forEach(idx -> row.set(idx, CString.valueOf(catalogName))))
+                                .peek(row -> Arrays.stream(schemaIndexes)
+                                        .filter(idx -> row.get(idx).equals(protectedSchemaName))
+                                        .forEach(idx -> row.set(idx, CString.valueOf(schemaName))))
+                                .peek(row -> Arrays.stream(tableIndexes)
+                                        .filter(idx -> row.get(idx).equals(protectedTableName))
+                                        .forEach(idx -> row.set(idx, CString.valueOf(tableName))))
+                                .peek(row -> Arrays.stream(columnIndexes)
+                                        .filter(idx -> row.get(idx).equals(protectedColumnName))
+                                        .forEach(idx -> row.set(idx, CString.valueOf(columnName))))
+                                .peek(row -> Arrays.stream(typeIndexes)
+                                        .filter(idx -> row.get(idx).equals(protectedType))
+                                        .forEach(idx -> row.set(idx, CString.valueOf(clearType))))
+                                .count();
+                        newInboundDataOperation.setModified(nbRows > 0);
+                    }
+                }
+                if (geometricDataId != null) {
+                    List<CString> dataIds = newInboundDataOperation.getDataIds();
+                    int catalogIndex = IntStream.range(0, dataIds.size())
+                            .filter(i -> dataIds.get(i).endsWith("geometry_columns/f_table_catalog")).findFirst()
+                            .orElse(-1);
+                    int schemaIndex = IntStream.range(0, dataIds.size())
+                            .filter(i -> dataIds.get(i).endsWith("geometry_columns/f_table_schema")).findFirst()
+                            .orElse(-1);
+                    int tableIndex = IntStream.range(0, dataIds.size())
+                            .filter(i -> dataIds.get(i).endsWith("geometry_columns/f_table_name")).findFirst()
+                            .orElse(-1);
+                    int sridIndex = IntStream.range(0, dataIds.size())
+                            .filter(i -> dataIds.get(i).endsWith("geometry_columns/srid")).findFirst().orElse(-1);
+                    if (Stream.of(tableIndex, sridIndex).allMatch(idx -> idx != -1)) {
+                        List<List<CString>> dataValues = newInboundDataOperation.getDataValues();
+                        dataValues.forEach(row -> {
+                            String catalog = catalogIndex != -1 ? row.get(catalogIndex).toString()
+                                    : getDatabaseName(ctx);
+                            String schema = schemaIndex != -1 ? row.get(schemaIndex).toString() : "public";
+                            String table = row.get(tableIndex).toString();
+                            String datasetSrid = String.format("%s/%s.%s", catalog, schema, table);
+                            String srid = row.get(sridIndex).toString();
+                            SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+                            databaseSchema.addDatasetSrid(datasetSrid, srid);
                         });
                     }
                 }
             }
         }
-        return newDataOperations;
+        return newInboundDataOperation;
     }
 
     private String escapeRegex(String regex) {
@@ -1877,16 +2500,30 @@ public class PgsqlEventProcessor implements EventProcessor {
                 .replace("*", "[^/]*");
     }
 
-    private DataOperation extractSetOperation(ChannelHandlerContext ctx, SetStatement stmt) throws ParseException {
-        DataOperation dataOperation = new DataOperation();
-        dataOperation.setOperation(null);
+    private String modifyDatabaseName(String protectedDataId, String databaseName) {
+        return modifyDatabaseName(CString.valueOf(protectedDataId), databaseName).toString();
+    }
+
+    private CString modifyDatabaseName(CString protectedDataId, String databaseName) {
+        int offset = protectedDataId.indexOf('/');
+        if (offset != -1) {
+            protectedDataId = CString.valueOf(databaseName).append(protectedDataId.substring(offset));
+        }
+        return protectedDataId;
+    }
+
+    private OutboundDataOperation extractSetOperation(ChannelHandlerContext ctx, SetStatement stmt)
+            throws ParseException {
+        OutboundDataOperation outboundDataOperation = new OutboundDataOperation();
+        outboundDataOperation.setOperation(null);
         int numberOfBackends = getNumberOfBackends(ctx);
-        dataOperation.setInvolvedCSPs(IntStream.range(0, numberOfBackends).boxed().collect(Collectors.toList()));
-        return dataOperation;
+        outboundDataOperation
+                .setInvolvedCSPs(IntStream.range(0, numberOfBackends).boxed().collect(Collectors.toList()));
+        return outboundDataOperation;
     }
 
     private PgsqlStatement<SetStatement> modifySetStatement(ChannelHandlerContext ctx,
-            PgsqlStatement<SetStatement> statement, DataOperation dataOperation, boolean newStatement) {
+            PgsqlStatement<SetStatement> statement, OutboundDataOperation outboundDataOperation, boolean newStatement) {
         // Prepare statement
         SetStatement stmt = statement.getStatement();
         if (newStatement) {
@@ -1907,17 +2544,19 @@ public class PgsqlEventProcessor implements EventProcessor {
                 statement.getParameterValues(), statement.getResultFormats(), statement.getColumns());
     }
 
-    private DataOperation extractStartTransactionOperation(ChannelHandlerContext ctx, StartTransaction stmt)
+    private OutboundDataOperation extractStartTransactionOperation(ChannelHandlerContext ctx, StartTransaction stmt)
             throws ParseException {
-        DataOperation dataOperation = new DataOperation();
-        dataOperation.setOperation(null);
+        OutboundDataOperation outboundDataOperation = new OutboundDataOperation();
+        outboundDataOperation.setOperation(null);
         int numberOfBackends = getNumberOfBackends(ctx);
-        dataOperation.setInvolvedCSPs(IntStream.range(0, numberOfBackends).boxed().collect(Collectors.toList()));
-        return dataOperation;
+        outboundDataOperation
+                .setInvolvedCSPs(IntStream.range(0, numberOfBackends).boxed().collect(Collectors.toList()));
+        return outboundDataOperation;
     }
 
     private PgsqlStatement<StartTransaction> modifyStartTransactionStatement(ChannelHandlerContext ctx,
-            PgsqlStatement<StartTransaction> statement, DataOperation dataOperation, boolean newStatement) {
+            PgsqlStatement<StartTransaction> statement, OutboundDataOperation outboundDataOperation,
+            boolean newStatement) {
         // Prepare statement
         StartTransaction stmt = statement.getStatement();
         if (newStatement) {
@@ -1938,16 +2577,17 @@ public class PgsqlEventProcessor implements EventProcessor {
                 statement.getParameterValues(), statement.getResultFormats(), statement.getColumns());
     }
 
-    private DataOperation extractCommitOperation(ChannelHandlerContext ctx, Commit stmt) throws ParseException {
-        DataOperation dataOperation = new DataOperation();
-        dataOperation.setOperation(null);
+    private OutboundDataOperation extractCommitOperation(ChannelHandlerContext ctx, Commit stmt) throws ParseException {
+        OutboundDataOperation outboundDataOperation = new OutboundDataOperation();
+        outboundDataOperation.setOperation(null);
         int numberOfBackends = getNumberOfBackends(ctx);
-        dataOperation.setInvolvedCSPs(IntStream.range(0, numberOfBackends).boxed().collect(Collectors.toList()));
-        return dataOperation;
+        outboundDataOperation
+                .setInvolvedCSPs(IntStream.range(0, numberOfBackends).boxed().collect(Collectors.toList()));
+        return outboundDataOperation;
     }
 
     private PgsqlStatement<Commit> modifyCommitStatement(ChannelHandlerContext ctx, PgsqlStatement<Commit> statement,
-            DataOperation dataOperation, boolean newStatement) {
+            OutboundDataOperation outboundDataOperation, boolean newStatement) {
         // Prepare statement
         Commit stmt = statement.getStatement();
         if (newStatement) {
@@ -1968,16 +2608,17 @@ public class PgsqlEventProcessor implements EventProcessor {
                 statement.getParameterValues(), statement.getResultFormats(), statement.getColumns());
     }
 
-    private DataOperation extractCreateTableOperation(ChannelHandlerContext ctx, CreateTable stmt)
+    private OutboundDataOperation extractCreateTableOperation(ChannelHandlerContext ctx, CreateTable stmt)
             throws ParseException {
-        DataOperation dataOperation = new DataOperation();
-        dataOperation.setOperation(Operation.CREATE);
+        OutboundDataOperation outboundDataOperation = new OutboundDataOperation();
+        outboundDataOperation.setOperation(Operation.CREATE);
+        outboundDataOperation.setUsingHeadOperation(true);
         // Extract dataset id
         String schemaId = getSchemaId(ctx, stmt.getTable());
         String datasetId = getTableId(ctx, stmt.getTable(), schemaId);
         // Save mapping between table and dataset id
         Map.Entry<Table, String> tableId = new SimpleEntry<>(stmt.getTable(), datasetId);
-        dataOperation.addAttribute("tableId", tableId);
+        outboundDataOperation.addAttribute("tableId", tableId);
         // Extract data ids
         List<CString> dataIds;
         dataIds = stmt.getColumnDefinitions().stream()
@@ -1991,21 +2632,22 @@ public class PgsqlEventProcessor implements EventProcessor {
                 .map(CString::valueOf)
                 // save as a list
                 .collect(Collectors.toList());
-        dataOperation.setDataIds(dataIds);
+        outboundDataOperation.setDataIds(dataIds);
         // Save mapping between column definitions and data ids
         List<Map.Entry<ColumnDefinition, String>> columnDefinitionIds = IntStream
                 .range(0, stmt.getColumnDefinitions().size())
                 .mapToObj(i -> new SimpleEntry<>(stmt.getColumnDefinitions().get(i), dataIds.get(i).toString()))
                 .collect(Collectors.toList());
-        dataOperation.addAttribute("columnDefinitionIds", columnDefinitionIds);
+        outboundDataOperation.addAttribute("columnDefinitionIds", columnDefinitionIds);
         // Save the table definition for future insert
-        SQLSession session = getSession(ctx);
-        session.addDatasetDefinition(CString.valueOf(datasetId), dataIds);
-        return dataOperation;
+        SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+        databaseSchema.addDatasetDefinition(datasetId,
+                dataIds.stream().map(CString::toString).collect(Collectors.toList()));
+        return outboundDataOperation;
     }
 
     private PgsqlStatement<CreateTable> modifyCreateTableStatement(ChannelHandlerContext ctx,
-            PgsqlStatement<CreateTable> statement, DataOperation dataOperation, boolean newStatement) {
+            PgsqlStatement<CreateTable> statement, OutboundDataOperation outboundDataOperation, boolean newStatement) {
         // Prepare statement
         CreateTable stmt = statement.getStatement();
         if (newStatement) {
@@ -2023,23 +2665,20 @@ public class PgsqlEventProcessor implements EventProcessor {
         }
         CreateTable createTable = stmt;
 
-        int involvedBackend = dataOperation.getInvolvedCSP();
-        if (involvedBackend == -1) {
-            involvedBackend = getPreferredBackend(ctx);
-        }
-        String backendPrefix = "csp" + (involvedBackend + 1) + "/";
+        int involvedBackend = outboundDataOperation.getInvolvedCSP() == -1 ? getPreferredBackend(ctx)
+                : outboundDataOperation.getInvolvedCSP();
 
         // 1. Update clause column definitions
         // 1.1 Retrieve data ids associated to column definitions and table id
         // associated to the table
         @SuppressWarnings("unchecked")
-        List<Map.Entry<ColumnDefinition, String>> columnDefinitionIds = (List<Map.Entry<ColumnDefinition, String>>) dataOperation
+        List<Map.Entry<ColumnDefinition, String>> columnDefinitionIds = (List<Map.Entry<ColumnDefinition, String>>) outboundDataOperation
                 .getAttribute("columnDefinitionIds");
         List<String> dataIdPerColumnDefinition = columnDefinitionIds.stream().map(Map.Entry::getValue)
                 .collect(Collectors.toList());
 
         // 1.2 Retrieve protected data ids
-        List<String> newDataIds1 = dataOperation.getDataIds().stream().map(CString::toString)
+        List<String> newDataIds1 = outboundDataOperation.getDataIds().stream().map(CString::toString)
                 .collect(Collectors.toList());
 
         // 1.3 Retrieve the mapping between clear and protected data ids
@@ -2048,21 +2687,25 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<CString> allDataIds1 = dataIdPerColumnDefinition.stream().map(CString::valueOf)
                 .collect(Collectors.toList());
         metadataOperation1.setDataIds(allDataIds1);
-        List<Map.Entry<CString, List<CString>>> metadata1 = newMetaDataOperation(ctx, metadataOperation1).getMetadata();
         // mapping clear data ids to [protected data ids]:
-        // [0 protected data id] -> column name must be dropped from the query
-        // [1 null protected data id] -> preserve original column name
-        // [1 protected data id] -> replace column name by 1 protected data id
-        // filter to retain metadata mapping only for the involved backend (and
-        // removing the backend prefix)
+        // [0 protected data ids] -> preserve original column name
+        // [null protected data id for a csp] -> column name must be dropped
+        // from the query
+        // [non null protected data id for a csp] -> replace column name by 1
+        // protected data id
+        List<Map.Entry<CString, List<CString>>> metadata1 = newMetaDataOperation(ctx, metadataOperation1).getMetadata();
+        // filter to retain metadata mapping only for the involved backend
+        // [0 protected data id] -> preserve original column name
+        // [1 null protected data id] -> column name must be dropped from the
+        // query
+        // [1 non null protected data id] -> replace column name by 1 protected
+        // data id
         Map<String, List<String>> rawDataIdsMapping1 = metadata1.stream()
-                .collect(
-                        Collectors.toMap(e -> e.getKey().toString(),
-                                e -> e.getValue().stream().filter(pid -> pid == null || pid.startsWith(backendPrefix))
-                                        .map(pid -> pid == null ? null
-                                                : pid.substring(backendPrefix.length()).toString())
-                                        .collect(Collectors.toList()),
-                                (l1, l2) -> l1));
+                .collect(Collectors.toMap(e -> e.getKey().toString(),
+                        e -> e.getValue().isEmpty() ? Collections.emptyList()
+                                : Collections
+                                        .singletonList(StringUtilities.toString(e.getValue().get(involvedBackend))),
+                        (l1, l2) -> l1));
         // mapping original clear data ids to protected data ids:
         Map<String, List<String>> dataIdsMapping1 = allDataIds1.stream().distinct().map(CString::toString)
                 .collect(Collectors.toMap(java.util.function.Function.identity(), id -> rawDataIdsMapping1.get(id)));
@@ -2072,8 +2715,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         Map.Entry<String, String> tableIdMapping = fqDataIdsMapping1.entrySet()
                 .stream().filter(
-                        e -> e.getValue() != null && !e.getValue().isEmpty()
-                                && e.getValue().get(0) != null)
+                        e -> !e.getValue().isEmpty() && e.getValue().get(0) != null)
                 .findAny()
                 .map(e -> new SimpleEntry<>(
                         e.getKey().substring(0,
@@ -2102,16 +2744,16 @@ public class PgsqlEventProcessor implements EventProcessor {
                         .filter(e -> dataId.contains(e.getKey())).flatMap(e -> e.getValue().stream())
                         .collect(Collectors.toList());
                 if (columnDefinitionProtectedDataIds.isEmpty()) {
-                    // drop the select item
-                    newColumnDefinition = null;
+                    // no modification
+                    newColumnDefinition = columnDefinition;
                 } else {
                     // then filter data id mapping on value: retain protected
                     // data id that the data operation has returned
                     List<String> newColumnDefinitionDataIds = columnDefinitionProtectedDataIds.stream()
                             .filter(newDataIds1::contains).collect(Collectors.toList());
                     if (newColumnDefinitionDataIds.isEmpty()) {
-                        // no modification
-                        newColumnDefinition = columnDefinition;
+                        // drop the column definition
+                        newColumnDefinition = null;
                     } else {
                         // For the protected data id selected for the column
                         // definition, build a new column definition
@@ -2192,17 +2834,18 @@ public class PgsqlEventProcessor implements EventProcessor {
         return newTable;
     }
 
-    private DataOperation extractAlterTableOperation(ChannelHandlerContext ctx, Alter stmt, DataOperation dataOperation,
-            Operation operation) throws ParseException {
+    private OutboundDataOperation extractAlterTableOperation(ChannelHandlerContext ctx, Alter stmt,
+            OutboundDataOperation outboundDataOperation, Operation operation) throws ParseException {
         // Extract dataset id
         String schemaId = getSchemaId(ctx, stmt.getTable());
         String datasetId = getTableId(ctx, stmt.getTable(), schemaId);
-        if (dataOperation == null || (operation != null && dataOperation.getOperation() != operation)) {
-            dataOperation = new DataOperation();
-            dataOperation.setOperation(operation != null ? operation : Operation.UPDATE);
+        if (outboundDataOperation == null || (operation != null && outboundDataOperation.getOperation() != operation)) {
+            outboundDataOperation = new OutboundDataOperation();
+            outboundDataOperation.setOperation(operation != null ? operation : Operation.UPDATE);
+            outboundDataOperation.setUsingHeadOperation(true);
             // Save mapping between table and dataset id
             Map.Entry<Table, String> tableId = new SimpleEntry<>(stmt.getTable(), datasetId);
-            dataOperation.addAttribute("tableId", tableId);
+            outboundDataOperation.addAttribute("tableId", tableId);
         }
         // Extract data ids
         List<List<CString>> dataIdsPerAlterExpression;
@@ -2221,18 +2864,18 @@ public class PgsqlEventProcessor implements EventProcessor {
                 // save as a list
                 .collect(Collectors.toList());
         List<CString> dataIds = dataIdsPerAlterExpression.stream().flatMap(List::stream).collect(Collectors.toList());
-        dataIds.removeAll(dataOperation.getDataIds());
-        dataOperation.addDataIds(dataIds);
+        dataIds.removeAll(outboundDataOperation.getDataIds());
+        outboundDataOperation.addDataIds(dataIds);
         // Save mapping between alter expressions and data ids
         @SuppressWarnings("unchecked")
-        List<Map.Entry<AlterExpression, List<String>>> alterExpressionIds = (List<Map.Entry<AlterExpression, List<String>>>) dataOperation
+        List<Map.Entry<AlterExpression, List<String>>> alterExpressionIds = (List<Map.Entry<AlterExpression, List<String>>>) outboundDataOperation
                 .getAttribute("alterExpressionIds");
         if (alterExpressionIds == null) {
             alterExpressionIds = IntStream.range(0, stmt.getAlterExpressions().size())
                     .mapToObj(i -> new SimpleEntry<>(stmt.getAlterExpressions().get(i), dataIdsPerAlterExpression.get(i)
                             .stream().map(CString::toString).collect(Collectors.toList())))
                     .collect(Collectors.toList());
-            dataOperation.addAttribute("alterExpressionIds", alterExpressionIds);
+            outboundDataOperation.addAttribute("alterExpressionIds", alterExpressionIds);
         } else {
             alterExpressionIds
                     .addAll(IntStream
@@ -2244,16 +2887,16 @@ public class PgsqlEventProcessor implements EventProcessor {
                             .collect(Collectors.toList()));
         }
         // Save the table definition for future insert
-        SQLSession session = getSession(ctx);
-        List<CString> datasetDefinition = session.getDatasetDefinition(CString.valueOf(datasetId));
+        SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+        List<String> datasetDefinition = databaseSchema.getDatasetDefinition(datasetId);
         if (datasetDefinition == null) {
-            datasetDefinition = dataIds;
-            session.addDatasetDefinition(CString.valueOf(datasetId), datasetDefinition);
+            datasetDefinition = dataIds.stream().map(CString::toString).collect(Collectors.toList());
+            databaseSchema.addDatasetDefinition(datasetId, datasetDefinition);
         }
         for (AlterExpression alterExpression : stmt.getAlterExpressions()) {
             String columnName = alterExpression.getColumnName();
             if (columnName != null) {
-                CString dataId = CString.valueOf(datasetId + columnName);
+                String dataId = datasetId + columnName;
                 if (alterExpression.getOperation() == AlterOperation.ADD) {
                     if (!datasetDefinition.contains(dataId)) {
                         datasetDefinition.add(dataId);
@@ -2265,7 +2908,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                 }
             }
         }
-        return dataOperation;
+        return outboundDataOperation;
     }
 
     private List<String> extractColumnNames(AlterExpression alterExpression) {
@@ -2297,7 +2940,7 @@ public class PgsqlEventProcessor implements EventProcessor {
     }
 
     private PgsqlStatement<Alter> modifyAlterTableStatement(ChannelHandlerContext ctx, PgsqlStatement<Alter> statement,
-            DataOperation dataOperation, boolean newStatement) {
+            OutboundDataOperation outboundDataOperation, boolean newStatement) {
         // Prepare statement
         Alter stmt = statement.getStatement();
         if (newStatement) {
@@ -2315,23 +2958,20 @@ public class PgsqlEventProcessor implements EventProcessor {
         }
         Alter alterTable = stmt;
 
-        int involvedBackend = dataOperation.getInvolvedCSP();
-        if (involvedBackend == -1) {
-            involvedBackend = getPreferredBackend(ctx);
-        }
-        String backendPrefix = "csp" + (involvedBackend + 1) + "/";
+        int involvedBackend = outboundDataOperation.getInvolvedCSP() == -1 ? getPreferredBackend(ctx)
+                : outboundDataOperation.getInvolvedCSP();
 
         // 1. Update clause alter expressions
         // 1.1 Retrieve data ids associated to alter expressions and table id
         // associated to the table
         @SuppressWarnings("unchecked")
-        List<Map.Entry<AlterExpression, List<String>>> alterExpressionIds = (List<Map.Entry<AlterExpression, List<String>>>) dataOperation
+        List<Map.Entry<AlterExpression, List<String>>> alterExpressionIds = (List<Map.Entry<AlterExpression, List<String>>>) outboundDataOperation
                 .getAttribute("alterExpressionIds");
         List<List<String>> dataIdsPerAlterExpression = alterExpressionIds.stream().map(Map.Entry::getValue)
                 .collect(Collectors.toList());
 
         // 1.2 Retrieve protected data ids
-        List<String> newDataIds1 = dataOperation.getDataIds().stream().map(CString::toString)
+        List<String> newDataIds1 = outboundDataOperation.getDataIds().stream().map(CString::toString)
                 .collect(Collectors.toList());
 
         // 1.3 Retrieve the mapping between clear and protected data ids
@@ -2340,21 +2980,25 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<CString> allDataIds1 = dataIdsPerAlterExpression.stream().flatMap(List::stream).map(CString::valueOf)
                 .collect(Collectors.toList());
         metadataOperation1.setDataIds(allDataIds1);
-        List<Map.Entry<CString, List<CString>>> metadata1 = newMetaDataOperation(ctx, metadataOperation1).getMetadata();
         // mapping clear data ids to [protected data ids]:
-        // [0 protected data id] -> column name must be dropped from the query
-        // [1 null protected data id] -> preserve original column name
-        // [1 protected data id] -> replace column name by 1 protected data id
-        // filter to retain metadata mapping only for the involved backend (and
-        // removing the backend prefix)
+        // [0 protected data ids] -> preserve original column name
+        // [null protected data id for a csp] -> column name must be dropped
+        // from the query
+        // [non null protected data id for a csp] -> replace column name by 1
+        // protected data id
+        List<Map.Entry<CString, List<CString>>> metadata1 = newMetaDataOperation(ctx, metadataOperation1).getMetadata();
+        // filter to retain metadata mapping only for the involved backend
+        // [0 protected data id] -> preserve original column name
+        // [1 null protected data id] -> column name must be dropped from the
+        // query
+        // [1 non null protected data id] -> replace column name by 1 protected
+        // data id
         Map<String, List<String>> rawDataIdsMapping1 = metadata1.stream()
-                .collect(
-                        Collectors.toMap(e -> e.getKey().toString(),
-                                e -> e.getValue().stream().filter(pid -> pid == null || pid.startsWith(backendPrefix))
-                                        .map(pid -> pid == null ? null
-                                                : pid.substring(backendPrefix.length()).toString())
-                                        .collect(Collectors.toList()),
-                                (l1, l2) -> l1));
+                .collect(Collectors.toMap(e -> e.getKey().toString(),
+                        e -> e.getValue().isEmpty() ? Collections.emptyList()
+                                : Collections
+                                        .singletonList(StringUtilities.toString(e.getValue().get(involvedBackend))),
+                        (l1, l2) -> l1));
         // mapping original clear data ids to protected data ids:
         Map<String, List<String>> dataIdsMapping1 = allDataIds1.stream().distinct().map(CString::toString)
                 .collect(Collectors.toMap(java.util.function.Function.identity(), id -> rawDataIdsMapping1.get(id)));
@@ -2364,8 +3008,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         Map.Entry<String, String> tableIdMapping = fqDataIdsMapping1.entrySet()
                 .stream().filter(
-                        e -> e.getValue() != null && !e.getValue().isEmpty()
-                                && e.getValue().get(0) != null)
+                        e -> !e.getValue().isEmpty() && e.getValue().get(0) != null)
                 .findAny()
                 .map(e -> new SimpleEntry<>(
                         e.getKey().substring(0,
@@ -2394,16 +3037,16 @@ public class PgsqlEventProcessor implements EventProcessor {
                         .filter(e -> dataIds.contains(e.getKey())).flatMap(e -> e.getValue().stream())
                         .collect(Collectors.toList());
                 if (alterExpressionProtectedDataIds.isEmpty()) {
-                    // drop the select item
-                    newAlterExpression = null;
+                    // no modification
+                    newAlterExpression = alterExpression;
                 } else {
                     // then filter data id mapping on value: retain protected
                     // data ids that the data operation has returned
                     List<String> newAlterExpressionsDataIds = alterExpressionProtectedDataIds.stream()
                             .filter(newDataIds1::contains).collect(Collectors.toList());
                     if (newAlterExpressionsDataIds.isEmpty()) {
-                        // no modification
-                        newAlterExpression = alterExpression;
+                        // drop the alter expression
+                        newAlterExpression = null;
                     } else {
                         // For the protected data ids selected for the alter
                         // expression, build a new alter expression
@@ -2511,23 +3154,219 @@ public class PgsqlEventProcessor implements EventProcessor {
         return newAlterExpression;
     }
 
-    private DataOperation extractDropTableOperation(ChannelHandlerContext ctx, Drop stmt) throws ParseException {
-        DataOperation dataOperation = new DataOperation();
-        dataOperation.setOperation(Operation.DELETE);
+    private OutboundDataOperation extractCreateIndexOperation(ChannelHandlerContext ctx, CreateIndex stmt,
+            OutboundDataOperation outboundDataOperation, Operation operation) throws ParseException {
+        // Extract dataset id
+        String schemaId = getSchemaId(ctx, stmt.getTable());
+        String datasetId = getTableId(ctx, stmt.getTable(), schemaId);
+        if (outboundDataOperation == null || (operation != null && outboundDataOperation.getOperation() != operation)) {
+            outboundDataOperation = new OutboundDataOperation();
+            outboundDataOperation.setOperation(operation != null ? operation : Operation.UPDATE);
+            outboundDataOperation.setUsingHeadOperation(true);
+            // Save mapping between table and dataset id
+            Map.Entry<Table, String> tableId = new SimpleEntry<>(stmt.getTable(), datasetId);
+            outboundDataOperation.addAttribute("tableId", tableId);
+        }
+        // Extract column names
+        List<String> columnNames = stmt.getIndex().getColumnsNames();
+        if (columnNames == null) {
+            columnNames = Collections.emptyList();
+        }
+        // Extract data ids
+        List<CString> dataIds = columnNames.stream()
+                // unquote string
+                .map(StringUtilities::unquote)
+                // build dataId
+                .map(cn -> datasetId + cn)
+                // transform to CString
+                .map(CString::valueOf)
+                // save as a list
+                .collect(Collectors.toList());
+        dataIds.removeAll(outboundDataOperation.getDataIds());
+        outboundDataOperation.addDataIds(dataIds);
+        // Save mapping between method and data ids
+        Map.Entry<String, List<String>> createIndexMethodIds = new SimpleEntry<>(stmt.getMethod(),
+                dataIds.stream().map(CString::toString).collect(Collectors.toList()));
+        outboundDataOperation.addAttribute("createIndexMethodIds", createIndexMethodIds);
+        return outboundDataOperation;
+    }
+
+    private PgsqlStatement<CreateIndex> modifyCreateIndexStatement(ChannelHandlerContext ctx,
+            PgsqlStatement<CreateIndex> statement, OutboundDataOperation outboundDataOperation, boolean newStatement) {
+        // Prepare statement
+        CreateIndex stmt = statement.getStatement();
+        if (newStatement) {
+            // Duplicate statement
+            String sql = stmt.toString();
+            try {
+                stmt = (CreateIndex) CCJSqlParserUtil.parse(sql);
+            } catch (JSQLParserException | TokenMgrError e) {
+                // Should not occur
+                LOGGER.error("Parsing error for {} : ", sql);
+                if (LOGGER.isTraceEnabled()) {
+                    LOGGER.trace("Parsing error details:", e);
+                }
+            }
+        }
+        CreateIndex createIndex = stmt;
+
+        int involvedBackend = outboundDataOperation.getInvolvedCSP() == -1 ? getPreferredBackend(ctx)
+                : outboundDataOperation.getInvolvedCSP();
+
+        // 1. Update clause index method
+        // 1.1 Retrieve data ids associated to index method and table id
+        // associated to the table
+        @SuppressWarnings("unchecked")
+        Map.Entry<String, List<String>> createIndexMethodIds = (Map.Entry<String, List<String>>) outboundDataOperation
+                .getAttribute("createIndexMethodIds");
+        List<String> dataIds = createIndexMethodIds.getValue();
+
+        // 1.2 Retrieve protected data ids
+        List<String> newDataIds1 = outboundDataOperation.getDataIds().stream().map(CString::toString)
+                .collect(Collectors.toList());
+
+        // 1.3 Retrieve the mapping between clear and protected data ids
+        // call metadata operation
+        MetadataOperation metadataOperation1 = new MetadataOperation();
+        List<CString> allDataIds1 = dataIds.stream().map(CString::valueOf).collect(Collectors.toList());
+        metadataOperation1.setDataIds(allDataIds1);
+        // mapping clear data ids to [protected data ids]:
+        // [0 protected data ids] -> preserve original column name
+        // [null protected data id for a csp] -> column name must be dropped
+        // from the query
+        // [non null protected data id for a csp] -> replace column name by 1
+        // protected data id
+        List<Map.Entry<CString, List<CString>>> metadata1 = newMetaDataOperation(ctx, metadataOperation1).getMetadata();
+        // filter to retain metadata mapping only for the involved backend
+        // [0 protected data id] -> preserve original column name
+        // [1 null protected data id] -> column name must be dropped from the
+        // query
+        // [1 non null protected data id] -> replace column name by 1 protected
+        // data id
+        Map<String, List<String>> rawDataIdsMapping1 = metadata1.stream()
+                .collect(Collectors.toMap(e -> e.getKey().toString(),
+                        e -> e.getValue().isEmpty() ? Collections.emptyList()
+                                : Collections
+                                        .singletonList(StringUtilities.toString(e.getValue().get(involvedBackend))),
+                        (l1, l2) -> l1));
+        // mapping original clear data ids to protected data ids:
+        Map<String, List<String>> dataIdsMapping1 = allDataIds1.stream().distinct().map(CString::toString)
+                .collect(Collectors.toMap(java.util.function.Function.identity(), id -> rawDataIdsMapping1.get(id)));
+        // retrieve the mapping between clear table id and protected table id
+        Map<String, List<String>> fqDataIdsMapping1 = dataIdsMapping1.entrySet().stream()
+                .filter(e -> e.getKey().lastIndexOf('/') != -1)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        Map.Entry<String, String> tableIdMapping = fqDataIdsMapping1.entrySet()
+                .stream().filter(
+                        e -> !e.getValue().isEmpty() && e.getValue().get(0) != null)
+                .findAny()
+                .map(e -> new SimpleEntry<>(
+                        e.getKey().substring(0,
+                                e.getKey()
+                                        .lastIndexOf('/')),
+                        e.getValue().get(0).substring(0, e.getValue().get(0).lastIndexOf('/'))))
+                .orElse(fqDataIdsMapping1.keySet().stream().findAny()
+                        .map(id -> new SimpleEntry<>(id.substring(0, id.lastIndexOf('/')),
+                                id.substring(0, id.lastIndexOf('/'))))
+                        .get());
+
+        // 1.4 Replace or remove columns
+        int nbColumns = createIndex.getIndex().getColumnsNames() != null
+                ? createIndex.getIndex().getColumnsNames().size() : 0;
+        List<String> newColumnNames = new ArrayList<>(nbColumns);
+        for (int i = 0; i < nbColumns; i++) {
+            String columnName = createIndex.getIndex().getColumnsNames().get(i);
+            String dataId = dataIds.get(i);
+            String newColumnName;
+            if (dataId == null) {
+                // no modification
+                newColumnName = columnName;
+            } else {
+                // first filter data id mapping on key: retain protected data
+                // id for the column name
+                List<String> columnProtectedDataIds = dataIdsMapping1.entrySet().stream()
+                        .filter(e -> dataId.equals(e.getKey())).flatMap(e -> e.getValue().stream())
+                        .collect(Collectors.toList());
+                if (columnProtectedDataIds.isEmpty()) {
+                    // no modification
+                    newColumnName = columnName;
+                } else {
+                    // then filter data id mapping on value: retain protected
+                    // data id that the data operation has returned
+                    List<String> newColumnDataIds = columnProtectedDataIds.stream().filter(newDataIds1::contains)
+                            .collect(Collectors.toList());
+                    if (newColumnDataIds.isEmpty()) {
+                        // drop the column name
+                        newColumnName = null;
+                    } else {
+                        // For the protected data id selected for the column
+                        // name,
+                        // build a new column name
+                        String oldDataId = dataId;
+                        String newDataId = newColumnDataIds.get(0);
+                        boolean same = newDataId.equals(oldDataId);
+                        if (same) {
+                            // no modification
+                            newColumnName = columnName;
+                        } else {
+                            newColumnName = buildColumnName(columnName, newDataId);
+                        }
+                    }
+                }
+            }
+            if (newColumnName != null) {
+                newColumnNames.add(newColumnName);
+            }
+        }
+        createIndex.getIndex().setColumnsNames(newColumnNames);
+
+        // 2. Update clause table
+        // 2.1 Retrieve mapping between clear table ids and protected table ids
+        // tableIdMapping is already resolved
+
+        // 2.2 Replace table
+        Table table = createIndex.getTable();
+        Table newTable = null;
+        String oldTableId = tableIdMapping.getKey();
+        String newTableId = tableIdMapping.getValue();
+        boolean same = newTableId.equals(oldTableId);
+        if (same) {
+            // no modification
+            newTable = table;
+        } else {
+            newTable = buildTable(table, newTableId);
+        }
+        createIndex.setTable(newTable);
+
+        return new PgsqlStatement<>(stmt, statement.getParameterTypes(), statement.getParameterFormats(),
+                statement.getParameterValues(), statement.getResultFormats(), statement.getColumns());
+    }
+
+    private String buildColumnName(String columnName, String newDataId) {
+        String[] tokens = newDataId.split("/");
+        assert tokens.length > 0;
+        String newColumnName = tokens[tokens.length - 1];
+        return newColumnName;
+    }
+
+    private OutboundDataOperation extractDropTableOperation(ChannelHandlerContext ctx, Drop stmt)
+            throws ParseException {
+        OutboundDataOperation outboundDataOperation = new OutboundDataOperation();
+        outboundDataOperation.setOperation(Operation.DELETE);
         // Extract dataset id
         String schemaId = getSchemaId(ctx, stmt.getName());
         String datasetId = getTableId(ctx, stmt.getName(), schemaId);
         // Save mapping between table and dataset id
         Map.Entry<Table, String> tableId = new SimpleEntry<>(stmt.getName(), datasetId);
-        dataOperation.addAttribute("tableId", tableId);
+        outboundDataOperation.addAttribute("tableId", tableId);
         // Extract data ids
-        List<CString> dataIds = Collections.singletonList(CString.valueOf(datasetId + "*"));
-        dataOperation.setDataIds(dataIds);
-        return dataOperation;
+        List<CString> dataIds = Stream.of(CString.valueOf(datasetId + "*")).collect(Collectors.toList());
+        outboundDataOperation.setDataIds(dataIds);
+        return outboundDataOperation;
     }
 
     private PgsqlStatement<Drop> modifyDropTableStatement(ChannelHandlerContext ctx, PgsqlStatement<Drop> statement,
-            DataOperation dataOperation, boolean newStatement) {
+            OutboundDataOperation outboundDataOperation, boolean newStatement) {
         // Prepare statement
         Drop stmt = statement.getStatement();
         if (newStatement) {
@@ -2545,18 +3384,14 @@ public class PgsqlEventProcessor implements EventProcessor {
         }
         Drop dropTable = stmt;
 
-        int involvedBackend = dataOperation.getInvolvedCSP();
-        if (involvedBackend == -1) {
-            involvedBackend = getPreferredBackend(ctx);
-        }
-
         // 1.1 Retrieve table id associated to the table
         @SuppressWarnings("unchecked")
-        Map.Entry<Table, String> table2tableId = (Map.Entry<Table, String>) dataOperation.getAttribute("tableId");
+        Map.Entry<Table, String> table2tableId = (Map.Entry<Table, String>) outboundDataOperation
+                .getAttribute("tableId");
         String oldTableId = table2tableId.getValue();
 
         // 1.2 Retrieve protected data ids and protected table id
-        List<String> newDataIds1 = dataOperation.getDataIds().stream().map(CString::toString)
+        List<String> newDataIds1 = outboundDataOperation.getDataIds().stream().map(CString::toString)
                 .collect(Collectors.toList());
         String newTableId = newDataIds1.stream().filter(id -> id.lastIndexOf('/') != -1).findAny().get();
         newTableId = newTableId.substring(0, newTableId.lastIndexOf('/'));
@@ -2581,27 +3416,30 @@ public class PgsqlEventProcessor implements EventProcessor {
                 statement.getParameterValues(), statement.getResultFormats(), statement.getColumns());
     }
 
-    private DataOperation extractInsertOperation(ChannelHandlerContext ctx, Insert stmt,
-            List<ParameterValue> parameterValues, DataOperation dataOperation) throws ParseException {
-        if (dataOperation == null) {
-            dataOperation = new DataOperation();
-            dataOperation.setOperation(Operation.CREATE);
+    private OutboundDataOperation extractInsertOperation(ChannelHandlerContext ctx, Insert stmt,
+            List<ParameterValue> parameterValues, OutboundDataOperation outboundDataOperation) throws ParseException {
+        if (outboundDataOperation == null) {
+            outboundDataOperation = new OutboundDataOperation();
+            outboundDataOperation.setOperation(Operation.CREATE);
             // Extract dataset id
             String schemaId = getSchemaId(ctx, stmt.getTable());
             String datasetId = getTableId(ctx, stmt.getTable(), schemaId);
             // Save mapping between table and dataset id
             Map.Entry<Table, String> tableId = new SimpleEntry<>(stmt.getTable(), datasetId);
-            dataOperation.addAttribute("tableId", tableId);
+            outboundDataOperation.addAttribute("tableId", tableId);
             // Extract data ids
             if (stmt.getColumns() == null) {
-                SQLSession session = getSession(ctx);
-                List<CString> dataIds = session.getDatasetDefinition(CString.valueOf(datasetId));
-                if (dataIds == null) {
+                SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+                List<String> datasetDefinition = databaseSchema.getDatasetDefinition(datasetId);
+                List<CString> dataIds;
+                if (datasetDefinition != null) {
+                    dataIds = datasetDefinition.stream().map(CString::valueOf).collect(Collectors.toList());
+                } else {
                     MetadataOperation metadataOperation = new MetadataOperation();
                     metadataOperation.addDataId(CString.valueOf(datasetId + "*"));
                     dataIds = newMetaDataOperation(ctx, metadataOperation).getDataIds();
                 }
-                dataOperation.setDataIds(dataIds);
+                outboundDataOperation.setDataIds(dataIds);
             } else {
                 // get column name
                 List<CString> dataIds = stmt.getColumns().stream().map(Column::getColumnName)
@@ -2617,10 +3455,10 @@ public class PgsqlEventProcessor implements EventProcessor {
                 List<Map.Entry<Column, String>> columnIds = IntStream.range(0, stmt.getColumns().size())
                         .mapToObj(i -> new SimpleEntry<>(stmt.getColumns().get(i), dataIds.get(i).toString()))
                         .collect(Collectors.toList());
-                dataOperation.addAttribute("columnIds", columnIds);
-                dataOperation.setDataIds(dataIds);
+                outboundDataOperation.addAttribute("columnIds", columnIds);
+                outboundDataOperation.setDataIds(dataIds);
             }
-        } else if (dataOperation.getAttribute("columnIds") == null && stmt.getColumns() != null) {
+        } else if (outboundDataOperation.getAttribute("columnIds") == null && stmt.getColumns() != null) {
             // Extract dataset id
             String schemaId = getSchemaId(ctx, stmt.getTable());
             String datasetId = getTableId(ctx, stmt.getTable(), schemaId);
@@ -2638,7 +3476,7 @@ public class PgsqlEventProcessor implements EventProcessor {
             List<Map.Entry<Column, String>> columnIds = IntStream.range(0, stmt.getColumns().size())
                     .mapToObj(i -> new SimpleEntry<>(stmt.getColumns().get(i), dataIds.get(i).toString()))
                     .collect(Collectors.toList());
-            dataOperation.addAttribute("columnIds", columnIds);
+            outboundDataOperation.addAttribute("columnIds", columnIds);
         }
         // Extract data values
         List<ExpressionList> rows = null;
@@ -2652,9 +3490,11 @@ public class PgsqlEventProcessor implements EventProcessor {
         // }
         if (rows != null) {
             for (ExpressionList row : rows) {
-                List<CString> dataValues = row.getExpressions().stream()
+                List<CString> dataValue = row.getExpressions().stream()
                         // transform to string
                         .map(exp -> exp instanceof NullValue ? null : exp.toString())
+                        // unquote value
+                        .map(StringUtilities::unquote)
                         // transform to CString
                         .map(CString::valueOf).map(value -> {
                             if (parameterValues != null) {
@@ -2665,7 +3505,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                                     // get the parameter value
                                     ParameterValue parameterValue = parameterValues.get(idx);
                                     // convert parameter value to string
-                                    value = convertToText(parameterValue.getType(), -1, parameterValue.getFormat(),
+                                    Types types = getTypes(ctx, -1);
+                                    Type parameterType = types.getType(parameterValue.getType());
+                                    value = convertToText(parameterType, -1, parameterValue.getFormat(),
                                             parameterValue.getValue());
                                 }
                             }
@@ -2673,14 +3515,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                         })
                         // build a list
                         .collect(Collectors.toList());
-                dataOperation.addDataValues(dataValues);
+                outboundDataOperation.addDataValue(dataValue);
             }
         }
-        return dataOperation;
+        return outboundDataOperation;
     }
 
     private PgsqlStatement<Insert> modifyInsertStatement(ChannelHandlerContext ctx, PgsqlStatement<Insert> statement,
-            DataOperation dataOperation, boolean newStatement, int row) {
+            OutboundDataOperation outboundDataOperation, boolean newStatement, int row) {
         // Prepare statement
         Insert stmt = statement.getStatement();
         if (newStatement) {
@@ -2698,13 +3540,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         }
         Insert insert = stmt;
 
-        int involvedBackend = dataOperation.getInvolvedCSP();
-        if (involvedBackend == -1) {
-            involvedBackend = getPreferredBackend(ctx);
-        }
-        String backendPrefix = "csp" + (involvedBackend + 1) + "/";
-
-        SQLSession session = getSession(ctx);
+        int involvedBackend = outboundDataOperation.getInvolvedCSP() == -1 ? getPreferredBackend(ctx)
+                : outboundDataOperation.getInvolvedCSP();
 
         List<Integer> newDataIdIndexes;
         Map.Entry<String, String> tableIdMapping;
@@ -2713,12 +3550,12 @@ public class PgsqlEventProcessor implements EventProcessor {
             // 1.1 Retrieve data ids associated to columns and table id
             // associated to the table
             @SuppressWarnings("unchecked")
-            List<Map.Entry<Column, String>> columnIds = (List<Map.Entry<Column, String>>) dataOperation
+            List<Map.Entry<Column, String>> columnIds = (List<Map.Entry<Column, String>>) outboundDataOperation
                     .getAttribute("columnIds");
             List<String> dataIdPerColumn = columnIds.stream().map(Map.Entry::getValue).collect(Collectors.toList());
 
             // 1.2 Retrieve protected data ids
-            List<String> newDataIds1 = dataOperation.getDataIds().stream().map(CString::toString)
+            List<String> newDataIds1 = outboundDataOperation.getDataIds().stream().map(CString::toString)
                     .collect(Collectors.toList());
 
             // 1.3 Retrieve the mapping between clear and protected data ids
@@ -2726,32 +3563,39 @@ public class PgsqlEventProcessor implements EventProcessor {
             MetadataOperation metadataOperation1 = new MetadataOperation();
             List<CString> allDataIds1 = dataIdPerColumn.stream().map(CString::valueOf).collect(Collectors.toList());
             metadataOperation1.setDataIds(allDataIds1);
+            // mapping clear data ids to [protected data ids]:
+            // [0 protected data ids] -> preserve original column name
+            // [null protected data id for a csp] -> column name must be dropped
+            // from the query
+            // [non null protected data id for a csp] -> replace column name by
+            // 1 protected data id
             List<Map.Entry<CString, List<CString>>> metadata1 = newMetaDataOperation(ctx, metadataOperation1)
                     .getMetadata();
-            // mapping clear data ids to [protected data ids]:
-            // [0 protected data id] -> column name must be dropped from the query
-            // [1 null protected data id] -> preserve original column name
-            // [1 protected data id] -> replace column name by 1 protected data id
-            // filter to retain metadata mapping only for the involved backend (and
-            // removing the backend prefix)
+            // filter to retain metadata mapping only for the involved backend
+            // [0 protected data id] -> preserve original column name
+            // [1 null protected data id] -> column name must be dropped from
+            // the query
+            // [1 non null protected data id] -> replace column name by 1
+            // protected data id
             Map<String, List<String>> rawDataIdsMapping1 = metadata1.stream()
                     .collect(
-                            Collectors.toMap(e -> e.getKey().toString(),
-                                    e -> e.getValue().stream()
-                                            .filter(pid -> pid == null || pid.startsWith(backendPrefix))
-                                            .map(pid -> pid == null ? null
-                                                    : pid.substring(backendPrefix.length()).toString())
-                                            .collect(Collectors.toList()),
-                                    (l1, l2) -> l1));
+                            Collectors
+                                    .toMap(e -> e.getKey().toString(),
+                                            e -> e.getValue().isEmpty() ? Collections.emptyList()
+                                                    : Collections.singletonList(StringUtilities
+                                                            .toString(e.getValue().get(involvedBackend))),
+                                            (l1, l2) -> l1));
             // mapping original clear data ids to protected data ids:
             Map<String, List<String>> dataIdsMapping1 = allDataIds1.stream().distinct().map(CString::toString).collect(
                     Collectors.toMap(java.util.function.Function.identity(), id -> rawDataIdsMapping1.get(id)));
-            // retrieve the mapping between clear table id and protected table id
+            // retrieve the mapping between clear table id and protected table
+            // id
             Map<String, List<String>> fqDataIdsMapping1 = dataIdsMapping1.entrySet().stream()
                     .filter(e -> e.getKey().lastIndexOf('/') != -1)
                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-            tableIdMapping = fqDataIdsMapping1.entrySet().stream()
-                    .filter(e -> e.getValue() != null && !e.getValue().isEmpty() && e.getValue().get(0) != null)
+            tableIdMapping = fqDataIdsMapping1.entrySet()
+                    .stream().filter(
+                            e -> !e.getValue().isEmpty() && e.getValue().get(0) != null)
                     .findAny().map(
                             e -> new SimpleEntry<>(e.getKey().substring(0, e.getKey().lastIndexOf('/')),
                                     e.getValue().get(0)
@@ -2775,24 +3619,27 @@ public class PgsqlEventProcessor implements EventProcessor {
                     // no modification
                     newColumn = column;
                 } else {
-                    // first filter data id mapping on key: retain protected data
+                    // first filter data id mapping on key: retain protected
+                    // data
                     // id for the column
                     List<String> columnProtectedDataIds = dataIdsMapping1.entrySet().stream()
                             .filter(e -> dataId.contains(e.getKey())).flatMap(e -> e.getValue().stream())
                             .collect(Collectors.toList());
                     if (columnProtectedDataIds.isEmpty()) {
-                        // drop the select item
-                        newColumn = null;
+                        // no modification
+                        newColumn = column;
                     } else {
-                        // then filter data id mapping on value: retain protected
+                        // then filter data id mapping on value: retain
+                        // protected
                         // data id that the data operation has returned
                         List<String> newColumnDataIds = columnProtectedDataIds.stream().filter(newDataIds1::contains)
                                 .collect(Collectors.toList());
                         if (newColumnDataIds.isEmpty()) {
-                            // no modification
-                            newColumn = column;
+                            // drop the column
+                            newColumn = null;
                         } else {
-                            // For the protected data id selected for the column,
+                            // For the protected data id selected for the
+                            // column,
                             // build a new column
                             String oldDataId = dataId;
                             String newDataId = newColumnDataIds.get(0);
@@ -2817,46 +3664,57 @@ public class PgsqlEventProcessor implements EventProcessor {
         } else {
             // 1.1 Retrieve table id associated to the table
             @SuppressWarnings("unchecked")
-            Map.Entry<Table, String> table2tableId = (Map.Entry<Table, String>) dataOperation.getAttribute("tableId");
+            Map.Entry<Table, String> table2tableId = (Map.Entry<Table, String>) outboundDataOperation
+                    .getAttribute("tableId");
             String tableId = table2tableId.getValue();
 
             // 1.2 Retrieve protected data ids and protected table id
-            List<String> newDataIds1 = dataOperation.getDataIds().stream().map(CString::toString)
+            List<String> newDataIds1 = outboundDataOperation.getDataIds().stream().map(CString::toString)
                     .collect(Collectors.toList());
             String newTableId = newDataIds1.stream().filter(id -> id.lastIndexOf('/') != -1).findAny().get();
             newTableId = newTableId.substring(0, newTableId.lastIndexOf('/'));
 
             // 1.3 Retrieve the mapping between clear and protected data ids
-            List<CString> allDataIds1 = session.getDatasetDefinition(CString.valueOf(tableId));
-            if (allDataIds1 == null) {
+            SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+            List<String> datasetDefinition = databaseSchema.getDatasetDefinition(tableId);
+            List<CString> allDataIds1;
+            if (datasetDefinition != null) {
+                allDataIds1 = datasetDefinition.stream().map(CString::valueOf).collect(Collectors.toList());
+            } else {
                 allDataIds1 = Collections.singletonList(CString.valueOf(tableId + "*"));
             }
             // call metadata operation
             MetadataOperation metadataOperation1 = new MetadataOperation();
             metadataOperation1.setDataIds(allDataIds1);
+            // mapping clear data ids to [protected data ids]:
+            // [0 protected data ids] -> preserve original column name
+            // [null protected data id for a csp] -> column name must be dropped
+            // from the query
+            // [non null protected data id for a csp] -> replace column name by
+            // 1 protected data id
             List<Map.Entry<CString, List<CString>>> metadata1 = newMetaDataOperation(ctx, metadataOperation1)
                     .getMetadata();
             allDataIds1 = metadata1.stream().map(Map.Entry::getKey).collect(Collectors.toList());
-            // mapping clear data ids to [protected data ids]:
-            // [0 protected data id] -> column name must be dropped from the query
-            // [1 null protected data id] -> preserve original column name
-            // [1 protected data id] -> replace column name by 1 protected data id
-            // filter to retain metadata mapping only for the involved backend (and
-            // removing the backend prefix)
+            // filter to retain metadata mapping only for the involved backend
+            // [0 protected data id] -> preserve original column name
+            // [1 null protected data id] -> column name must be dropped from
+            // the query
+            // [1 non null protected data id] -> replace column name by 1
+            // protected data id
             Map<String, List<String>> rawDataIdsMapping1 = metadata1.stream()
                     .collect(
-                            Collectors.toMap(e -> e.getKey().toString(),
-                                    e -> e.getValue().stream()
-                                            .filter(pid -> pid == null || pid.startsWith(backendPrefix))
-                                            .map(pid -> pid == null ? null
-                                                    : pid.substring(backendPrefix.length()).toString())
-                                            .collect(Collectors.toList()),
-                                    (l1, l2) -> l1));
+                            Collectors
+                                    .toMap(e -> e.getKey().toString(),
+                                            e -> e.getValue().isEmpty() ? Collections.emptyList()
+                                                    : Collections.singletonList(StringUtilities
+                                                            .toString(e.getValue().get(involvedBackend))),
+                                            (l1, l2) -> l1));
             // mapping original clear data ids to protected data ids:
             Map<String, List<String>> dataIdsMapping1 = allDataIds1.stream().distinct().map(CString::toString).collect(
                     Collectors.toMap(java.util.function.Function.identity(), id -> rawDataIdsMapping1.get(id)));
 
-            // retrieve the mapping between clear table id and protected table id
+            // retrieve the mapping between clear table id and protected table
+            // id
             tableIdMapping = new SimpleEntry<>(tableId, newTableId);
 
             // 1.4 Replace or remove columns
@@ -2877,22 +3735,24 @@ public class PgsqlEventProcessor implements EventProcessor {
                     // no modification
                     newIndex = i;
                 } else {
-                    // first filter data id mapping on key: retain protected data
+                    // first filter data id mapping on key: retain protected
+                    // data
                     // id for the column
                     List<String> columnProtectedDataIds = dataIdsMapping1.entrySet().stream()
                             .filter(e -> dataId.contains(e.getKey())).flatMap(e -> e.getValue().stream())
                             .collect(Collectors.toList());
                     if (columnProtectedDataIds.isEmpty()) {
-                        // drop the value
-                        newIndex = -1;
+                        // no modification
+                        newIndex = i;
                     } else {
-                        // then filter data id mapping on value: retain protected
+                        // then filter data id mapping on value: retain
+                        // protected
                         // data id that the data operation has returned
                         List<String> newColumnDataIds = columnProtectedDataIds.stream().filter(newDataIds1::contains)
                                 .collect(Collectors.toList());
                         if (newColumnDataIds.isEmpty()) {
-                            // no modification
-                            newIndex = i;
+                            // drop the value
+                            newIndex = -1;
                         } else {
                             newIndex = i;
                         }
@@ -2934,7 +3794,7 @@ public class PgsqlEventProcessor implements EventProcessor {
             List<ParameterValue> parameterValues = statement.getParameterValues();
             for (ExpressionList expressionList : expressionLists) {
                 List<Expression> expressions = expressionList.getExpressions();
-                List<CString> dataValues = dataOperation.getDataValues().get(row++);
+                List<CString> dataValues = outboundDataOperation.getDataValues().get(row++);
                 List<Expression> newExpressions = new ArrayList<>(dataValues.size());
                 for (int i = 0; i < expressions.size(); i++) {
                     int newDataIdIndex = newDataIdIndexes.get(i);
@@ -2957,14 +3817,16 @@ public class PgsqlEventProcessor implements EventProcessor {
                                     // get the parameter value
                                     ParameterValue parameterValue = parameterValues.get(paramIndex);
                                     // convert string to ByteBuf
-                                    ByteBuf value = convertToByteBuf(parameterValue.getType(), -1,
-                                            parameterValue.getFormat(), dataValues.get(newDataIdIndex));
+                                    Types backendTypes = getTypes(ctx, involvedBackend);
+                                    Type parameterType = backendTypes.getType(parameterValue.getType());
+                                    ByteBuf value = convertToByteBuf(parameterType, -1, parameterValue.getFormat(),
+                                            dataValues.get(newDataIdIndex));
                                     // modify parameter value
                                     parameterValue.setValue(value);
                                 }
                             }
                         } else {
-                            newExpression = buildExpression(expression, newValue);
+                            newExpression = buildExpression(expression, oldValue, newValue);
                         }
                         newExpressions.add(newExpression);
                     }
@@ -3015,21 +3877,27 @@ public class PgsqlEventProcessor implements EventProcessor {
         return newColumn;
     }
 
-    private Expression buildExpression(Expression expression, String newValue) {
+    private Expression buildExpression(Expression expression, String oldValue, String newValue) {
         if (newValue == null) {
             return new NullValue();
-        } else {
-            if (expression instanceof StringValue && ((StringValue) expression).toString().startsWith("E'")) {
-                if (!newValue.startsWith("E'")) {
-                    newValue = "E'" + newValue + "'";
-                }
+        } else if (expression instanceof Column) {
+            return buildColumn((Column) expression, oldValue, newValue);
+        } else if (expression instanceof StringValue) {
+            if (StringUtilities.hasQuote(((StringValue) expression).toString())
+                    && !StringUtilities.hasQuote(newValue)) {
+                newValue = StringUtilities.quote(newValue);
+            } else if (StringUtilities.hasSingleQuote(((StringValue) expression).toString())
+                    && !StringUtilities.hasSingleQuote(newValue)) {
+                newValue = StringUtilities.singleQuote(newValue);
+            } else if (((StringValue) expression).toString().startsWith("E'") && !newValue.startsWith("E'")) {
+                newValue = "E'" + newValue + "'";
             }
-            return new StringValue(newValue);
         }
+        return new StringValue(newValue);
     }
 
     private ModuleOperation extractSelectOperation(ChannelHandlerContext ctx, Select stmt,
-            List<ParameterValue> parameterValues, DataOperation dataOperation, Operation operation)
+            List<ParameterValue> parameterValues, OutboundDataOperation outboundDataOperation, Operation operation)
             throws ParseException {
         if (!(stmt.getSelectBody() instanceof PlainSelect)) {
             return null;
@@ -3072,6 +3940,10 @@ public class PgsqlEventProcessor implements EventProcessor {
         boolean retrieveProtectedData = false;
         if (operation == null) {
             operation = Operation.READ;
+        }
+        boolean usingHeadOperation = false;
+        if (outboundDataOperation != null) {
+            usingHeadOperation = outboundDataOperation.isUsingHeadOperation();
         }
         List<Integer> involvedBackends = null;
         for (Iterator<SelectItem> iter = select.getSelectItems().iterator(); iter.hasNext();) {
@@ -3126,57 +3998,50 @@ public class PgsqlEventProcessor implements EventProcessor {
                                     s = s.substring("csp".length());
                                     involvedBackends.add(Integer.parseInt(s) - 1);
                                 } else {
-                                    // Error: expected at least one parameter (backend names)
+                                    // Error: expected at least one parameter
+                                    // (backend names)
                                     throw new ParseException(FUNCTION_PROTECTED
                                             + " function requires string parameters (backend names)");
                                 }
                             }
                         } else {
-                            // Error: expected at least one parameter (backend names)
+                            // Error: expected at least one parameter (backend
+                            // names)
                             throw new ParseException(
                                     FUNCTION_PROTECTED + " function requires at least one parameter (backend names)");
                         }
                         iter.remove();
-                    } else if (FUNCTION_ADD_GEOMETRY_COLUMN.equalsIgnoreCase(function.getName())) {
-                        if (dataOperation != null) {
-                            operation = dataOperation.getOperation();
+                    } else if (FUNCTION_ADD_GEOMETRY_COLUMN.equalsIgnoreCase(function.getName())
+                            && function.getParameters() != null && function.getParameters().getExpressions() != null) {
+                        if (outboundDataOperation != null) {
+                            operation = outboundDataOperation.getOperation();
                         }
                         if (operation == Operation.READ) {
                             operation = Operation.UPDATE;
                         }
-                        StringBuilder sb = new StringBuilder();
-                        int nbSep = 0;
-                        for (Expression parameter : function.getParameters().getExpressions()) {
-                            if (!(parameter instanceof StringValue)
-                                    || ((StringValue) parameter).getValue().matches("\\d+")) {
-                                break;
-                            }
-                            if (sb.length() > 0) {
-                                sb.append('/');
-                                ++nbSep;
-                            }
-                            sb.append(((StringValue) parameter).getValue());
-                        }
-                        if (nbSep == 3) {
-                            // case of dbname/schema/table/column
-                            int i = sb.indexOf("/", sb.indexOf("/") + 1);
-                            sb.setCharAt(i, '.');
-                        } else if (nbSep == 2) {
-                            // case of schema/table/column
-                            int i = sb.indexOf("/");
-                            sb.setCharAt(i, '.');
-                            sb.insert(0, getDatabaseId(ctx));
-                        } else if (nbSep == 1) {
-                            // case of table/column
-                            int i = sb.indexOf("/");
-                            String schema = identifySchema(sb.substring(0, i));
-                            sb.insert(0, '.');
-                            sb.insert(0, schema);
-                            sb.insert(0, getDatabaseId(ctx));
-                        }
-                        String dataId = sb.toString();
+                        usingHeadOperation = true;
+                        String dataId = buildDataIdFromFunction(ctx, function.getParameters().getExpressions());
                         selectItemIds.add(new SimpleEntry<>(selectItem, Collections.singletonList(dataId)));
-                    } else if (function.getParameters() != null) {
+                        String datasetId = dataId.substring(0, dataId.lastIndexOf('/'));
+                        String srid = getSridFromAddGeometryColumn(ctx, function.getParameters().getExpressions());
+                        SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+                        databaseSchema.addDatasetSrid(datasetId, srid);
+                    } else if (FUNCTION_ST_ESTIMATED_EXTENT.equalsIgnoreCase(function.getName())
+                            && function.getParameters() != null && function.getParameters().getExpressions() != null) {
+                        if (outboundDataOperation != null) {
+                            operation = outboundDataOperation.getOperation();
+                        }
+                        String dataId = buildDataIdFromFunction(ctx, function.getParameters().getExpressions());
+                        selectItemIds.add(new SimpleEntry<>(selectItem, Collections.singletonList(dataId)));
+                    } else if (FUNCTION_HAS_COLUMN_PRIVILEGE.equalsIgnoreCase(function.getName())
+                            && function.getParameters() != null && function.getParameters().getExpressions() != null) {
+                        if (outboundDataOperation != null) {
+                            operation = outboundDataOperation.getOperation();
+                        }
+                        String dataId = buildDataIdFromHasColumnPrivilege(ctx,
+                                function.getParameters().getExpressions());
+                        selectItemIds.add(new SimpleEntry<>(selectItem, Collections.singletonList(dataId)));
+                    } else if (function.getParameters() != null && function.getParameters().getExpressions() != null) {
                         List<String> allDataIds = function.getParameters().getExpressions().stream()
                                 .flatMap(parameter -> {
                                     Stream<String> dataIds = null;
@@ -3249,26 +4114,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                         Collections.singletonList(toFullyQualifiedOutputName(selectItem))));
             }
         }
-        // Extract parameter ids
+        // Extract criterions
         PgsqlColumnsFinder columnsFinder = new PgsqlColumnsFinder();
-        List<BinaryExpression> binaryExpressions = columnsFinder.getColumnsInBinaryExpressions(select.getWhere());
-        List<Map.Entry<BinaryExpression, Map.Entry<List<String>, String>>> whereItemIds = new ArrayList<>(
-                binaryExpressions.size());
-        for (BinaryExpression expression : binaryExpressions) {
-            List<String> paramIds;
-            String paramValue;
-            if (expression.getLeftExpression() instanceof Column) {
-                paramIds = extractDataIds(tableIds, (Column) expression.getLeftExpression());
-                paramValue = expression.getRightExpression().toString();
-            } else if (expression.getRightExpression() instanceof Column) {
-                paramIds = extractDataIds(tableIds, (Column) expression.getRightExpression());
-                paramValue = expression.getLeftExpression().toString();
-            } else {
-                paramIds = Collections.singletonList(expression.getLeftExpression().toString());
-                paramValue = expression.getLeftExpression().toString();
-            }
-            whereItemIds.add(new SimpleEntry<>(expression, new SimpleEntry<>(paramIds, paramValue)));
-        }
+        columnsFinder.parse(select.getWhere());
+        List<Map.Entry<Expression, List<Column>>> whereClause = columnsFinder.getExpressionsWithColumnsToColumns();
+        List<Map.Entry<Expression, List<String>>> criteriaIds = whereClause
+                .stream().map(e -> new SimpleEntry<>(e.getKey(), e.getValue().stream()
+                        .map(c -> extractDataIds(tableIds, c)).flatMap(List::stream).collect(Collectors.toList())))
+                .collect(Collectors.toList());
         ModuleOperation moduleOperation;
         if (metadata) {
             MetadataOperation metadataOperation = new MetadataOperation();
@@ -3277,62 +4130,159 @@ public class PgsqlEventProcessor implements EventProcessor {
             moduleOperation = metadataOperation;
             moduleOperation.setInvolvedCSPs(involvedBackends);
         } else {
-            dataOperation = new DataOperation();
-            dataOperation.setOperation(operation);
+            outboundDataOperation = new OutboundDataOperation();
+            outboundDataOperation.setOperation(operation);
+            outboundDataOperation.setUsingHeadOperation(usingHeadOperation);
             // Extract data ids from select items
-            dataOperation.setDataIds(selectItemIds.stream().map(Map.Entry::getValue).flatMap(ids -> ids.stream())
+            outboundDataOperation.setDataIds(selectItemIds.stream().map(Map.Entry::getValue).flatMap(List::stream)
                     .map(CString::valueOf).collect(Collectors.toList()));
-            // Extract parameter ids and values from where items
-            dataOperation.setParameterIds(whereItemIds.stream().map(Map.Entry::getValue).map(Map.Entry::getKey)
-                    .flatMap(ids -> ids.stream()).map(CString::valueOf).collect(Collectors.toList()));
-            dataOperation
-                    .setParameterValues(whereItemIds.stream()
-                            .map(Map.Entry::getValue).flatMap(e -> Stream
-                                    .generate((Supplier<String>) () -> e.getValue()).limit(e.getKey().size()))
-                            .map(CString::valueOf).map(value -> {
-                                if (parameterValues != null) {
-                                    // if value is a parameter id ($<index>)
-                                    if (value != null && value.charAt(0) == '$') {
-                                        // get the parameter index
-                                        int idx = Integer.parseInt(value.substring(1).toString()) - 1;
-                                        // get the parameter value
-                                        ParameterValue parameterValue = parameterValues.get(idx);
-                                        // convert parameter value to string
-                                        value = convertToText(parameterValue.getType(), -1, parameterValue.getFormat(),
-                                                parameterValue.getValue());
-                                    }
-                                }
-                                return value;
-                            }).collect(Collectors.toList()));
-            // Extract parameter ids and values (functions)
-            for (SelectItem selectItem : select.getSelectItems()) {
+            // Extract data values from select items (significant functions)
+            outboundDataOperation.setDataValues(Collections.singletonList(selectItemIds.stream().flatMap(entry -> {
+                SelectItem selectItem = entry.getKey();
+                List<String> dataIds = entry.getValue();
+                Stream<String> values;
                 if (selectItem instanceof SelectExpressionItem
                         && ((SelectExpressionItem) selectItem).getExpression() instanceof Function) {
                     Function function = (Function) ((SelectExpressionItem) selectItem).getExpression();
-                    if (function.getParameters() != null) {
-                        if (FUNCTION_ADD_GEOMETRY_COLUMN.equalsIgnoreCase(function.getName())) {
-                            CString parameterId = CString.valueOf(function.toString());
-                            dataOperation.addParameterId(parameterId);
-                            CString value = CString.valueOf(
-                                    PlainSelect.getStringList(function.getParameters().getExpressions(), true, false));
-                            dataOperation.addParameterValue(value);
-                        }
+                    if (function.getParameters() != null && function.getParameters().getExpressions() != null) {
+                        values = dataIds.stream().map(dataId -> {
+                            boolean significant = false;
+                            if (isFullyQualifiedDataId(dataId)) {
+                                Pattern dataIdPattern = Pattern.compile(
+                                        String.format("(%s\\.?)?(%s\\.?)?(%s\\.?)?(%s)?", getDatabaseName(dataId),
+                                                getSchemaName(dataId), getTableName(dataId), getColumnName(dataId)));
+                                for (Expression parameter : function.getParameters().getExpressions()) {
+                                    String value = parameter instanceof StringValue
+                                            ? ((StringValue) parameter).getValue() : parameter.toString();
+                                    Matcher matcher = dataIdPattern.matcher(StringUtilities.unquote(value));
+                                    if (matcher.matches()) {
+                                        significant = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            return significant ? function.toString() : null;
+                        });
+                    } else {
+                        values = Stream.generate((Supplier<String>) () -> null).limit(dataIds.size());
+                    }
+                } else {
+                    values = Stream.generate((Supplier<String>) () -> null).limit(dataIds.size());
+                }
+                return values;
+            }).map(CString::valueOf).collect(Collectors.toList())));
+            // Extract basic criteria from all criteria
+            List<OutboundDataOperation.Criterion> criterions = extractSignificantCriterions(criteriaIds);
+            outboundDataOperation.setCriterions(criterions);
+            criterions.stream().filter(criterion -> criterion != null).forEach(criterion -> {
+                CString value = criterion.getValue();
+                if (value != null) {
+                    // if value is a parameter id ($<index>)
+                    if (value != null && value.charAt(0) == '$') {
+                        // get the parameter index
+                        int idx = Integer.parseInt(value.substring(1).toString()) - 1;
+                        // get the parameter value
+                        ParameterValue parameterValue = parameterValues.get(idx);
+                        // convert parameter value to string
+                        Types types = getTypes(ctx, -1);
+                        Type parameterType = types.getType(parameterValue.getType());
+                        value = convertToText(parameterType, -1, parameterValue.getFormat(), parameterValue.getValue());
+                        criterion.setValue(value);
                     }
                 }
-            }
-            dataOperation.setInvolvedCSPs(involvedBackends);
-            // TODO Extract parameter ids and values (clause where)
+            });
+            outboundDataOperation.setInvolvedCSPs(involvedBackends);
             // Disable unprotecting process if needed
             if (retrieveProtectedData) {
-                dataOperation.setUnprotectingDataEnabled(false);
-                dataOperation.setModified(true);
+                outboundDataOperation.setUnprotectingDataEnabled(false);
+                outboundDataOperation.setModified(true);
             }
-            dataOperation.addAttribute("tableIds", tableIds);
-            dataOperation.addAttribute("selectItemIds", selectItemIds);
-            dataOperation.addAttribute("whereItemIds", whereItemIds);
-            moduleOperation = dataOperation;
+            outboundDataOperation.addAttribute("tableIds", tableIds);
+            outboundDataOperation.addAttribute("selectItemIds", selectItemIds);
+            outboundDataOperation.addAttribute("criteriaIds", criteriaIds);
+            moduleOperation = outboundDataOperation;
         }
         return moduleOperation;
+    }
+
+    private String buildDataIdFromFunction(ChannelHandlerContext ctx, List<Expression> parameters) {
+        StringBuilder sb = new StringBuilder();
+        int nbSep = 0;
+        for (Expression parameter : parameters) {
+            if (!(parameter instanceof StringValue) || ((StringValue) parameter).getValue().matches("\\d+")) {
+                break;
+            }
+            if (sb.length() > 0) {
+                sb.append('/');
+                ++nbSep;
+            }
+            sb.append(((StringValue) parameter).getValue());
+        }
+        if (nbSep == 3) {
+            // case of dbname/schema/table/column
+            int i = sb.indexOf("/", sb.indexOf("/") + 1);
+            sb.setCharAt(i, '.');
+        } else if (nbSep == 2) {
+            // case of schema/table/column
+            int i = sb.indexOf("/");
+            sb.setCharAt(i, '.');
+            sb.insert(0, getDatabaseId(ctx));
+        } else if (nbSep == 1) {
+            // case of table/column
+            int i = sb.indexOf("/");
+            String schema = identifySchema(sb.substring(0, i));
+            sb.insert(0, '.');
+            sb.insert(0, schema);
+            sb.insert(0, getDatabaseId(ctx));
+        }
+        String dataId = sb.toString();
+        return dataId;
+    }
+
+    private String getSridFromAddGeometryColumn(ChannelHandlerContext ctx, List<Expression> parameters) {
+        for (Expression parameter : parameters) {
+            if (parameter instanceof StringValue && ((StringValue) parameter).getValue().matches("\\d+")) {
+                return ((StringValue) parameter).getValue();
+            }
+        }
+        return null;
+    }
+
+    private String buildDataIdFromHasColumnPrivilege(ChannelHandlerContext ctx, List<Expression> parameters) {
+        StringBuilder sb = new StringBuilder();
+        int offset = parameters.size() == 3 ? 0 : 1;
+        int nbSep = 0;
+        for (int i = offset; i < offset + 2; i++) {
+            Expression parameter = parameters.get(i);
+            if (!(parameter instanceof StringValue)) {
+                throw new IllegalArgumentException("Unexepected parameter type (expected a StringValue");
+            }
+            if (sb.length() > 0) {
+                sb.append('/');
+                ++nbSep;
+            }
+            String value = ((StringValue) parameter).getValue();
+            if (StringUtilities.hasQuote(value)) {
+                value = StringUtilities.unquote(value).replace("\".\"", ".");
+            }
+            if (value.indexOf('.') != -1) {
+                ++nbSep;
+            }
+            sb.append(value);
+        }
+        if (nbSep == 2) {
+            // case of schema.table/column
+            sb.insert(0, getDatabaseId(ctx));
+        } else if (nbSep == 1) {
+            // case of table/column
+            int i = sb.indexOf("/");
+            String schema = identifySchema(sb.substring(0, i));
+            sb.insert(0, '.');
+            sb.insert(0, schema);
+            sb.insert(0, getDatabaseId(ctx));
+        }
+        String dataId = sb.toString();
+        return dataId;
     }
 
     private List<String> extractDataIds(List<Map.Entry<Table, String>> tableIds, Column column) {
@@ -3354,6 +4304,54 @@ public class PgsqlEventProcessor implements EventProcessor {
         return dataIds;
     }
 
+    private List<OutboundDataOperation.Criterion> extractSignificantCriterions(
+            List<Map.Entry<Expression, List<String>>> criteriaIds) {
+        List<OutboundDataOperation.Criterion> basicCriteria = criteriaIds.stream().map(e -> {
+            OutboundDataOperation.Criterion criterion = null;
+            if (e.getKey() instanceof BinaryExpression) {
+                String dataId;
+                boolean left;
+                if (!e.getValue().isEmpty()) {
+                    dataId = e.getValue().stream().filter(id -> id.contains("geometry_columns")).findFirst()
+                            .orElse(e.getValue().get(0));
+                    left = e.getValue().indexOf(dataId) == 0;
+                } else {
+                    dataId = e.getKey().toString();
+                    left = true;
+                }
+                criterion = binaryExpressionToCriterion(dataId, left, (BinaryExpression) e.getKey());
+            }
+            return criterion;
+        }).collect(Collectors.toList());
+        return basicCriteria;
+    }
+
+    private OutboundDataOperation.Criterion binaryExpressionToCriterion(String dataId, boolean left,
+            BinaryExpression expression) {
+        Expression leftExpression = expression.getLeftExpression();
+        Expression rightExpression = expression.getRightExpression();
+        OutboundDataOperation.Criterion criterion = null;
+        if (expression instanceof AndExpression
+                && ((leftExpression instanceof Column && rightExpression instanceof Function)
+                        || (rightExpression instanceof Column && leftExpression instanceof Function))) {
+            Function function = (Function) (leftExpression instanceof Function ? leftExpression : rightExpression);
+            if (function.getName().equalsIgnoreCase("st_makeenvelope") && function.getParameters() != null
+                    && function.getParameters().getExpressions() != null) {
+                criterion = new OutboundDataOperation.Criterion(CString.valueOf(dataId), CString.valueOf("area"),
+                        CString.valueOf(
+                                PlainSelect.getStringList(function.getParameters().getExpressions(), true, false)));
+            }
+        }
+        if (criterion == null) {
+            Expression expr = left ? rightExpression : leftExpression;
+            String value = expr instanceof StringValue ? ((StringValue) expr).getValue() : expr.toString();
+            String operator = expression.getStringExpression();
+            criterion = new OutboundDataOperation.Criterion(CString.valueOf(dataId), CString.valueOf(operator),
+                    CString.valueOf(value));
+        }
+        return criterion;
+    }
+
     private void trackTableDefinition(ChannelHandlerContext ctx, Table table) {
         if (table.getName().equalsIgnoreCase("pg_class")) {
             SQLSession session = getSession(ctx);
@@ -3372,9 +4370,9 @@ public class PgsqlEventProcessor implements EventProcessor {
 
     private String getDatabaseId(ChannelHandlerContext ctx) {
         StringBuilder sb = new StringBuilder();
-        SQLSession session = getSession(ctx);
-        if (session.getDatabaseName() != null) {
-            sb.append(session.getDatabaseName());
+        String databaseName = getDatabaseName(ctx);
+        if (databaseName != null) {
+            sb.append(databaseName);
         } else {
             sb.append('*');
         }
@@ -3414,7 +4412,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         // first: list and save tables (select * from pg_tables)
         // second: get and save the search_path variable (SHOW search_path)
         // finally: return the table according to the search_path
-        // As workaround, return pg_catalog for table names that start with 'pg_'
+        // As workaround, return pg_catalog for table names that start with
+        // 'pg_'
         return tableName.startsWith("pg_") ? "pg_catalog" : "public";
     }
 
@@ -3481,7 +4480,7 @@ public class PgsqlEventProcessor implements EventProcessor {
     }
 
     private PgsqlStatement<Select> modifySelectStatement(ChannelHandlerContext ctx, PgsqlStatement<Select> statement,
-            DataOperation dataOperation, boolean newStatement, List<ExpectedField> expectedFields) {
+            OutboundDataOperation outboundDataOperation, boolean newStatement, List<ExpectedField> expectedFields) {
         // Prepare statement
         Select stmt = statement.getStatement();
         if (newStatement) {
@@ -3499,27 +4498,26 @@ public class PgsqlEventProcessor implements EventProcessor {
         }
         PlainSelect select = (PlainSelect) stmt.getSelectBody();
 
-        int involvedBackend = dataOperation.getInvolvedCSP();
-        if (involvedBackend == -1) {
-            involvedBackend = getPreferredBackend(ctx);
-        }
-        String backendPrefix = "csp" + (involvedBackend + 1) + "/";
+        int involvedBackend = outboundDataOperation.getInvolvedCSP() == -1 ? getPreferredBackend(ctx)
+                : outboundDataOperation.getInvolvedCSP();
 
         // 1. Update clause select
         // 1.1 Retrieve data ids associated to columns and table id associated
         // to each table
         @SuppressWarnings("unchecked")
-        List<Map.Entry<SelectItem, List<String>>> selectItemIds = (List<Map.Entry<SelectItem, List<String>>>) dataOperation
+        List<Map.Entry<SelectItem, List<String>>> selectItemIds = (List<Map.Entry<SelectItem, List<String>>>) outboundDataOperation
                 .getAttribute("selectItemIds");
         List<List<String>> dataIdsPerSelectItem = selectItemIds.stream().map(Map.Entry::getValue)
                 .collect(Collectors.toList());
         @SuppressWarnings("unchecked")
-        List<Map.Entry<Table, String>> tableIds = (List<Map.Entry<Table, String>>) dataOperation
+        List<Map.Entry<Table, String>> tableIds = (List<Map.Entry<Table, String>>) outboundDataOperation
                 .getAttribute("tableIds");
 
         // 1.2 Retrieve protected data ids
-        List<String> newDataIds1 = dataOperation.getDataIds().stream().map(CString::toString)
+        List<String> newDataIds1 = outboundDataOperation.getDataIds().stream().map(CString::toString)
                 .collect(Collectors.toList());
+        List<String> newDataValues1 = outboundDataOperation.getDataValues().get(0).stream()
+                .map(StringUtilities::toString).collect(Collectors.toList());
 
         // 1.3 Retrieve the mapping between clear and protected data ids
         // call metadata operation
@@ -3527,24 +4525,32 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<CString> allDataIds1 = dataIdsPerSelectItem.stream().flatMap(List::stream).map(CString::valueOf)
                 .collect(Collectors.toList());
         metadataOperation1.setDataIds(allDataIds1);
-        List<Map.Entry<CString, List<CString>>> metadata1 = newMetaDataOperation(ctx, metadataOperation1).getMetadata();
         // mapping clear data ids to [protected data ids]:
-        // [0 protected data ids] -> column name must be dropped from the query
-        // [1 null protected data id] -> preserve original column name
-        // [1 or more protected data ids] -> replace column name by 1 or more
-        // protected data ids
-        // filter to retain metadata mapping only for the involved backend (and
-        // removing the backend prefix)
+        // [0 protected data ids] -> preserve original column name
+        // [null protected data id for a csp] -> column name must be dropped
+        // from the query
+        // [non null protected data id for a csp] -> replace column name by 1
+        // protected data id
+        List<Map.Entry<CString, List<CString>>> metadata1 = newMetaDataOperation(ctx, metadataOperation1).getMetadata();
+        // filter to retain metadata mapping only for the involved backend
+        // [0 protected data id] -> preserve original column name
+        // [1 null protected data id] -> column name must be dropped from the
+        // query
+        // [1 non null protected data id] -> replace column name by 1 protected
+        // data id
         Map<String, List<String>> rawDataIdsMapping1 = metadata1.stream()
-                .collect(
-                        Collectors.toMap(e -> e.getKey().toString(),
-                                e -> e.getValue().stream().filter(pid -> pid == null || pid.startsWith(backendPrefix))
-                                        .map(pid -> pid == null ? null
-                                                : pid.substring(backendPrefix.length()).toString())
-                                        .collect(Collectors.toList()),
-                                (l1, l2) -> l1));
+                .collect(Collectors.toMap(e -> e.getKey().toString(),
+                        e -> e.getValue().isEmpty() ? Collections.emptyList()
+                                : Collections
+                                        .singletonList(StringUtilities.toString(e.getValue().get(involvedBackend))),
+                        (l1, l2) -> l1));
         // mapping original clear data ids (including asterisks) to [protected
         // data ids]:
+        // [0 protected data id] -> preserve original column name
+        // [1 null protected data id] -> column name must be dropped from the
+        // query
+        // [1 or more non null protected data ids] -> replace column name by 1
+        // or more protected data ids
         Map<String, List<String>> dataIdsMapping1 = allDataIds1.stream().distinct().map(CString::toString)
                 .collect(Collectors.toMap(java.util.function.Function.identity(), id -> {
                     if (id.endsWith("*")) {
@@ -3593,8 +4599,19 @@ public class PgsqlEventProcessor implements EventProcessor {
                         .filter(e -> dataIds.contains(e.getKey())).flatMap(e -> e.getValue().stream())
                         .collect(Collectors.toList());
                 if (selectItemProtectedDataIds.isEmpty()) {
-                    // drop the select item
-                    newSelectItem = null;
+                    // no modification
+                    newSelectItem = selectItem;
+                    List<String> backendDatabaseNames = getBackendDatabaseNames(ctx);
+                    if (!backendDatabaseNames.isEmpty()) {
+                        // Modify data ids (replace database name by the
+                        // back-end database
+                        // name)
+                        newSelectItemDataIds = dataIds.stream()
+                                .map(id -> modifyDatabaseName(id, backendDatabaseNames.get(involvedBackend)))
+                                .collect(Collectors.toList());
+                    } else {
+                        newSelectItemDataIds = dataIds;
+                    }
                 } else {
                     // then filter data id mapping on value: retain protected
                     // data ids that the data operation has returned
@@ -3605,12 +4622,24 @@ public class PgsqlEventProcessor implements EventProcessor {
                                 : newDataIds1.contains(id);
                     }).collect(Collectors.toList());
                     if (newSelectItemDataIds.isEmpty()) {
-                        // no modification
-                        newSelectItem = selectItem;
-                        newSelectItemDataIds = dataIds;
+                        // drop the select item
+                        newSelectItem = null;
                     } else {
                         // For each protected data ids selected for the select
                         // item, build a new select item
+                        List<String> newSelectItemDataValues = selectItemProtectedDataIds.stream().filter(id -> {
+                            return id != null && id.endsWith("*")
+                                    ? newDataIds1.stream()
+                                            .anyMatch(ndid -> ndid.startsWith(id.substring(0, id.length() - 1)))
+                                    : newDataIds1.contains(id);
+                        }).map(id -> {
+                            return id != null && id.endsWith("*")
+                                    ? IntStream.range(0, newDataIds1.size())
+                                            .filter(j -> newDataIds1.get(j)
+                                                    .startsWith(id.substring(0, id.length() - 1)))
+                                            .findFirst().getAsInt()
+                                    : newDataIds1.indexOf(id);
+                        }).map(j -> newDataValues1.get(j)).collect(Collectors.toList());
                         boolean same = true;
                         for (int idx = 0; same && idx < dataIds.size(); idx++) {
                             String oldDataId = dataIds.get(idx);
@@ -3622,13 +4651,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                             same = shortNewDataId.equals(shortOldDataId);
                             if (same && selectItem instanceof SelectExpressionItem
                                     && ((SelectExpressionItem) selectItem).getExpression() instanceof Function) {
-                                Function function = (Function) ((SelectExpressionItem) selectItem).getExpression();
-                                int index = dataOperation.getParameterIds()
-                                        .indexOf(CString.valueOf(function.toString()));
-                                if (index != -1) {
-                                    String newExpression = dataOperation.getParameterValues().get(index).toString();
-                                    String oldExpression = PlainSelect
-                                            .getStringList(function.getParameters().getExpressions(), true, false);
+                                String newExpression = newSelectItemDataValues.get(idx);
+                                if (newExpression != null) {
+                                    String oldExpression = selectItem.toString();
                                     same = newExpression.equals(oldExpression);
                                 }
                             }
@@ -3637,7 +4662,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                             // no modification
                             newSelectItem = selectItem;
                         } else {
-                            newSelectItem = buildSelectItem(dataOperation, selectItem, dataIds, newSelectItemDataIds);
+                            newSelectItem = buildSelectItem(outboundDataOperation, selectItem, dataIds,
+                                    newSelectItemDataIds, newSelectItemDataValues);
                         }
                     }
                 }
@@ -3653,7 +4679,16 @@ public class PgsqlEventProcessor implements EventProcessor {
                 if (expectedField == null) {
                     expectedField = new ExpectedField(clearFieldName);
                     expectedFields.add(expectedField);
-                    expectedField.addAttributeNames(dataIds);
+                    if (outboundDataOperation.isUnprotectingDataEnabled() && selectItem instanceof SelectExpressionItem
+                            && ((SelectExpressionItem) selectItem).getExpression() instanceof Function
+                            && Stream.of(FUNCTIONS_WITH_SUPPORTED_RETURN_TYPE).noneMatch(fct -> fct.equalsIgnoreCase(
+                                    ((Function) ((SelectExpressionItem) selectItem).getExpression()).getName()))) {
+                        List<String> attributeNames = Stream.of(toFullyQualifiedOutputName(selectItem))
+                                .collect(Collectors.toList());
+                        expectedField.addAttributeNames(attributeNames);
+                    } else {
+                        expectedField.addAttributeNames(dataIds);
+                    }
                 }
                 if (newSelectItem != null) {
                     if (newSelectItemDataIds == null) {
@@ -3663,30 +4698,46 @@ public class PgsqlEventProcessor implements EventProcessor {
                         throw new IllegalStateException("unexpected");
                     }
                     String protectedFieldName = toOutputName(newSelectItem.toString());
-                    List<String> newSelectItemDataIds2 = newSelectItemDataIds;
-                    Map<String, String> reverseDataIdsMapping1 = dataIdsMapping1.entrySet().stream()
-                            .filter(e -> dataIds.contains(e.getKey()))
-                            .flatMap(e -> e.getValue().stream()
-                                    .filter(pid -> pid == null || newSelectItemDataIds2.contains(pid))
-                                    .map(pid -> new SimpleEntry<>(pid == null ? e.getKey() : pid, e.getKey())))
-                            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-                    int offset = 0;
-                    List<Map.Entry<String, Integer>> attributeMapping = new ArrayList<>(newSelectItemDataIds.size());
-                    for (String newDataId : newSelectItemDataIds) {
-                        String dataId = reverseDataIdsMapping1.get(newDataId);
-                        for (int j = offset; j < dataIds.size(); j++) {
-                            if (dataIds.get(j).equals(dataId)) {
-                                attributeMapping.add(new SimpleEntry<>(newDataId, j));
-                                break;
+                    List<String> protectedAttributeNames;
+                    List<Map.Entry<String, Integer>> attributeMapping;
+                    if (outboundDataOperation.isUnprotectingDataEnabled()
+                            && newSelectItem instanceof SelectExpressionItem
+                            && ((SelectExpressionItem) newSelectItem).getExpression() instanceof Function
+                            && Stream.of(FUNCTIONS_WITH_SUPPORTED_RETURN_TYPE).noneMatch(fct -> fct.equalsIgnoreCase(
+                                    ((Function) ((SelectExpressionItem) newSelectItem).getExpression()).getName()))) {
+                        String protectedAttributeName = toFullyQualifiedOutputName(newSelectItem);
+                        protectedAttributeNames = Stream.of(protectedAttributeName).collect(Collectors.toList());
+                        attributeMapping = Stream.of(new SimpleEntry<>(protectedAttributeName, 0))
+                                .collect(Collectors.toList());
+                    } else {
+                        protectedAttributeNames = newSelectItemDataIds;
+                        Map<String, String> reverseDataIdsMapping1 = dataIdsMapping1.entrySet().stream()
+                                .filter(e -> dataIds.contains(e.getKey()))
+                                .flatMap(e -> e.getValue().isEmpty()
+                                        ? Stream.of(new SimpleEntry<>(
+                                                protectedAttributeNames.get(dataIds.indexOf(e.getKey())), e.getKey()))
+                                        : e.getValue().stream()
+                                                .filter(pid -> pid != null && protectedAttributeNames.contains(pid))
+                                                .map(pid -> new SimpleEntry<>(pid, e.getKey())))
+                                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                        int offset = 0;
+                        attributeMapping = new ArrayList<>(newSelectItemDataIds.size());
+                        for (String newDataId : newSelectItemDataIds) {
+                            String dataId = reverseDataIdsMapping1.get(newDataId);
+                            for (int j = offset; j < dataIds.size(); j++) {
+                                if (dataIds.get(j).equals(dataId)) {
+                                    attributeMapping.add(new SimpleEntry<>(newDataId, j));
+                                    break;
+                                }
                             }
+                            offset++;
                         }
-                        offset++;
                     }
                     expectedField
                             .setBackendProtectedFields(
                                     involvedBackend, Stream
                                             .of(new ExpectedProtectedField(involvedBackend, protectedFieldName,
-                                                    newSelectItemDataIds, attributeMapping))
+                                                    protectedAttributeNames, attributeMapping))
                                             .collect(Collectors.toList()));
                 }
             }
@@ -3706,6 +4757,7 @@ public class PgsqlEventProcessor implements EventProcessor {
         // tableIdsMapping is already resolved
 
         // 2.4 Replace or remove tables
+        List<Table> newTables;
         if (select.getFromItem() != null) {
             List<Join> froms = new ArrayList<>();
             Join join = new Join();
@@ -3741,14 +4793,165 @@ public class PgsqlEventProcessor implements EventProcessor {
                     }
                 }
             }
+            newTables = newFroms.stream().map(Join::getRightItem).filter(item -> item instanceof Table)
+                    .map(Table.class::cast).collect(Collectors.toList());
             select.setFromItem(newFroms.remove(0).getRightItem());
             select.setJoins(newFroms);
+        } else {
+            newTables = null;
         }
 
-        // TODO 3. Update clause where
+        // 3. Update clause where
         if (select.getWhere() != null) {
+            // 3.1 Retrieve data ids associated to columns
+            @SuppressWarnings("unchecked")
+            List<Map.Entry<Expression, List<String>>> criteriaIds = (List<Map.Entry<Expression, List<String>>>) outboundDataOperation
+                    .getAttribute("criteriaIds");
+            List<List<String>> dataIdsPerCriteria = criteriaIds.stream().map(Map.Entry::getValue)
+                    .collect(Collectors.toList());
 
-            // TODO Modify parameter values (clause where)
+            // 3.2 Retrieve protected criterions
+            List<Map.Entry<OutboundDataOperation.Criterion, Boolean>> criterionsIds = outboundDataOperation
+                    .getCriterions().stream().map(c -> new SimpleEntry<>(c, false)).collect(Collectors.toList());
+
+            // 3.3 Retrieve the mapping between clear and protected data ids
+            // call metadata operation
+            MetadataOperation metadataOperation2 = new MetadataOperation();
+            List<CString> allDataIds2 = dataIdsPerCriteria.stream().flatMap(List::stream).map(CString::valueOf)
+                    .collect(Collectors.toList());
+            metadataOperation2.setDataIds(allDataIds2);
+            // mapping clear data ids to [protected data ids]:
+            // [0 protected data ids] -> preserve original column name
+            // [null protected data id for a csp] -> column name must be dropped
+            // from the query
+            // [non null protected data id for a csp] -> replace column name by
+            // 1 protected data id
+            List<Map.Entry<CString, List<CString>>> metadata2 = newMetaDataOperation(ctx, metadataOperation2)
+                    .getMetadata();
+            // filter to retain metadata mapping only for the involved backend
+            // [0 protected data id] -> preserve original column name
+            // [1 null protected data id] -> column name must be dropped from
+            // the query
+            // [1 non null protected data id] -> replace column name by 1
+            // protected data id
+            Map<String, List<String>> dataIdsMapping2 = metadata2.stream()
+                    .collect(
+                            Collectors
+                                    .toMap(e -> e.getKey().toString(),
+                                            e -> e.getValue().isEmpty() ? Collections.emptyList()
+                                                    : Collections.singletonList(StringUtilities
+                                                            .toString(e.getValue().get(involvedBackend))),
+                                            (l1, l2) -> l1));
+
+            // 1.4 Replace or remove columns
+            Expression whereClause = select.getWhere();
+            if (!newStatement) {
+                // Duplicate SQL expression
+                String expression = whereClause.toString();
+                try {
+                    whereClause = CCJSqlParserUtil.parseCondExpression(expression);
+                } catch (JSQLParserException | TokenMgrError e) {
+                    // Should not occur
+                    LOGGER.error("Parsing error for {} : ", expression);
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("Parsing error details:", e);
+                    }
+                }
+            }
+            PgsqlColumnsFinder columnsFinder = new PgsqlColumnsFinder();
+            columnsFinder.parse(whereClause);
+            List<Expression> expressions = columnsFinder.getExpressionsWithColumns();
+            Map<Expression, Expression> expressionsToParents = columnsFinder.getExpressionsToParents();
+            Expression newWhereClause = whereClause;
+            for (int i = 0; i < expressions.size(); i++) {
+                Expression expression = expressions.get(i);
+                Expression parentExpression = expressionsToParents.get(expression);
+                List<String> criteriaDataIds = dataIdsPerCriteria.get(i);
+                Expression newExpression;
+                if (criteriaDataIds.isEmpty()) {
+                    // no modification
+                    newExpression = expression;
+                } else {
+                    // first filter data id mapping on key: retain protected
+                    // data
+                    // ids for the criteria
+                    List<String> criteriaProtectedDataIds = dataIdsMapping2.entrySet().stream()
+                            .filter(e -> criteriaDataIds.contains(e.getKey())).flatMap(e -> e.getValue().stream())
+                            .collect(Collectors.toList());
+                    if (criteriaProtectedDataIds.isEmpty()) {
+                        // no modification
+                        newExpression = expression;
+                    } else {
+                        // then filter data id mapping on value: retain
+                        // protected
+                        // data ids that the data operation has returned for the
+                        // criteria
+                        List<Map.Entry<String, OutboundDataOperation.Criterion>> newCriterions = criteriaProtectedDataIds
+                                .stream()
+                                .filter(id -> criterionsIds.stream()
+                                        .anyMatch(e -> !e.getValue() && e.getKey() != null
+                                                && e.getKey().getDataId().equals(id)))
+                                .map(id -> criterionsIds.stream()
+                                        .filter(e -> !e.getValue() && e.getKey() != null
+                                                && e.getKey().getDataId().equals(id))
+                                        .findFirst().orElse(null))
+                                .filter(e -> e != null).peek(e -> e.setValue(true)).map(Map.Entry::getKey)
+                                .map(c -> new SimpleEntry<>(c.getDataId().toString(), c)).collect(Collectors.toList());
+                        if (newCriterions.isEmpty()) {
+                            // drop the expression
+                            newExpression = null;
+                        } else {
+                            // For each protected data ids selected for the
+                            // expression,
+                            // build a new expression
+                            List<String> shortOldDataIds = criteriaDataIds.stream()
+                                    .map(cdid -> cdid.chars().filter(c -> c == '/').count() == 2
+                                            ? cdid.substring(cdid.indexOf('/')) : cdid)
+                                    .collect(Collectors.toList());
+                            boolean same = true;
+                            for (Map.Entry<String, Criterion> entry : newCriterions) {
+                                String newDataId = entry.getKey();
+                                String shortNewDataId = newDataId.chars().filter(c -> c == '/').count() == 2
+                                        ? newDataId.substring(newDataId.indexOf('/')) : newDataId;
+                                int idx = shortOldDataIds.indexOf(shortNewDataId);
+                                same = idx != -1;
+                                if (same && expression instanceof BinaryExpression) {
+                                    Criterion criterion = entry.getValue();
+                                    OutboundDataOperation.Criterion oldCriterion = binaryExpressionToCriterion(
+                                            criteriaDataIds.get(idx), idx == 0, (BinaryExpression) expression);
+                                    same = criterion.getValue().equals(oldCriterion.getValue());
+                                }
+                                if (!same) {
+                                    break;
+                                }
+                            }
+                            ;
+                            if (same || !(expression instanceof BinaryExpression)) {
+                                // no modification
+                                newExpression = expression;
+                            } else {
+                                newExpression = buildBinaryExpression((BinaryExpression) expression,
+                                        newCriterions.stream().map(Map.Entry::getValue).collect(Collectors.toList()));
+                            }
+                        }
+                    }
+                }
+                while (newExpression != expression) {
+                    Expression newParentExpression = modifyParentExpression(parentExpression, expression,
+                            newExpression);
+                    if (newParentExpression != parentExpression) {
+                        expression = parentExpression;
+                        newExpression = newParentExpression;
+                        parentExpression = expressionsToParents.get(expression);
+                    } else {
+                        if (newWhereClause == expression) {
+                            newWhereClause = newExpression;
+                        }
+                        expression = newExpression;
+                    }
+                }
+            }
+            select.setWhere(newWhereClause);
         }
 
         // 4. Update clause order by
@@ -3780,31 +4983,34 @@ public class PgsqlEventProcessor implements EventProcessor {
             // 4.2 Retrieve mapping between clear data ids and protected data
             // ids
             // call metadata operation
-            MetadataOperation metadataOperation2 = new MetadataOperation();
+            MetadataOperation metadataOperation3 = new MetadataOperation();
             dataIdsPerOrderByElement.stream().flatMap(List::stream)
-                    .forEach(id -> metadataOperation2.addDataId(CString.valueOf(id)));
-            List<Map.Entry<CString, List<CString>>> metadata2 = newMetaDataOperation(ctx, metadataOperation2)
-                    .getMetadata();
+                    .forEach(id -> metadataOperation3.addDataId(CString.valueOf(id)));
             // mapping clear data ids to [protected data ids]:
-            // [0 protected data ids] -> column name must be dropped from the
-            // query
-            // [1 null protected data id] -> preserve original column name
-            // [1 or more protected data ids] -> replace column name by 1 or
-            // more protected data ids
-            // filter to retain metadata mapping only for the involved backend (and
-            // removing the backend prefix)
-            Map<String, List<String>> dataIdsMapping2 = metadata2.stream()
+            // [0 protected data ids] -> preserve original column name
+            // [null protected data id for a csp] -> column name must be dropped
+            // from the query
+            // [non null protected data id for a csp] -> replace column name by
+            // 1 protected data id
+            List<Map.Entry<CString, List<CString>>> metadata3 = newMetaDataOperation(ctx, metadataOperation3)
+                    .getMetadata();
+            // filter to retain metadata mapping only for the involved backend
+            // [0 protected data id] -> preserve original column name
+            // [1 null protected data id] -> column name must be dropped from
+            // the query
+            // [1 non null protected data id] -> replace column name by 1
+            // protected data id
+            Map<String, List<String>> dataIdsMapping3 = metadata3.stream()
                     .collect(
-                            Collectors.toMap(e -> e.getKey().toString(),
-                                    e -> e.getValue().stream()
-                                            .filter(pid -> pid == null || pid.startsWith(backendPrefix))
-                                            .map(pid -> pid == null ? null
-                                                    : pid.substring(backendPrefix.length()).toString())
-                                            .collect(Collectors.toList()),
-                                    (l1, l2) -> l1));
+                            Collectors
+                                    .toMap(e -> e.getKey().toString(),
+                                            e -> e.getValue().isEmpty() ? Collections.emptyList()
+                                                    : Collections.singletonList(StringUtilities
+                                                            .toString(e.getValue().get(involvedBackend))),
+                                            (l1, l2) -> l1));
 
             // 4.3 Retrieve protected data ids
-            List<String> newDataIds2 = dataIdsMapping2.values().stream().flatMap(List::stream).filter(id -> id != null)
+            List<String> newDataIds3 = dataIdsMapping3.values().stream().flatMap(List::stream).filter(id -> id != null)
                     .collect(Collectors.toList());
 
             // 4.4 Replace or remove columns
@@ -3819,25 +5025,25 @@ public class PgsqlEventProcessor implements EventProcessor {
                 } else {
                     // first filter data id mapping on key: retain protected
                     // data ids for the order by element
-                    List<String> orderByElementProtectedDataIds = dataIdsMapping2.entrySet().stream()
+                    List<String> orderByElementProtectedDataIds = dataIdsMapping3.entrySet().stream()
                             .filter(e -> dataIds.contains(e.getKey())).flatMap(e -> e.getValue().stream())
                             .collect(Collectors.toList());
                     if (orderByElementProtectedDataIds.isEmpty()) {
-                        // drop the order by element
+                        // no modification
+                        newOrderByElements.add(orderByElement);
                     } else {
                         // then filter data id mapping on value: retain
                         // protected data ids that the data operation has
                         // returned
                         List<String> newOrderByElementDataIds = orderByElementProtectedDataIds.stream()
-                                .filter(id -> newDataIds2.contains(id)).collect(Collectors.toList());
+                                .filter(id -> newDataIds3.contains(id)).collect(Collectors.toList());
                         if (newOrderByElementDataIds.isEmpty()) {
-                            // no modification
-                            newOrderByElements.add(orderByElement);
+                            // drop the order by element
                         } else {
                             // For each protected data ids selected for the
                             // order by element, build a new order by element
-                            newOrderByElementDataIds
-                                    .forEach(id -> newOrderByElements.add(buildOrderByElement(orderByElement, id)));
+                            newOrderByElementDataIds.forEach(
+                                    id -> newOrderByElements.add(buildOrderByElement(orderByElement, id, newTables)));
                         }
                     }
                 }
@@ -3850,39 +5056,30 @@ public class PgsqlEventProcessor implements EventProcessor {
     }
 
     private SelectItem buildSelectItem(DataOperation dataOperation, SelectItem selectItem, List<String> oldDataIds,
-            List<String> newDataIds) {
+            List<String> newDataIds, List<String> newExpressions) {
         SelectItem newSelectItem = selectItem;
         if (selectItem instanceof SelectExpressionItem
                 && ((SelectExpressionItem) selectItem).getExpression() instanceof Function) {
-            Function function = (Function) ((SelectExpressionItem) selectItem).getExpression();
-            int index = dataOperation.getParameterIds().indexOf(CString.valueOf(function.toString()));
-            if (index != -1) {
-                String expression = dataOperation.getParameterValues().get(index).toString();
-                newSelectItem = buildFunctionItem(selectItem, expression);
-            }
+            // consider all expressions are equals (this is one expression for
+            // several data ids)
+            newSelectItem = buildFunctionItem(selectItem, newExpressions.get(0));
         } else {
+            // consider all data ids are equals (a column cannot have more than
+            // one name)
             newSelectItem = buildColumnItem(selectItem, oldDataIds.get(0), newDataIds.get(0));
         }
         return newSelectItem;
     }
 
-    private SelectItem buildFunctionItem(SelectItem functionItem, String expression) {
+    private SelectItem buildFunctionItem(SelectItem functionItem, String newExpression) {
         Function function = (Function) ((SelectExpressionItem) functionItem).getExpression();
-        Function newFunction = new Function();
-        newFunction.setName(function.getName());
-        CCJSqlParser parser = new CCJSqlParser(new StringReader(expression));
+        Function newFunction = function;
+        CCJSqlParser parser = new CCJSqlParser(new StringReader(newExpression));
         try {
-            ExpressionList parameters = parser.SimpleExpressionList();
-            newFunction.setParameters(parameters);
+            newFunction = parser.Function();
         } catch (Exception e) {
-            LOGGER.error("Parsing error for {} : ", expression, e);
+            LOGGER.error("Parsing error for {} : ", newExpression, e);
         }
-        newFunction.setAllColumns(function.isAllColumns());
-        newFunction.setDistinct(function.isDistinct());
-        newFunction.setEscaped(function.isEscaped());
-        newFunction.setAttribute(function.getAttribute());
-        newFunction.setKeep(function.getKeep());
-        newFunction.setAlias(function.getAlias());
         SelectExpressionItem newSelectExpressionItem = new SelectExpressionItem(newFunction);
         SelectExpressionItem selectExpressionItem = (SelectExpressionItem) functionItem;
         newSelectExpressionItem.setAlias(selectExpressionItem.getAlias());
@@ -4013,7 +5210,246 @@ public class PgsqlEventProcessor implements EventProcessor {
         return newFrom;
     }
 
-    private OrderByElement buildOrderByElement(OrderByElement orderByElement, String dataId) {
+    private BinaryExpression buildBinaryExpression(BinaryExpression oldExpression,
+            List<OutboundDataOperation.Criterion> newCriterions) {
+        BinaryExpression newExpression = null;
+        try {
+            newExpression = (BinaryExpression) CCJSqlParserUtil.parseCondExpression(oldExpression.toString());
+        } catch (JSQLParserException | TokenMgrError e) {
+            // Should not occur
+            LOGGER.error("Parsing error for {} : ", oldExpression);
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("Parsing error details:", e);
+            }
+        }
+        Expression leftExpression = newExpression.getLeftExpression();
+        Expression rightExpression = newExpression.getRightExpression();
+        Column column = (Column) (leftExpression instanceof Column ? leftExpression : rightExpression);
+        for (OutboundDataOperation.Criterion newCriterion : newCriterions) {
+            String columnName = newCriterion.getDataId().substring(newCriterion.getDataId().lastIndexOf('/') + 1)
+                    .toString();
+            column.setColumnName(columnName);
+            if (newCriterion.getOperator().equals(newExpression.getStringExpression())) {
+                String value = newCriterion.getValue().toString();
+                if (leftExpression instanceof Column ? newExpression.getRightExpression() instanceof StringValue
+                        : newExpression.getLeftExpression() instanceof StringValue) {
+                    value = StringUtilities.singleQuote(value);
+                }
+                Expression newExpr = null;
+                try {
+                    newExpr = CCJSqlParserUtil.parseCondExpression(value);
+                } catch (JSQLParserException | TokenMgrError e) {
+                    try {
+                        newExpr = CCJSqlParserUtil.parseExpression(value);
+                    } catch (JSQLParserException | TokenMgrError e2) {
+                        // Should not occur
+                        LOGGER.error("Parsing error for {} : ", value);
+                        if (LOGGER.isTraceEnabled()) {
+                            LOGGER.trace("Parsing error details:", e2);
+                        }
+                    }
+                }
+                if (leftExpression instanceof Column) {
+                    newExpression.setRightExpression(newExpr);
+                } else {
+                    newExpression.setLeftExpression(newExpr);
+                }
+            } else if (newExpression instanceof AndExpression
+                    && ((leftExpression instanceof Column && rightExpression instanceof Function)
+                            || (rightExpression instanceof Column && leftExpression instanceof Function))) {
+                Function function = (Function) (leftExpression instanceof Function ? leftExpression : rightExpression);
+                if (function.getName().equalsIgnoreCase("st_makeenvelope")
+                        && newCriterion.getOperator().equals("area")) {
+                    String value = newCriterion.getValue().toString();
+                    CCJSqlParser parser = new CCJSqlParser(new StringReader(value));
+                    try {
+                        ExpressionList parameters = parser.SimpleExpressionList();
+                        function.setParameters(parameters);
+                    } catch (Exception e) {
+                        LOGGER.error("Parsing error for {} : ", value, e);
+                    }
+                }
+            }
+        }
+        return newExpression;
+    }
+
+    private Expression modifyParentExpression(Expression parentExpression, Expression oldExpression,
+            Expression newExpression) {
+        if (parentExpression instanceof ArrayElement) {
+            if (newExpression == null) {
+                parentExpression = null;
+            } else {
+                ArrayElement arrayElement = (ArrayElement) parentExpression;
+                if (arrayElement.getLeftExpression() == oldExpression) {
+                    arrayElement.setLeftExpression(newExpression);
+                } else if (arrayElement.getIndex() == oldExpression) {
+                    arrayElement.setIndex(newExpression);
+                }
+            }
+        } else if (parentExpression instanceof Between) {
+            if (newExpression == null) {
+                parentExpression = null;
+            } else {
+                Between between = (Between) parentExpression;
+                if (between.getLeftExpression() == oldExpression) {
+                    between.setLeftExpression(newExpression);
+                } else if (between.getBetweenExpressionStart() == oldExpression) {
+                    between.setBetweenExpressionStart(newExpression);
+                } else if (between.getBetweenExpressionEnd() == oldExpression) {
+                    between.setBetweenExpressionEnd(newExpression);
+                }
+            }
+        } else if (parentExpression instanceof Function) {
+            Function function = (Function) parentExpression;
+            if (function.getParameters() != null && function.getParameters().getExpressions() != null) {
+                for (int i = 0; i < function.getParameters().getExpressions().size(); i++) {
+                    if (function.getParameters().getExpressions().get(i) == oldExpression) {
+                        function.getParameters().getExpressions().set(i,
+                                newExpression == null ? new NullValue() : newExpression);
+                        break;
+                    }
+                }
+            }
+        } else if (parentExpression instanceof InExpression) {
+            InExpression inExpression = (InExpression) parentExpression;
+            if (inExpression.getLeftExpression() == oldExpression) {
+                inExpression.setLeftExpression(newExpression);
+            }
+        } else if (parentExpression instanceof SignedExpression) {
+            if (newExpression == null) {
+                parentExpression = null;
+            } else {
+                SignedExpression signedExpression = (SignedExpression) parentExpression;
+                if (signedExpression.getExpression() == oldExpression) {
+                    signedExpression.setExpression(newExpression);
+                }
+            }
+        } else if (parentExpression instanceof IsNullExpression) {
+            if (newExpression == null) {
+                parentExpression = null;
+            } else {
+                IsNullExpression isNullExpression = (IsNullExpression) parentExpression;
+                if (isNullExpression.getLeftExpression() == oldExpression) {
+                    isNullExpression.setLeftExpression(newExpression);
+                }
+            }
+        } else if (parentExpression instanceof ExistsExpression) {
+            if (newExpression == null) {
+                parentExpression = null;
+            } else {
+                ExistsExpression existsExpression = (ExistsExpression) parentExpression;
+                if (existsExpression.getRightExpression() == oldExpression) {
+                    existsExpression.setRightExpression(newExpression);
+                }
+            }
+        } else if (parentExpression instanceof Not) {
+            if (newExpression == null) {
+                parentExpression = null;
+            } else {
+                Not not = (Not) parentExpression;
+                if (not.getExpression() == oldExpression) {
+                    not.setExpression(newExpression);
+                }
+            }
+        } else if (parentExpression instanceof Parenthesis) {
+            if (newExpression == null) {
+                parentExpression = null;
+            } else {
+                Parenthesis parenthesis = (Parenthesis) parentExpression;
+                if (parenthesis.getExpression() == oldExpression) {
+                    parenthesis.setExpression(newExpression);
+                }
+            }
+        } else if (parentExpression instanceof BinaryExpression) {
+            if (newExpression == null) {
+                parentExpression = null;
+            } else {
+                BinaryExpression binaryExpression = (BinaryExpression) parentExpression;
+                if (binaryExpression.getLeftExpression() == oldExpression) {
+                    binaryExpression.setLeftExpression(newExpression);
+                } else if (binaryExpression.getRightExpression() == oldExpression) {
+                    binaryExpression.setRightExpression(newExpression);
+                }
+            }
+        } else if (parentExpression instanceof CaseExpression) {
+            CaseExpression caseExpression = (CaseExpression) parentExpression;
+            if (caseExpression.getSwitchExpression() == oldExpression) {
+                caseExpression.setSwitchExpression(newExpression);
+            } else if (caseExpression.getElseExpression() == oldExpression) {
+                caseExpression.setElseExpression(newExpression);
+            } else if (caseExpression.getWhenClauses() != null) {
+                for (int i = 0; i < caseExpression.getWhenClauses().size(); i++) {
+                    if (caseExpression.getWhenClauses().get(i) == oldExpression) {
+                        if (newExpression == null) {
+                            caseExpression.getWhenClauses().remove(i);
+                        } else {
+                            caseExpression.getWhenClauses().set(i, newExpression);
+                        }
+                        break;
+                    }
+                }
+            }
+        } else if (parentExpression instanceof WhenClause) {
+            if (newExpression == null) {
+                parentExpression = null;
+            } else {
+                WhenClause whenClause = (WhenClause) parentExpression;
+                if (whenClause.getWhenExpression() == oldExpression) {
+                    whenClause.setWhenExpression(newExpression);
+                } else if (whenClause.getThenExpression() == oldExpression) {
+                    whenClause.setThenExpression(newExpression);
+                }
+            }
+        } else if (parentExpression instanceof CastExpression) {
+            if (newExpression == null) {
+                parentExpression = null;
+            } else {
+                CastExpression castExpression = (CastExpression) parentExpression;
+                if (castExpression.getLeftExpression() == oldExpression) {
+                    castExpression.setLeftExpression(newExpression);
+                }
+            }
+        } else if (parentExpression instanceof OracleHierarchicalExpression) {
+            OracleHierarchicalExpression oracleHierarchicalExpression = (OracleHierarchicalExpression) parentExpression;
+            if (oracleHierarchicalExpression.getStartExpression() == oldExpression) {
+                oracleHierarchicalExpression.setStartExpression(newExpression);
+            } else if (oracleHierarchicalExpression.getConnectExpression() == oldExpression) {
+                if (newExpression == null) {
+                    parentExpression = null;
+                } else {
+                    oracleHierarchicalExpression.setConnectExpression(newExpression);
+                }
+            }
+        } else if (parentExpression instanceof WithinGroupExpression) {
+            WithinGroupExpression withinGroupExpression = (WithinGroupExpression) parentExpression;
+            for (int i = 0; i < withinGroupExpression.getExprList().getExpressions().size(); i++) {
+                if (withinGroupExpression.getExprList().getExpressions().get(i) == oldExpression) {
+                    if (newExpression == null) {
+                        withinGroupExpression.getExprList().getExpressions().remove(i);
+                    } else {
+                        withinGroupExpression.getExprList().getExpressions().set(i, newExpression);
+                    }
+                    break;
+                }
+            }
+        } else if (parentExpression instanceof RowConstructor) {
+            RowConstructor rowConstructor = (RowConstructor) parentExpression;
+            for (int i = 0; i < rowConstructor.getExprList().getExpressions().size(); i++) {
+                if (rowConstructor.getExprList().getExpressions().get(i) == oldExpression) {
+                    if (newExpression == null) {
+                        rowConstructor.getExprList().getExpressions().remove(i);
+                    } else {
+                        rowConstructor.getExprList().getExpressions().set(i, newExpression);
+                    }
+                    break;
+                }
+            }
+        }
+        return parentExpression;
+    }
+
+    private OrderByElement buildOrderByElement(OrderByElement orderByElement, String dataId, List<Table> tables) {
         String[] tokens = dataId.split("/");
         assert tokens.length > 0;
         String newDbName = tokens.length >= 3 ? tokens[tokens.length - 3] : null;
@@ -4023,21 +5459,26 @@ public class PgsqlEventProcessor implements EventProcessor {
         Table table = column.getTable();
         Table newTable = null;
         if (table != null && !table.getFullyQualifiedName().isEmpty() && newTableName != null) {
-            Database newDatabase = null;
-            if (table.getDatabase() != null && !table.getDatabase().getFullyQualifiedName().isEmpty()
-                    && newDbName != null) {
-                newDatabase = new Database(newDbName);
+            if (tables.stream().anyMatch(
+                    t -> t.getAlias() != null && t.getAlias().getName().equals(table.getFullyQualifiedName()))) {
+                newTable = new Table(table.getDatabase(), table.getSchemaName(), table.getName());
+            } else {
+                Database newDatabase = null;
+                if (table.getDatabase() != null && !table.getDatabase().getFullyQualifiedName().isEmpty()
+                        && newDbName != null) {
+                    newDatabase = new Database(newDbName);
+                }
+                String[] tokens2 = newTableName.split("\\.");
+                if (tokens2.length == 2) {
+                    newTableName = tokens2[1];
+                }
+                String newSchemaName = null;
+                if (table.getSchemaName() != null) {
+                    newSchemaName = tokens2.length == 2 ? tokens2[0] : "public";
+                }
+                newTable = new Table(newDatabase, newSchemaName, newTableName);
+                newTable.setAlias(table.getAlias());
             }
-            String[] tokens2 = newTableName.split("\\.");
-            if (tokens2.length == 2) {
-                newTableName = tokens2[1];
-            }
-            String newSchemaName = null;
-            if (table.getSchemaName() != null) {
-                newSchemaName = tokens2.length == 2 ? tokens2[0] : "public";
-            }
-            newTable = new Table(newDatabase, newSchemaName, newTableName);
-            newTable.setAlias(table.getAlias());
         }
         OrderByElement newOrderByElement = new OrderByElement();
         newOrderByElement.setAsc(orderByElement.isAsc());
@@ -4049,23 +5490,23 @@ public class PgsqlEventProcessor implements EventProcessor {
         return newOrderByElement;
     }
 
-    private DataOperation extractDeclareCursorOperation(ChannelHandlerContext ctx, DeclareCursor stmt,
+    private OutboundDataOperation extractDeclareCursorOperation(ChannelHandlerContext ctx, DeclareCursor stmt,
             List<ParameterValue> parameterValues) throws ParseException {
         if (!(stmt.getQuery() instanceof Select)) {
             return null;
         }
 
         ModuleOperation moduleOperation = extractSelectOperation(ctx, stmt.getQuery(), parameterValues, null, null);
-        if (!(moduleOperation instanceof DataOperation)) {
+        if (!(moduleOperation instanceof OutboundDataOperation)) {
             throw new IllegalStateException("unexpected");
         }
-        DataOperation dataOperation = (DataOperation) moduleOperation;
-        dataOperation.addAttribute("cursorName", stmt.getName());
-        return dataOperation;
+        OutboundDataOperation outboundDataOperation = (OutboundDataOperation) moduleOperation;
+        outboundDataOperation.addAttribute("cursorName", stmt.getName());
+        return outboundDataOperation;
     }
 
     private PgsqlStatement<DeclareCursor> modifyDeclareCursorStatement(ChannelHandlerContext ctx,
-            PgsqlStatement<DeclareCursor> statement, DataOperation dataOperation, boolean newStatement,
+            PgsqlStatement<DeclareCursor> statement, OutboundDataOperation outboundDataOperation, boolean newStatement,
             List<ExpectedField> expectedFields) {
         // Prepare statement
         DeclareCursor stmt = statement.getStatement();
@@ -4086,8 +5527,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         PgsqlStatement<Select> selectStatement = new PgsqlStatement<>(select, statement.getParameterTypes(),
                 statement.getParameterFormats(), statement.getParameterValues(), statement.getResultFormats(),
                 statement.getColumns());
-        PgsqlStatement<Select> newSelectStatement = modifySelectStatement(ctx, selectStatement, dataOperation, false,
-                expectedFields);
+        PgsqlStatement<Select> newSelectStatement = modifySelectStatement(ctx, selectStatement, outboundDataOperation,
+                false, expectedFields);
         Select newSelect = newSelectStatement.getStatement();
         stmt.setQuery(newSelect);
         return new PgsqlStatement<>(stmt, newSelectStatement.getParameterTypes(),
@@ -4095,27 +5536,27 @@ public class PgsqlEventProcessor implements EventProcessor {
                 newSelectStatement.getResultFormats(), newSelectStatement.getColumns());
     }
 
-    private DataOperation extractCursorFetchOperation(ChannelHandlerContext ctx, CursorFetch stmt)
+    private OutboundDataOperation extractCursorFetchOperation(ChannelHandlerContext ctx, CursorFetch stmt)
             throws ParseException {
-        DataOperation dataOperation = new DataOperation();
-        dataOperation.setOperation(null);
+        OutboundDataOperation outboundDataOperation = new OutboundDataOperation();
+        outboundDataOperation.setOperation(null);
 
         SQLSession session = getSession(ctx);
         CursorContext cursorStatus = session.getCursorContext(stmt.getName());
         if (cursorStatus != null) {
-            dataOperation.setDataIds(cursorStatus.getExpectedFields().stream().map(ExpectedField::getAttributes)
+            outboundDataOperation.setDataIds(cursorStatus.getExpectedFields().stream().map(ExpectedField::getAttributes)
                     .flatMap(List::stream).map(Map.Entry::getKey).map(CString::valueOf).collect(Collectors.toList()));
-            dataOperation.setPromise(cursorStatus.getPromise());
-            dataOperation.setInvolvedCSPs(cursorStatus.getInvolvedBackends());
-            dataOperation.setUnprotectingDataEnabled(cursorStatus.isUnprotectingDataEnabled());
+            outboundDataOperation.setPromise(cursorStatus.getPromise());
+            outboundDataOperation.setInvolvedCSPs(cursorStatus.getInvolvedBackends());
+            outboundDataOperation.setUnprotectingDataEnabled(cursorStatus.isUnprotectingDataEnabled());
         }
 
-        dataOperation.addAttribute("cursorName", stmt.getName());
-        return dataOperation;
+        outboundDataOperation.addAttribute("cursorName", stmt.getName());
+        return outboundDataOperation;
     }
 
     private PgsqlStatement<CursorFetch> modifyCursorFetchStatement(ChannelHandlerContext ctx,
-            PgsqlStatement<CursorFetch> statement, DataOperation dataOperation, boolean newStatement) {
+            PgsqlStatement<CursorFetch> statement, OutboundDataOperation outboundDataOperation, boolean newStatement) {
         // Prepare statement
         CursorFetch stmt = statement.getStatement();
         if (newStatement) {
@@ -4136,27 +5577,27 @@ public class PgsqlEventProcessor implements EventProcessor {
                 statement.getParameterValues(), statement.getResultFormats(), statement.getColumns());
     }
 
-    private DataOperation extractCursorCloseOperation(ChannelHandlerContext ctx, CursorClose stmt)
+    private OutboundDataOperation extractCursorCloseOperation(ChannelHandlerContext ctx, CursorClose stmt)
             throws ParseException {
-        DataOperation dataOperation = new DataOperation();
-        dataOperation.setOperation(null);
+        OutboundDataOperation outboundDataOperation = new OutboundDataOperation();
+        outboundDataOperation.setOperation(null);
 
         SQLSession session = getSession(ctx);
         CursorContext cursorStatus = session.getCursorContext(stmt.getName());
         if (cursorStatus != null) {
-            dataOperation.setDataIds(cursorStatus.getExpectedFields().stream().map(ExpectedField::getAttributes)
+            outboundDataOperation.setDataIds(cursorStatus.getExpectedFields().stream().map(ExpectedField::getAttributes)
                     .flatMap(List::stream).map(Map.Entry::getKey).map(CString::valueOf).collect(Collectors.toList()));
-            dataOperation.setPromise(cursorStatus.getPromise());
-            dataOperation.setInvolvedCSPs(cursorStatus.getInvolvedBackends());
-            dataOperation.setUnprotectingDataEnabled(cursorStatus.isUnprotectingDataEnabled());
+            outboundDataOperation.setPromise(cursorStatus.getPromise());
+            outboundDataOperation.setInvolvedCSPs(cursorStatus.getInvolvedBackends());
+            outboundDataOperation.setUnprotectingDataEnabled(cursorStatus.isUnprotectingDataEnabled());
         }
 
-        dataOperation.addAttribute("cursorName", stmt.getName());
-        return dataOperation;
+        outboundDataOperation.addAttribute("cursorName", stmt.getName());
+        return outboundDataOperation;
     }
 
     private PgsqlStatement<CursorClose> modifyCursorCloseStatement(ChannelHandlerContext ctx,
-            PgsqlStatement<CursorClose> statement, DataOperation dataOperation, boolean newStatement) {
+            PgsqlStatement<CursorClose> statement, OutboundDataOperation outboundDataOperation, boolean newStatement) {
         // Prepare statement
         CursorClose stmt = statement.getStatement();
         if (newStatement) {
@@ -4211,7 +5652,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                         error = CString.valueOf(String.format("%s read not supported by this CLARUS proxy",
                                 retrieveWholeDataset ? "Dataset" : "Record"));
                     } else if (processingMode == Mode.ORCHESTRATION) {
-                        // TODO orchestration mode. Meanwhile, same as AS_IT_IS mode
+                        // TODO orchestration mode. Meanwhile, same as AS_IT_IS
+                        // mode
                         transferMode = TransferMode.FORWARD;
                     } else if (processingMode == Mode.AS_IT_IS || processingMode == Mode.BUFFERING
                             || processingMode == Mode.STREAMING) {
@@ -4307,6 +5749,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         session.setTransferMode(transferMode);
         if (transferMode == TransferMode.FORWARD) {
             if (parseStepStatus != null) {
+                // Set involved backends
+                session.setCommandInvolvedBackends(Collections.singletonList(getPreferredBackend(ctx)), false);
                 DescribeStepStatus describeStepStatus = session.getDescribeStepStatus((byte) 'S',
                         parseStepStatus.getQuery().getName());
                 Result<List<Query>, CommandResults, CString> result = buildNewQueries(ctx, parseStepStatus,
@@ -4528,21 +5972,24 @@ public class PgsqlEventProcessor implements EventProcessor {
                     response = new CommandResults();
                     if (metadataOperation.isModified()) {
                         List<Map.Entry<CString, List<CString>>> metadata = metadataOperation.getMetadata();
-                        // Verify all data ids refer to the same dataset (prefix is
+                        // Verify all data ids refer to the same dataset (prefix
+                        // is
                         // the same for all data ids)
                         Set<CString> prefixes = metadata.stream().map(Map.Entry::getKey)
                                 .map(id -> id.substring(0, id.lastIndexOf('/'))).collect(Collectors.toSet());
                         boolean multipleDatasets = prefixes.size() > 1
                                 || prefixes.stream().findFirst().get().equals("*");
                         if (!multipleDatasets) {
-                            // Prefix is the same for all data ids -> remove prefix
+                            // Prefix is the same for all data ids -> remove
+                            // prefix
                             metadata = metadata.stream()
                                     .map(e -> new SimpleEntry<>(e.getKey().substring(e.getKey().lastIndexOf('/') + 1),
                                             e.getValue()))
                                     .collect(Collectors.toList());
                         }
                         // Build rows
-                        List<List<ByteBuf>> rows = buildRows(metadata, executeStep.getMaxRows());
+                        List<List<ByteBuf>> rows = buildRows(metadata, bindStepStatus.getInvolvedBackends(),
+                                executeStep.getMaxRows());
                         response.setRows(rows);
                         // Build complete tag
                         response.setCompleteTag(CString.valueOf("SELECT " + rows.size()));
@@ -4720,20 +6167,29 @@ public class PgsqlEventProcessor implements EventProcessor {
         return mode;
     }
 
-    private List<List<ByteBuf>> buildRows(List<Map.Entry<CString, List<CString>>> metadata, int maxSize) {
+    private List<List<ByteBuf>> buildRows(List<Map.Entry<CString, List<CString>>> metadata,
+            List<Integer> involvedBackends, int maxSize) {
         // Build rows (replacing / by .)
         List<List<ByteBuf>> rows = metadata.stream().flatMap(e -> {
             CString key = e.getKey().replace('/', '.');
             ByteBuf clearColumn = key.getByteBuf(key.length());
             List<CString> values = e.getValue();
-            if (values.size() > 1) {
-                clearColumn.retain(values.size() - 1);
+            List<ByteBuf> protectedColumns = IntStream.range(0, values.size()).mapToObj(csp -> {
+                CString value = values.get(csp);
+                ByteBuf protectedColumn = null;
+                if (value != null) {
+                    value = CString.valueOf("csp" + (csp + 1)).append('.').append(value.replace('/', '.'));
+                    protectedColumn = value.getByteBuf(value.length());
+                }
+                return protectedColumn;
+            }).filter(pc -> pc != null).collect(Collectors.toList());
+            if (protectedColumns.isEmpty()) {
+                protectedColumns.add(null);
             }
-            return values.stream().map(v -> {
-                CString value = v != null ? v.replace('/', '.') : null;
-                ByteBuf protectedColumn = value != null ? value.getByteBuf(value.length()) : null;
-                return Stream.of(clearColumn, protectedColumn).collect(Collectors.toList());
-            });
+            if (protectedColumns.size() > 1) {
+                clearColumn.retain(protectedColumns.size() - 1);
+            }
+            return protectedColumns.stream().map(pc -> Stream.of(clearColumn, pc).collect(Collectors.toList()));
         }).limit(maxSize < 0 ? Integer.MAX_VALUE : maxSize).collect(Collectors.toList());
         return rows;
     }
@@ -5053,6 +6509,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                 } else if (stmt instanceof Alter) {
                     moduleOperation = extractAlterTableOperation(ctx, (Alter) stmt, null,
                             bindStepStatus.getOperation());
+                } else if (stmt instanceof CreateIndex) {
+                    moduleOperation = extractCreateIndexOperation(ctx, (CreateIndex) stmt, null,
+                            bindStepStatus.getOperation());
                 } else if (stmt instanceof Drop) {
                     moduleOperation = extractDropTableOperation(ctx, (Drop) stmt);
                 } else if (stmt instanceof Insert) {
@@ -5093,19 +6552,21 @@ public class PgsqlEventProcessor implements EventProcessor {
                 CommandResults commandResults = new CommandResults();
                 commandResults.setBindCompleteRequired(true);
                 result = Result.response(commandResults);
-            } else if (moduleOperation instanceof DataOperation) {
-                DataOperation dataOperation = (DataOperation) moduleOperation;
+            } else if (moduleOperation instanceof OutboundDataOperation) {
+                OutboundDataOperation outBoundDataOperation = (OutboundDataOperation) moduleOperation;
                 // Save column names (row description)
-                List<CString> columns = dataOperation.getDataIds().stream()
+                List<CString> columns = outBoundDataOperation.getDataIds().stream()
                         .map(id -> id.substring(id.lastIndexOf('/') + 1)).collect(Collectors.toList());
                 parseStep.setColumns(columns);
                 // Process data operation
-                List<DataOperation> newDataOperations = newDataOperation(ctx, dataOperation);
+                List<OutboundDataOperation> newOutboundDataOperations = newOutboundDataOperation(ctx,
+                        outBoundDataOperation);
                 if (stmt instanceof SetStatement || stmt instanceof StartTransaction || stmt instanceof Commit
-                        || stmt instanceof CreateTable || stmt instanceof Alter || stmt instanceof Drop
-                        || stmt instanceof Insert || stmt instanceof Select || stmt instanceof DeclareCursor
-                        || stmt instanceof CursorFetch || stmt instanceof CursorClose) {
-                    if (newDataOperations.isEmpty()) {
+                        || stmt instanceof CreateTable || stmt instanceof Alter || stmt instanceof CreateIndex
+                        || stmt instanceof Drop || stmt instanceof Insert || stmt instanceof Select
+                        || stmt instanceof DeclareCursor || stmt instanceof CursorFetch
+                        || stmt instanceof CursorClose) {
+                    if (newOutboundDataOperations.isEmpty()) {
                         // Forget SQL statement, reply directly to the frontend
                         CommandResults commandResults = new CommandResults();
                         commandResults.setBindCompleteRequired(true);
@@ -5117,23 +6578,25 @@ public class PgsqlEventProcessor implements EventProcessor {
                     } else {
                         List<Integer> involvedBackends;
                         List<ExpectedField> expectedFields = null;
-                        boolean requestModified = newDataOperations.size() > 1 || newDataOperations.get(0).isModified();
+                        boolean requestModified = newOutboundDataOperations.size() > 1
+                                || newOutboundDataOperations.get(0).isModified();
                         if (FORCE_SQL_PROCESSING || requestModified) {
-                            List<List<ExtendedQuery>> extendedQueries = new ArrayList<>(newDataOperations.size());
-                            involvedBackends = new ArrayList<>(newDataOperations.size());
+                            List<List<ExtendedQuery>> extendedQueries = new ArrayList<>(
+                                    newOutboundDataOperations.size());
+                            involvedBackends = new ArrayList<>(newOutboundDataOperations.size());
                             if (session.getCurrentCommandOperation() == Operation.READ) {
                                 expectedFields = new ArrayList<>();
                             }
                             // Modify SQL statement
-                            for (DataOperation newDataOperation : newDataOperations) {
+                            for (OutboundDataOperation newOutboundDataOperation : newOutboundDataOperations) {
                                 PgsqlStatement<? extends Statement> newStatement;
                                 String newSQL;
                                 if (stmt instanceof SetStatement) {
                                     PgsqlStatement<SetStatement> statement = new PgsqlStatement<>((SetStatement) stmt,
                                             parseStep.getParameterTypes(), bindStep.getParameterFormats(),
                                             parameterValues, bindStep.getResultColumnFormats(), parseStep.getColumns());
-                                    newStatement = modifySetStatement(ctx, statement, newDataOperation,
-                                            newDataOperations.size() > 1);
+                                    newStatement = modifySetStatement(ctx, statement, newOutboundDataOperation,
+                                            newOutboundDataOperations.size() > 1);
                                     Statement newSetStatement = newStatement.getStatement();
                                     newSQL = newSetStatement.toString();
                                 } else if (stmt instanceof StartTransaction) {
@@ -5141,80 +6604,89 @@ public class PgsqlEventProcessor implements EventProcessor {
                                             (StartTransaction) stmt, parseStep.getParameterTypes(),
                                             bindStep.getParameterFormats(), parameterValues,
                                             bindStep.getResultColumnFormats(), parseStep.getColumns());
-                                    newStatement = modifyStartTransactionStatement(ctx, statement, newDataOperation,
-                                            newDataOperations.size() > 1);
+                                    newStatement = modifyStartTransactionStatement(ctx, statement,
+                                            newOutboundDataOperation, newOutboundDataOperations.size() > 1);
                                     Statement newStartTransaction = newStatement.getStatement();
                                     newSQL = newStartTransaction.toString();
                                 } else if (stmt instanceof Commit) {
                                     PgsqlStatement<Commit> statement = new PgsqlStatement<>((Commit) stmt,
                                             parseStep.getParameterTypes(), bindStep.getParameterFormats(),
                                             parameterValues, bindStep.getResultColumnFormats(), parseStep.getColumns());
-                                    newStatement = modifyCommitStatement(ctx, statement, newDataOperation,
-                                            newDataOperations.size() > 1);
+                                    newStatement = modifyCommitStatement(ctx, statement, newOutboundDataOperation,
+                                            newOutboundDataOperations.size() > 1);
                                     Statement newCommit = newStatement.getStatement();
                                     newSQL = newCommit.toString();
                                 } else if (stmt instanceof CreateTable) {
                                     PgsqlStatement<CreateTable> statement = new PgsqlStatement<>((CreateTable) stmt,
                                             parseStep.getParameterTypes(), bindStep.getParameterFormats(),
                                             parameterValues, bindStep.getResultColumnFormats(), parseStep.getColumns());
-                                    newStatement = modifyCreateTableStatement(ctx, statement, newDataOperation,
-                                            newDataOperations.size() > 1);
+                                    newStatement = modifyCreateTableStatement(ctx, statement, newOutboundDataOperation,
+                                            newOutboundDataOperations.size() > 1);
                                     Statement newCreateTable = newStatement.getStatement();
                                     newSQL = newCreateTable.toString();
                                 } else if (stmt instanceof Alter) {
                                     PgsqlStatement<Alter> statement = new PgsqlStatement<>((Alter) stmt,
                                             parseStep.getParameterTypes(), bindStep.getParameterFormats(),
                                             parameterValues, bindStep.getResultColumnFormats(), parseStep.getColumns());
-                                    newStatement = modifyAlterTableStatement(ctx, statement, newDataOperation,
-                                            newDataOperations.size() > 1);
+                                    newStatement = modifyAlterTableStatement(ctx, statement, newOutboundDataOperation,
+                                            newOutboundDataOperations.size() > 1);
                                     Statement newAlter = newStatement.getStatement();
                                     newSQL = newAlter.toString();
+                                } else if (stmt instanceof CreateIndex) {
+                                    PgsqlStatement<CreateIndex> statement = new PgsqlStatement<>((CreateIndex) stmt,
+                                            parseStep.getParameterTypes(), bindStep.getParameterFormats(),
+                                            parameterValues, bindStep.getResultColumnFormats(), parseStep.getColumns());
+                                    newStatement = modifyCreateIndexStatement(ctx, statement, newOutboundDataOperation,
+                                            newOutboundDataOperations.size() > 1);
+                                    Statement newCreateIndex = newStatement.getStatement();
+                                    newSQL = newCreateIndex.toString();
                                 } else if (stmt instanceof Drop) {
                                     PgsqlStatement<Drop> statement = new PgsqlStatement<>((Drop) stmt,
                                             parseStep.getParameterTypes(), bindStep.getParameterFormats(),
                                             parameterValues, bindStep.getResultColumnFormats(), parseStep.getColumns());
-                                    newStatement = modifyDropTableStatement(ctx, statement, newDataOperation,
-                                            newDataOperations.size() > 1);
+                                    newStatement = modifyDropTableStatement(ctx, statement, newOutboundDataOperation,
+                                            newOutboundDataOperations.size() > 1);
                                     Statement newDropTable = newStatement.getStatement();
                                     newSQL = newDropTable.toString();
                                 } else if (stmt instanceof Insert) {
                                     PgsqlStatement<Insert> statement = new PgsqlStatement<>((Insert) stmt,
                                             parseStep.getParameterTypes(), bindStep.getParameterFormats(),
                                             parameterValues, bindStep.getResultColumnFormats(), parseStep.getColumns());
-                                    newStatement = modifyInsertStatement(ctx, statement, newDataOperation,
-                                            newDataOperations.size() > 1, 0);
+                                    newStatement = modifyInsertStatement(ctx, statement, newOutboundDataOperation,
+                                            newOutboundDataOperations.size() > 1, 0);
                                     Statement newInsert = newStatement.getStatement();
                                     newSQL = newInsert.toString();
                                 } else if (stmt instanceof Select) {
                                     PgsqlStatement<Select> statement = new PgsqlStatement<>((Select) stmt,
                                             parseStep.getParameterTypes(), bindStep.getParameterFormats(),
                                             parameterValues, bindStep.getResultColumnFormats(), parseStep.getColumns());
-                                    newStatement = modifySelectStatement(ctx, statement, newDataOperation,
-                                            newDataOperations.size() > 1, expectedFields);
+                                    newStatement = modifySelectStatement(ctx, statement, newOutboundDataOperation,
+                                            newOutboundDataOperations.size() > 1, expectedFields);
                                     Statement newSelect = newStatement.getStatement();
                                     newSQL = newSelect.toString();
                                 } else if (stmt instanceof DeclareCursor) {
                                     PgsqlStatement<DeclareCursor> statement = new PgsqlStatement<>((DeclareCursor) stmt,
                                             parseStep.getParameterTypes(), bindStep.getParameterFormats(),
                                             parameterValues, bindStep.getResultColumnFormats(), parseStep.getColumns());
-                                    newStatement = modifyDeclareCursorStatement(ctx, statement, newDataOperation,
-                                            newDataOperations.size() > 1, expectedFields);
+                                    newStatement = modifyDeclareCursorStatement(ctx, statement,
+                                            newOutboundDataOperation, newOutboundDataOperations.size() > 1,
+                                            expectedFields);
                                     Statement newDeclareCursor = newStatement.getStatement();
                                     newSQL = newDeclareCursor.toString();
                                 } else if (stmt instanceof CursorFetch) {
                                     PgsqlStatement<CursorFetch> statement = new PgsqlStatement<>((CursorFetch) stmt,
                                             parseStep.getParameterTypes(), bindStep.getParameterFormats(),
                                             parameterValues, bindStep.getResultColumnFormats(), parseStep.getColumns());
-                                    newStatement = modifyCursorFetchStatement(ctx, statement, newDataOperation,
-                                            newDataOperations.size() > 1);
+                                    newStatement = modifyCursorFetchStatement(ctx, statement, newOutboundDataOperation,
+                                            newOutboundDataOperations.size() > 1);
                                     Statement newCursorFetch = newStatement.getStatement();
                                     newSQL = newCursorFetch.toString();
                                 } else if (stmt instanceof CursorClose) {
                                     PgsqlStatement<CursorClose> statement = new PgsqlStatement<>((CursorClose) stmt,
                                             parseStep.getParameterTypes(), bindStep.getParameterFormats(),
                                             parameterValues, bindStep.getResultColumnFormats(), parseStep.getColumns());
-                                    newStatement = modifyCursorCloseStatement(ctx, statement, newDataOperation,
-                                            newDataOperations.size() > 1);
+                                    newStatement = modifyCursorCloseStatement(ctx, statement, newOutboundDataOperation,
+                                            newOutboundDataOperations.size() > 1);
                                     Statement newCursorClose = newStatement.getStatement();
                                     newSQL = newCursorClose.toString();
                                 } else {
@@ -5235,7 +6707,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                                         .collect(Collectors.toList());
                                 bindStep = new BindStep(bindStep.getName(), bindStep.getPreparedStatement(),
                                         newStatement.getParameterFormats(), newValues, newStatement.getResultFormats());
-                                int involvedBackend = newDataOperation.getInvolvedCSP();
+                                int involvedBackend = newOutboundDataOperation.getInvolvedCSP();
                                 if (involvedBackend == -1) {
                                     involvedBackend = getPreferredBackend(ctx);
                                 }
@@ -5275,13 +6747,13 @@ public class PgsqlEventProcessor implements EventProcessor {
                             bindStepStatus.setProcessed(true);
                             result = Result.queries(extendedQueries);
                         } else {
-                            involvedBackends = dataOperation.getInvolvedCSPs();
+                            involvedBackends = outBoundDataOperation.getInvolvedCSPs();
                             if (involvedBackends == null) {
                                 involvedBackends = Collections.singletonList(getPreferredBackend(ctx));
                             }
                             if (session.getCurrentCommandOperation() == Operation.READ) {
                                 @SuppressWarnings("unchecked")
-                                List<Map.Entry<SelectItem, List<String>>> selectItemIds = (List<Map.Entry<SelectItem, List<String>>>) dataOperation
+                                List<Map.Entry<SelectItem, List<String>>> selectItemIds = (List<Map.Entry<SelectItem, List<String>>>) outBoundDataOperation
                                         .getAttribute("selectItemIds");
                                 expectedFields = selectItemIds.stream().map(e -> {
                                     SelectItem item = e.getKey();
@@ -5327,9 +6799,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                         session.setCommandInvolvedBackends(parseStepStatus.getInvolvedBackends());
                         if (session.getCurrentCommandOperation() == Operation.READ) {
                             session.setResultProcessingEnabled(
-                                    requestModified || !dataOperation.isUnprotectingDataEnabled());
-                            session.setPromise(newDataOperations.get(0).getPromise());
-                            session.setUnprotectingDataEnabled(dataOperation.isUnprotectingDataEnabled());
+                                    requestModified || !outBoundDataOperation.isUnprotectingDataEnabled());
+                            session.setPromise(newOutboundDataOperations.get(0).getPromise());
+                            session.setUnprotectingDataEnabled(outBoundDataOperation.isUnprotectingDataEnabled());
                             session.setExpectedFields(expectedFields);
                             if (stmt instanceof DeclareCursor) {
                                 // Save cursor context
@@ -5581,7 +7053,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<Integer> involvedBackends = session.getCommandInvolvedBackends();
         int numberOfBackends = involvedBackends.size();
         // Retrieve response if all backends have replied
-        // Note: use Boolean instead of Void because insertion of null is not permitted
+        // Note: use Boolean instead of Void because insertion of null is not
+        // permitted
         SortedMap<Integer, Boolean> all = session.newQueryResponse(QueryResponseType.PARSE_COMPLETE, backend,
                 numberOfBackends, Boolean.TRUE);
         if (all == null) {
@@ -5596,8 +7069,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.PARSE_COMPLETE, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.PARSE_COMPLETE));
             }
         }
         MessageTransferMode<Void, Void> mode = new MessageTransferMode<>(transferMode, null);
@@ -5615,7 +7088,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<Integer> involvedBackends = session.getCommandInvolvedBackends();
         int numberOfBackends = involvedBackends.size();
         // Retrieve response if all backends have replied
-        // Note: use Boolean instead of Void because insertion of null is not permitted
+        // Note: use Boolean instead of Void because insertion of null is not
+        // permitted
         SortedMap<Integer, Boolean> all = session.newQueryResponse(QueryResponseType.BIND_COMPLETE, backend,
                 numberOfBackends, Boolean.TRUE);
         if (all == null) {
@@ -5624,14 +7098,14 @@ public class PgsqlEventProcessor implements EventProcessor {
         } else {
             // All backends have replied. Merge responses
             QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
-            if (nextQueryResponseToIgnore == null) {
+            if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.PARSE_COMPLETE) {
                 transferMode = TransferMode.FORWARD;
             } else if (nextQueryResponseToIgnore == QueryResponseType.BIND_COMPLETE) {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.BIND_COMPLETE, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.BIND_COMPLETE));
             }
         }
         MessageTransferMode<Void, Void> mode = new MessageTransferMode<>(transferMode, null);
@@ -5682,8 +7156,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.PARAMETER_DESCRIPTION, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.PARAMETER_DESCRIPTION));
             }
         }
         MessageTransferMode<List<Long>, Void> mode = new MessageTransferMode<>(transferMode,
@@ -5733,7 +7207,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                         session.getCurrentDescribeStepStatus().setBackendRowDescriptions(allFields);
                         session.getCurrentDescribeStepStatus().setRowDescription(newFields);
                     }
-                    Map<Integer, List<Integer>> joinFieldIndexes = processRowJoinFields(allFields,
+                    Map<Integer, List<Integer>> joinFieldIndexes = processRowJoinFields(ctx, allFields,
                             session.getExpectedFields());
                     session.setJoinFieldIndexes(joinFieldIndexes);
                 }
@@ -5770,8 +7244,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.ROW_DESCRIPTION_AND_DATA_ROW_OR_NO_DATA, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.ROW_DESCRIPTION_AND_DATA_ROW_OR_NO_DATA));
             }
         }
         MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>, Void> mode = new MessageTransferMode<List<PgsqlRowDescriptionMessage.Field>, Void>(
@@ -5789,21 +7263,26 @@ public class PgsqlEventProcessor implements EventProcessor {
         boolean newList = FORCE_SQL_PROCESSING || allFields.size() > 1 || !session.isUnprotectingDataEnabled();
         if (!newList) {
             List<ExpectedField> expectedFields = session.getExpectedFields();
-            newList = expectedFields != null && expectedFields.stream()
-                    .anyMatch(((Predicate<ExpectedField>) ef -> ef.getProtectedFields().size() != 1)
-                            .or(ef -> ef.getProtectedFields().size() > 0
-                                    && ef.getProtectedFields().get(involvedBackends.get(0)).size() > 0
-                                    && !ef.getProtectedFields().get(involvedBackends.get(0)).get(0).getName()
-                                            .equals(ef.getName())));
+            newList = expectedFields != null
+                    && expectedFields.stream()
+                            .anyMatch(
+                                    ((Predicate<ExpectedField>) ef -> ef.getProtectedFields().size() != 1)
+                                            .or(ef -> ef.getProtectedFields().size() > 0
+                                                    && ef.getProtectedFields().get(involvedBackends.get(0)).size() > 0
+                                                    && (!ef.getProtectedFields().get(involvedBackends.get(0)).get(0)
+                                                            .getName().equals(ef.getName())
+                                                            || ef.getName().equals("*"))));
         }
         List<ExpectedField> expectedFields = session.getExpectedFields();
         // modify (and merge) fields, preserving by their position in the
         // original query (or by their natural order in case of asterisks)
-        // for each expected field, for each expected protected field (per backend):
+        // for each expected field, for each expected protected field (per
+        // backend):
         // - replace asterisk by real name in protected field name
         // - replace asterisks by real names in protected attribute names
         // - remove protected attribute names that are not pertinent
-        // - map protected field name and protected attribute names to their field position
+        // - map protected field name and protected attribute names to their
+        // field position
         int[] positionPerBackend = new int[maxBackend + 1];
         Arrays.fill(positionPerBackend, 0);
         expectedFields.stream().map(ExpectedField::getProtectedFields).forEach(protectedFields -> {
@@ -5908,16 +7387,25 @@ public class PgsqlEventProcessor implements EventProcessor {
                 });
             });
         });
+        // prepare reverse mapping of attributes
+        List<DataOperationCommand> promise = session.getPromise();
+        List<Map<String, String>> attributeMapping = promise != null
+                ? promise.stream().map(doc -> doc != null ? doc.getMapping() : null).collect(Collectors.toList())
+                : null;
+        List<Map<String, String>> reversedAttributeMapping = attributeMapping != null
+                ? attributeMapping.stream()
+                        .map(map -> map != null ? map.entrySet().stream()
+                                .collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey)) : null)
+                        .collect(Collectors.toList())
+                : null;
         // build new field list
         List<Map.Entry<String, List<PgsqlRowDescriptionMessage.Field>>> expectedFieldToRowDescription;
         List<PgsqlRowDescriptionMessage.Field> newFields;
         if (newList) {
-            // Track backend of table OIDs and type OIDs
+            // Track backend of type OIDs
+            SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
             allFields.entrySet().forEach(e -> e.getValue().forEach(f -> {
-                if (f.getTableOID() != 0) {
-                    session.addTableOIDBackend(f.getTableOID(), e.getKey());
-                }
-                session.addTypeOIDBackend(f.getTypeOID(), e.getKey());
+                databaseSchema.addTypeOIDBackend(f.getTypeOID(), e.getKey());
             }));
             // map expected clear field names to the fields, modifying their
             // name if necessary
@@ -5932,7 +7420,16 @@ public class PgsqlEventProcessor implements EventProcessor {
                         PgsqlRowDescriptionMessage.Field backendField = backendFields.get(position);
                         if (session.isUnprotectingDataEnabled()) {
                             if (!backendField.getName().equals("?column?")) {
-                                String outputName = clearFieldName.equals("*") ? epf.getName() : clearFieldName;
+                                String outputName;
+                                if (clearFieldName.equals("*")) {
+                                    outputName = reversedAttributeMapping != null ? reversedAttributeMapping.stream()
+                                            .filter(map -> map != null).map(Map::entrySet).flatMap(Set::stream)
+                                            .filter(e2 -> toOutputName(e2.getKey()).equals(epf.getName())).findAny()
+                                            .map(Map.Entry::getValue).map(this::toOutputName).orElse(epf.getName())
+                                            : epf.getName();
+                                } else {
+                                    outputName = clearFieldName;
+                                }
                                 if (!backendField.getName().equals(outputName)) {
                                     backendField = new PgsqlRowDescriptionMessage.Field(CString.valueOf(outputName),
                                             backendField.getTableOID(), backendField.getColumnNumber(),
@@ -5959,10 +7456,10 @@ public class PgsqlEventProcessor implements EventProcessor {
             // merge the duplicate fields if necessary
             expectedFieldToRowDescription.stream().forEach(e -> {
                 String clearFieldname = e.getKey();
-                List<PgsqlRowDescriptionMessage.Field> protectedFields = e.getValue();
+                List<PgsqlRowDescriptionMessage.Field> fields = e.getValue();
                 Stream<PgsqlRowDescriptionMessage.Field> stream;
                 if (clearFieldname.equals("*")) {
-                    stream = protectedFields.stream();
+                    stream = fields.stream();
                     if (session.isUnprotectingDataEnabled()) {
                         stream = stream.distinct()
                                 .sorted(Comparator.comparing(PgsqlRowDescriptionMessage.Field::getColumnNumber));
@@ -5985,13 +7482,13 @@ public class PgsqlEventProcessor implements EventProcessor {
                     });
                 } else {
                     if (session.isUnprotectingDataEnabled()) {
-                        stream = protectedFields.stream().limit(1);
+                        stream = fields.stream().limit(1);
                     } else {
-                        stream = protectedFields.stream();
+                        stream = fields.stream();
                     }
                 }
-                List<PgsqlRowDescriptionMessage.Field> newProtectedFields = stream.collect(Collectors.toList());
-                e.setValue(newProtectedFields);
+                fields = stream.collect(Collectors.toList());
+                e.setValue(fields);
             });
             // build new list of fields
             newFields = expectedFieldToRowDescription.stream().map(Map.Entry::getValue).flatMap(List::stream)
@@ -6012,6 +7509,7 @@ public class PgsqlEventProcessor implements EventProcessor {
                     .collect(Collectors.toList());
             newFields = allFields.get(involvedBackends.get(0));
         }
+        int nbNewFields = newFields.size();
         // for each expected field:
         // - replace asterisk by real name in field name
         // - replace asterisks by real names in attribute names
@@ -6030,49 +7528,71 @@ public class PgsqlEventProcessor implements EventProcessor {
                 List<Field> expectedFieldNewFields = expectedFieldToRowDescription.get(j).getValue();
                 for (PgsqlRowDescriptionMessage.Field newField : expectedFieldNewFields) {
                     String newFieldName = toOutputName(newField.getName().toString());
-                    String newClearFieldName = clearName.replace("*", newFieldName);
                     int position = k;
                     List<Map.Entry<String, Integer>> newClearAttributes = expectedField.getAttributes().stream()
                             .map(e -> toOutputName(e.getKey()).equals("*")
                                     ? new SimpleEntry<>(e.getKey().replace("*", newFieldName), 0) : e)
-                            .filter(e -> newFieldName.equals(toOutputName(e.getKey()))).peek(e -> e.setValue(position))
+                            .filter(e -> newFieldName.equals(toOutputName(e.getKey()))).map(Map.Entry::getKey)
+                            .map(an -> new SimpleEntry<>(an, 0)).peek(e -> e.setValue(position))
                             .collect(Collectors.toList());
                     if (newClearAttributes.isEmpty()) {
                         LOGGER.trace("strange... unexpected attribute size");
-                        newClearAttributes = Stream.of(new SimpleEntry<>(newFieldName, k)).collect(Collectors.toList());
+                        newClearAttributes.add(new SimpleEntry<>(newFieldName, k));
+                    }
+                    String newClearFieldName = newClearAttributes.stream().findAny().map(Map.Entry::getKey)
+                            .map(this::toOutputName).get();
+                    String newClearName = clearName.replace("*", newClearFieldName);
+                    // build list of protected field names by backend (from the
+                    // attribute mapping)
+                    List<List<String>> protectedFieldNames;
+                    if (attributeMapping != null) {
+                        protectedFieldNames = attributeMapping.stream()
+                                .map(map -> map != null ? map.entrySet().stream()
+                                        .filter(e -> newClearAttributes.stream()
+                                                .anyMatch(e2 -> e.getKey().equals(e2.getKey())))
+                                        .map(Map.Entry::getValue).map(this::toOutputName).distinct()
+                                        .collect(Collectors.toList()) : null)
+                                .collect(Collectors.toList());
+                        if (protectedFieldNames.stream().filter(l -> l != null).allMatch(List::isEmpty)) {
+                            protectedFieldNames.stream().filter(l -> l != null).forEach(l -> l.add(newFieldName));
+                        }
+                    } else {
+                        protectedFieldNames = Collections.singletonList(Collections.singletonList(newFieldName));
                     }
                     Map<Integer, List<ExpectedProtectedField>> newProtectedFields = expectedField.getProtectedFields()
-                            .entrySet().stream()
-                            .filter(e -> e.getValue().stream().map(ExpectedProtectedField::getName)
-                                    .map(n -> toOutputName(n)).anyMatch(n -> newFieldName.equals(n)))
-                            .map(e -> new SimpleEntry<>(e.getKey(),
-                                    e.getValue().stream()
-                                            .filter(epf -> newFieldName.equals(toOutputName(epf.getName())))
-                                            .collect(Collectors.toList())))
+                            .entrySet().stream().filter(e -> e.getValue().stream().map(ExpectedProtectedField::getName)
+                                    .map(n -> toOutputName(n)).anyMatch(n -> {
+                                        List<String> backendProtectedFieldNames = protectedFieldNames.get(e.getKey());
+                                        return backendProtectedFieldNames != null
+                                                && backendProtectedFieldNames.contains(n);
+                                    }))
+                            .map(e -> new SimpleEntry<>(e.getKey(), e.getValue().stream().filter(epf -> {
+                                List<String> backendProtectedFieldNames = protectedFieldNames.get(e.getKey());
+                                return backendProtectedFieldNames != null
+                                        && backendProtectedFieldNames.contains(toOutputName(epf.getName()));
+                            }).collect(Collectors.toList())))
                             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
                     // remove attributes (and mapping) in new protected fields
                     // for which referenced attribute name has been removed
-                    List<Map.Entry<String, Integer>> newClearAttributes2 = newClearAttributes;
                     newProtectedFields.values().stream().flatMap(List::stream).forEach(epf -> {
                         epf.getAttributes().removeIf(e -> {
                             return epf.getAttributeMapping().stream().filter(e2 -> e2.getKey().equals(e.getKey()))
                                     .map(Map.Entry::getValue).map(idx -> expectedField.getAttributes().get(idx))
                                     .map(Map.Entry::getKey)
-                                    .map(an -> toOutputName(an).equals("*") ? an.replace("*", newFieldName) : an)
-                                    .noneMatch(an -> newClearAttributes2.stream().map(Map.Entry::getKey)
+                                    .map(an -> toOutputName(an).equals("*") ? an.replace("*", newClearFieldName) : an)
+                                    .noneMatch(an -> newClearAttributes.stream().map(Map.Entry::getKey)
                                             .anyMatch(nan -> nan.equals(an)));
                         });
                         epf.getAttributeMapping().removeIf(e -> {
                             String an = expectedField.getAttributes().get(e.getValue()).getKey();
                             if (toOutputName(an).equals("*")) {
-                                an = an.replace("*", newFieldName);
+                                an = an.replace("*", newClearFieldName);
                             }
                             String an2 = an;
-                            return newClearAttributes2.stream().map(Map.Entry::getKey)
-                                    .noneMatch(nan -> nan.equals(an2));
+                            return newClearAttributes.stream().map(Map.Entry::getKey).noneMatch(nan -> nan.equals(an2));
                         });
                     });
-                    ExpectedField newClearField = new ExpectedField(newClearFieldName, k, newClearAttributes,
+                    ExpectedField newClearField = new ExpectedField(newClearName, k, newClearAttributes,
                             newProtectedFields);
                     expectedFields.add(i, newClearField);
                     i++;
@@ -6108,13 +7628,12 @@ public class PgsqlEventProcessor implements EventProcessor {
                     });
                 });
             }
-            if (k >= newFields.size()) {
+            if (k >= nbNewFields) {
                 throw new IllegalStateException("unexpected");
             }
         }
         // verify positions are ok in expected fields
         positionPerBackend[0] = -1;
-        List<PgsqlRowDescriptionMessage.Field> newFields2 = newFields;
         expectedFields.forEach(ef -> {
             Integer position = ef.getPosition();
             if (ef.getProtectedFields().isEmpty()) {
@@ -6127,12 +7646,12 @@ public class PgsqlEventProcessor implements EventProcessor {
                     }
                 });
             } else {
-                if (position == null || position < 0 || position >= newFields2.size()
+                if (position == null || position < 0 || position >= nbNewFields
                         || position - positionPerBackend[0] != 1) {
                     throw new IllegalStateException("unexpected");
                 }
                 ef.getAttributes().stream().map(Map.Entry::getValue).forEach(pos -> {
-                    if (pos == null || pos < 0 || pos >= newFields2.size() || pos - positionPerBackend[0] < 0
+                    if (pos == null || pos < 0 || pos >= nbNewFields || pos - positionPerBackend[0] < 0
                             || pos - positionPerBackend[0] > 1) {
                         throw new IllegalStateException("unexpected");
                     }
@@ -6150,54 +7669,6 @@ public class PgsqlEventProcessor implements EventProcessor {
                 }
             }
         });
-        // rebuilt attribute mapping
-        Arrays.fill(positionPerBackend, 0);
-        List<List<Map.Entry<String, Map<Integer, Integer>>>> allAttributeMapping = new ArrayList<>(
-                expectedFields.size());
-        for (int i = 0; i < expectedFields.size(); i++) {
-            ExpectedField expectedField = expectedFields.get(i);
-            List<Map.Entry<String, Integer>> attributes = expectedField.getAttributes();
-            List<Map.Entry<String, Map<Integer, Integer>>> attributeMapping = new ArrayList<>();
-            for (int j = 0; j < expectedField.getAttributes().size(); j++) {
-                int relativeClearIndex = j;
-                Map<Integer, Integer> mapping = expectedField.getProtectedFields().entrySet().stream()
-                        .flatMap(entry -> {
-                            int backend = entry.getKey();
-                            List<ExpectedProtectedField> protectedFields = entry.getValue();
-                            Stream<Map.Entry<Integer, Integer>> stream;
-                            if (protectedFields.stream().flatMap(protectedField -> protectedField.getAttributeMapping()
-                                    .stream().filter(e -> e.getValue() == relativeClearIndex)).count() > 0) {
-                                stream = Stream.of(new SimpleEntry<>(backend, positionPerBackend[backend]++));
-                            } else {
-                                stream = Stream.empty();
-                            }
-                            return stream;
-                        }).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-                attributeMapping.add(new SimpleEntry<>(attributes.get(relativeClearIndex).getKey(), mapping));
-            }
-            allAttributeMapping.add(attributeMapping);
-        }
-        // rebuilt promise
-        String[] attributeNames = expectedFields.stream().map(ExpectedField::getAttributes).flatMap(List::stream)
-                .map(Map.Entry::getKey).toArray(String[]::new);
-        Map<Integer, List<String>> protectedAttributesPerBackend = expectedFields.stream()
-                .map(ExpectedField::getProtectedFields).map(Map::values).flatMap(Collection::stream)
-                .flatMap(List::stream)
-                .flatMap(epf -> epf.getAttributes().stream().map(e -> new SimpleEntry<>(epf.getBackend(), e.getKey())))
-                .collect(Collectors.groupingBy(Map.Entry::getKey, TreeMap::new,
-                        Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
-        String[][] protectedAttributeNames = IntStream.range(0, maxBackend + 1).mapToObj(backend -> {
-            List<String> protectedAttributes = protectedAttributesPerBackend.get(backend);
-            return protectedAttributes == null ? new String[0] : protectedAttributes.stream().toArray(String[]::new);
-        }).toArray(String[][]::new);
-        int[][][] attributeMapping = allAttributeMapping.stream().flatMap(List::stream).map(Map.Entry::getValue)
-                .map(m -> m.entrySet().stream().sorted(Comparator.comparing(Map.Entry::getKey))
-                        .map(e -> new int[] { e.getKey(), e.getValue() }).toArray(int[][]::new))
-                .toArray(int[][][]::new);
-        DefaultPromise promise = (DefaultPromise) session.getPromise();
-        promise.setAttributeNames(attributeNames);
-        promise.setProtectedAttributeNames(protectedAttributeNames);
-        promise.setAttributeMapping(attributeMapping);
         return newFields;
     }
 
@@ -6280,10 +7751,14 @@ public class PgsqlEventProcessor implements EventProcessor {
                 && token.kind != CCJSqlParserConstants.K_WHEN && token.kind != CCJSqlParserConstants.K_ROWS;
     }
 
-    private Map<Integer, List<Integer>> processRowJoinFields(
+    private Map<Integer, List<Integer>> processRowJoinFields(ChannelHandlerContext ctx,
             SortedMap<Integer, List<PgsqlRowDescriptionMessage.Field>> allFields, List<ExpectedField> expectedFields) {
         Map<Integer, List<Integer>> joinFieldIndexes = null;
-        if (allFields.values().stream().anyMatch(l -> l.size() > 1)) {
+        String dataTechnicalId = getDataTechnicalId(ctx);
+        Pattern dataTechnicalIdPattern = dataTechnicalId == null ? null : Pattern.compile(escapeRegex(dataTechnicalId));
+        if (allFields.values().stream().anyMatch(l -> l.size() > 1) || (dataTechnicalIdPattern != null
+                && expectedFields.stream().map(ExpectedField::getAttributes).flatMap(List::stream)
+                        .map(Map.Entry::getKey).allMatch(an -> dataTechnicalIdPattern.matcher(an).matches()))) {
             Map<Integer, List<Map.Entry<String, Integer>>> attributesPerBackend = expectedFields != null
                     ? expectedFields.stream().map(ExpectedField::getProtectedFields).map(Map::values)
                             .flatMap(Collection::stream).flatMap(List::stream).collect(
@@ -6396,9 +7871,9 @@ public class PgsqlEventProcessor implements EventProcessor {
             } else if (nextQueryResponseToIgnore == QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR) {
                 transferMode = TransferMode.FORGET;
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR,
-                        nextQueryResponseToIgnore));
+                throw new IllegalStateException(
+                        String.format("Unexpected %s response (%s or null was expected)", nextQueryResponseToIgnore,
+                                QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR));
             }
         }
         MessageTransferMode<List<ByteBuf>, Void> mode = new MessageTransferMode<List<ByteBuf>, Void>(transferMode,
@@ -6412,20 +7887,13 @@ public class PgsqlEventProcessor implements EventProcessor {
             List<Integer> involvedBackends) {
         List<ByteBuf> newValues;
         SQLSession session = getSession(ctx);
-        DefaultPromise promise = (DefaultPromise) session.getPromise();
-        if (session.isUnprotectingDataEnabled() && promise != null
-                && ((session.getExpectedFields() != null && session.getBackendRowDescriptions() != null
-                        && session.getRowDescription() != null)
-                        || (session.getCurrentDescribeStepStatus() != null
-                                && session.getCurrentDescribeStepStatus().getExpectedFields() != null
-                                && session.getCurrentDescribeStepStatus().getBackendRowDescriptions() != null
-                                && session.getCurrentDescribeStepStatus().getRowDescription() != null))) {
-            String[] attributeNames = promise.getAttributeNames();
-            String[][] protectedAttributeNames = promise.getProtectedAttributeNames();
-            // Extract data operation
-            DataOperation dataOperation = new DataOperation();
-            dataOperation.setOperation(Operation.READ);
-            dataOperation.setDataIds(Arrays.stream(attributeNames).map(CString::valueOf).collect(Collectors.toList()));
+        if (session.isUnprotectingDataEnabled() && ((session.getExpectedFields() != null
+                && session.getBackendRowDescriptions() != null && session.getRowDescription() != null)
+                || (session.getCurrentDescribeStepStatus() != null
+                        && session.getCurrentDescribeStepStatus().getExpectedFields() != null
+                        && session.getCurrentDescribeStepStatus().getBackendRowDescriptions() != null
+                        && session.getCurrentDescribeStepStatus().getRowDescription() != null))) {
+            // Extract data operations
             int maxBackend = allValues.keySet().stream().max(Comparator.naturalOrder()).get();
             Map<Integer, List<Field>> backendFields = session.getBackendRowDescriptions();
             if (backendFields == null && session.getCurrentDescribeStepStatus() != null) {
@@ -6441,10 +7909,40 @@ public class PgsqlEventProcessor implements EventProcessor {
             if (expectedFields == null) {
                 throw new IllegalStateException("unexpected");
             }
-            List<List<CString>> allDataValues = new ArrayList<>(maxBackend + 1);
-            for (int i = 0; i < maxBackend + 1; i++) {
-                int backend = i;
-                List<CString> dataValues = new ArrayList<>(protectedAttributeNames[backend].length);
+            List<CString> clearDataIds = expectedFields.stream().filter(ep -> ep.getPosition() != -1)
+                    .map(ExpectedField::getAttributes).flatMap(List::stream).map(Map.Entry::getKey)
+                    .map(CString::valueOf).collect(Collectors.toList());
+            SQLDatabaseSchema databaseSchema = getDatabaseSchema(ctx);
+            Integer srid = clearDataIds.stream().map(CString::toString).filter(this::isFullyQualifiedDataId)
+                    .map(did -> did.substring(0, did.lastIndexOf('/'))).map(databaseSchema::getDatasetSrid)
+                    .filter(s -> s != null).map(Integer::valueOf).findFirst().orElse(null);
+            List<PgsqlRowDescriptionMessage.Field> fields = session.getRowDescription();
+            if (fields == null && session.getCurrentDescribeStepStatus() != null) {
+                fields = session.getCurrentDescribeStepStatus().getRowDescription();
+            }
+            if (fields == null) {
+                throw new IllegalStateException("unexpected");
+            }
+            boolean[] sridAddedFlags = new boolean[fields.size()];
+            Arrays.fill(sridAddedFlags, false);
+            List<InboundDataOperation> inboundDataOperations = new ArrayList<>(maxBackend + 1);
+            for (int backend = 0; backend < maxBackend + 1; backend++) {
+                if (!involvedBackends.contains(backend)) {
+                    continue;
+                }
+                InboundDataOperation inboundDataOperation = new InboundDataOperation();
+                inboundDataOperation.setInvolvedCSP(backend);
+                inboundDataOperation.setOperation(Operation.READ);
+                inboundDataOperation.setClearDataIds(clearDataIds);
+                inboundDataOperation.setPromise(session.getPromise());
+                int csp = backend;
+                List<CString> dataIds = expectedFields.stream().filter(ef -> ef.getPosition() != -1)
+                        .map(ExpectedField::getProtectedFields).map(Map::entrySet).flatMap(Set::stream)
+                        .filter(e -> e.getKey() == csp).map(Map.Entry::getValue).flatMap(List::stream)
+                        .flatMap(epf -> epf.getAttributes().stream().map(Map.Entry::getKey)).map(CString::valueOf)
+                        .collect(Collectors.toList());
+                inboundDataOperation.setDataIds(dataIds);
+                List<CString> dataValues = new ArrayList<>(dataIds.size());
                 List<ByteBuf> values = allValues.get(backend);
                 for (ExpectedField expectedField : expectedFields) {
                     List<ExpectedProtectedField> backendProtectedFields = expectedField
@@ -6454,47 +7952,126 @@ public class PgsqlEventProcessor implements EventProcessor {
                             for (Map.Entry<String, Integer> entry2 : protectedField.getAttributes()) {
                                 int position = entry2.getValue();
                                 PgsqlRowDescriptionMessage.Field field = backendFields.get(backend).get(position);
-                                CString dataValue = convertToText(field.getTypeOID(), field.getTypeModifier(),
-                                        field.getFormat(), values.get(position));
+                                Types backendTypes = getTypes(ctx, backend);
+                                Type type = backendTypes.getType(field.getTypeOID());
+                                CString dataValue = convertToText(type, field.getTypeModifier(), field.getFormat(),
+                                        values.get(position));
+                                if (srid != null) {
+                                    if (type == null) {
+                                        for (Type typeWithUnfixedOid : backendTypes.getTypesWithUnfixedOid()) {
+                                            try {
+                                                TypeParser.parse(typeWithUnfixedOid, field.getTypeModifier(),
+                                                        dataValue);
+                                                type = typeWithUnfixedOid;
+                                                backendTypes.setTypeOid(type.getName(), field.getTypeOID());
+                                                break;
+                                            } catch (IllegalArgumentException e) {
+                                                // not critical
+                                            }
+                                        }
+                                    }
+                                    if (type != null) {
+                                        boolean sridModified = false;
+                                        Object object = TypeParser.parse(type, field.getTypeModifier(), dataValue);
+                                        if (object instanceof Geometry) {
+                                            Geometry geometry = (Geometry) object;
+                                            if (geometry.getSrid() == 0) {
+                                                geometry.setSrid(srid);
+                                                dataValue = TypeWriter.toCString(type, geometry);
+                                                sridModified = true;
+                                            }
+                                        } else if (object instanceof PGboxbase) {
+                                            PGboxbase box = (PGboxbase) object;
+                                            if (box.getLLB().getSrid() == 0 || box.getURT().getSrid() == 0) {
+                                                if (box.getLLB().getSrid() == 0) {
+                                                    box.getLLB().setSrid(srid);
+                                                }
+                                                if (box.getURT().getSrid() == 0) {
+                                                    box.getURT().setSrid(srid);
+                                                }
+                                                dataValue = TypeWriter.toCString(type, box);
+                                                sridModified = true;
+                                            }
+                                        }
+                                        if (sridModified) {
+                                            sridAddedFlags[expectedField.getPosition()] = true;
+                                        }
+                                    }
+                                }
                                 dataValues.add(dataValue);
                             }
                         }
                     }
                 }
-                allDataValues.add(dataValues);
+                inboundDataOperation.setDataValues(Collections.singletonList(dataValues));
+                inboundDataOperations.add(inboundDataOperation);
             }
-            dataOperation.setDataValues(allDataValues);
-            dataOperation.setPromise(promise);
             // Process data operation
-            List<DataOperation> newDataOperations = newDataOperation(ctx, dataOperation);
-            dataOperation = newDataOperations.get(0);
-            if (FORCE_SQL_PROCESSING || dataOperation.isModified()) {
-                List<CString> dataValues = dataOperation.getDataValues().get(0);
-                List<PgsqlRowDescriptionMessage.Field> fields = session.getRowDescription();
-                if (fields == null && session.getCurrentDescribeStepStatus() != null) {
-                    fields = session.getCurrentDescribeStepStatus().getRowDescription();
-                }
-                if (fields == null) {
+            InboundDataOperation newInboundDataOperation = newInboundDataOperation(ctx, inboundDataOperations);
+            if (FORCE_SQL_PROCESSING || newInboundDataOperation.isModified()) {
+                if (newInboundDataOperation.getDataValues().isEmpty()) {
                     throw new IllegalStateException("unexpected");
                 }
+                List<CString> dataValues = newInboundDataOperation.getDataValues().get(0);
                 newValues = Stream.generate((Supplier<ByteBuf>) () -> null).limit(fields.size())
                         .collect(Collectors.toList());
                 int index = 0;
                 for (int i = 0; i < expectedFields.size(); i++) {
                     ExpectedField expectedField = expectedFields.get(i);
+                    if (expectedField.getPosition() == -1) {
+                        continue;
+                    }
                     for (int j = 0; j < expectedField.getAttributes().size(); j++) {
                         Map.Entry<String, Integer> entry = expectedField.getAttributes().get(j);
                         int position = entry.getValue();
                         if (newValues.get(position) == null) {
                             PgsqlRowDescriptionMessage.Field field = fields.get(position);
-                            ByteBuf byteBuf = convertToByteBuf(field.getTypeOID(), field.getTypeModifier(),
-                                    field.getFormat(), dataValues.get(index));
+                            CString dataValue = dataValues.get(index);
+                            Types types = getTypes(ctx, -1);
+                            Type type = types.getType(field.getTypeOID());
+                            if (sridAddedFlags[position]) {
+                                if (type == null) {
+                                    for (Type typeWithUnfixedOid : types.getTypesWithUnfixedOid()) {
+                                        try {
+                                            TypeParser.parse(typeWithUnfixedOid, field.getTypeModifier(), dataValue);
+                                            type = typeWithUnfixedOid;
+                                            types.setTypeOid(type.getName(), field.getTypeOID());
+                                            break;
+                                        } catch (IllegalArgumentException e) {
+                                            // not critical
+                                        }
+                                    }
+                                }
+                                if (type != null) {
+                                    Object object = TypeParser.parse(type, field.getTypeModifier(), dataValue);
+                                    if (object instanceof Geometry) {
+                                        Geometry geometry = (Geometry) object;
+                                        if (geometry.getSrid() != 0) {
+                                            geometry.setSrid(0);
+                                            dataValue = TypeWriter.toCString(type, geometry);
+                                        }
+                                    } else if (object instanceof PGboxbase) {
+                                        PGboxbase box = (PGboxbase) object;
+                                        if (box.getLLB().getSrid() != 0 || box.getURT().getSrid() != 0) {
+                                            if (box.getLLB().getSrid() != 0) {
+                                                box.getLLB().setSrid(0);
+                                            }
+                                            if (box.getURT().getSrid() != 0) {
+                                                box.getURT().setSrid(0);
+                                            }
+                                            dataValue = TypeWriter.toCString(type, box);
+                                        }
+                                    }
+                                }
+                            }
+                            ByteBuf byteBuf = convertToByteBuf(type, field.getTypeModifier(), field.getFormat(),
+                                    dataValue);
                             newValues.set(position, byteBuf);
                         }
                         index++;
                     }
                 }
-                if (!dataOperation.isModified()) {
+                if (!newInboundDataOperation.isModified()) {
                     List<ByteBuf> values = allValues.get(involvedBackends.get(0));
                     values.stream().filter(v -> v != null).forEach(v -> v.resetReaderIndex());
                     if (!newValues.equals(values)) {
@@ -6520,32 +8097,38 @@ public class PgsqlEventProcessor implements EventProcessor {
         return newValues;
     }
 
-    private CString convertToText(long typeOID, int typeModifier, short format, ByteBuf value) {
+    private CString convertToText(Type type, int typeModifier, short format, ByteBuf value) {
         CString cs;
         if (format == 0) {
             // Text format
             cs = value != null ? CString.valueOf(value, value.capacity()) : null;
+            // Special case for geometry type: remove '\x'
+            if (type == Type.BYTEA && cs.startsWith("\\x")) {
+                cs = cs.substring("\\x".length());
+            }
         } else {
             // Binary format
-            Type type = Types.getType(typeOID);
             Object object = TypeParser.parse(type, typeModifier, value);
             cs = TypeWriter.toCString(type, object);
         }
         return cs;
     }
 
-    private ByteBuf convertToByteBuf(long typeOID, int typeModifier, short format, CString cs) {
+    private ByteBuf convertToByteBuf(Type type, int typeModifier, short format, CString cs) {
         ByteBuf value;
         if (format == 0) {
             // Text format
             if (cs != null) {
+                // Special case for geometry type: prepend with '\x'
+                if (type == Type.BYTEA && !cs.startsWith("\\x")) {
+                    cs = CString.valueOf("\\x").append(cs);
+                }
                 value = cs.getByteBuf(cs.length());
             } else {
                 value = null;
             }
         } else {
             // Binary format
-            Type type = Types.getType(typeOID);
             Object object = TypeParser.parse(type, typeModifier, cs);
             value = TypeWriter.getBytes(type, object);
         }
@@ -6562,7 +8145,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<Integer> involvedBackends = session.getCommandInvolvedBackends();
         int numberOfBackends = involvedBackends.size();
         // Retrieve response if all backends have replied
-        // note use Boolean instead of Void because insertion of null is not permitted
+        // note use Boolean instead of Void because insertion of null is not
+        // permitted
         SortedMap<Integer, Boolean> all = session.newQueryResponse(QueryResponseType.NO_DATA, backend, numberOfBackends,
                 Boolean.TRUE);
         if (all == null) {
@@ -6577,8 +8161,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.ROW_DESCRIPTION_AND_DATA_ROW_OR_NO_DATA, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.ROW_DESCRIPTION_AND_DATA_ROW_OR_NO_DATA));
             }
         }
         MessageTransferMode<Void, Void> mode = new MessageTransferMode<>(transferMode, null);
@@ -6619,7 +8203,8 @@ public class PgsqlEventProcessor implements EventProcessor {
             }
             // All backends have replied. Merge responses
             QueryResponseType nextQueryResponseToIgnore = session.firstQueryResponseToIgnore();
-            if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY) {
+            if (nextQueryResponseToIgnore == null || nextQueryResponseToIgnore == QueryResponseType.READY_FOR_QUERY
+                    || nextQueryResponseToIgnore == QueryResponseType.PARSE_COMPLETE) {
                 transferMode = TransferMode.FORWARD;
                 if (numberOfBackends == 1) {
                     newTag = tag;
@@ -6708,9 +8293,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR,
-                        nextQueryResponseToIgnore));
+                throw new IllegalStateException(
+                        String.format("Unexpected %s response (%s or null was expected)", nextQueryResponseToIgnore,
+                                QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR));
             }
         }
         MessageTransferMode<CString, Void> mode = new MessageTransferMode<>(transferMode, newTag);
@@ -6729,7 +8314,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<Integer> involvedBackends = session.getCommandInvolvedBackends();
         int numberOfBackends = involvedBackends.size();
         // Retrieve response if all backends have replied
-        // Note: use Boolean instead of Void because insertion of null is not permitted
+        // Note: use Boolean instead of Void because insertion of null is not
+        // permitted
         SortedMap<Integer, Boolean> all = session.newQueryResponse(QueryResponseType.EMPTY_QUERY, backend,
                 numberOfBackends, Boolean.TRUE);
         if (all == null) {
@@ -6745,9 +8331,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR,
-                        nextQueryResponseToIgnore));
+                throw new IllegalStateException(
+                        String.format("Unexpected %s response (%s or null was expected)", nextQueryResponseToIgnore,
+                                QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR));
             }
         }
         MessageTransferMode<Void, Void> mode = new MessageTransferMode<>(transferMode, null);
@@ -6766,7 +8352,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<Integer> involvedBackends = session.getCommandInvolvedBackends();
         int numberOfBackends = involvedBackends.size();
         // Retrieve response if all backends have replied
-        // Use Boolean instead of Void because insertion of null is not permitted
+        // Use Boolean instead of Void because insertion of null is not
+        // permitted
         SortedMap<Integer, Boolean> all = session.newQueryResponse(QueryResponseType.PORTAL_SUSPENDED, backend,
                 numberOfBackends, Boolean.TRUE);
         if (all == null) {
@@ -6781,9 +8368,9 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR,
-                        nextQueryResponseToIgnore));
+                throw new IllegalStateException(
+                        String.format("Unexpected %s response (%s or null was expected)", nextQueryResponseToIgnore,
+                                QueryResponseType.COMMAND_COMPLETE_OR_EMPTY_QUERY_OR_PORTAL_SUSPENDED_OR_ERROR));
             }
         }
         MessageTransferMode<Void, Void> mode = new MessageTransferMode<>(transferMode, null);
@@ -6878,7 +8465,8 @@ public class PgsqlEventProcessor implements EventProcessor {
         List<Integer> involvedBackends = session.getCommandInvolvedBackends();
         int numberOfBackends = involvedBackends.size();
         // Retrieve response if all backends have replied
-        // Note: use Boolean instead of Void because insertion of null is not permitted
+        // Note: use Boolean instead of Void because insertion of null is not
+        // permitted
         SortedMap<Integer, Boolean> all = session.newQueryResponse(QueryResponseType.CLOSE_COMPLETE, backend,
                 numberOfBackends, Boolean.TRUE);
         if (all == null) {
@@ -6893,8 +8481,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 transferMode = TransferMode.FORGET;
                 session.removeFirstQueryResponseToIgnore();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.CLOSE_COMPLETE, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.CLOSE_COMPLETE));
             }
         }
         MessageTransferMode<Void, Void> mode = new MessageTransferMode<>(transferMode, null);
@@ -6952,8 +8540,8 @@ public class PgsqlEventProcessor implements EventProcessor {
                 session.removeFirstQueryResponseToIgnore();
                 session.resetCurrentQuery();
             } else {
-                throw new IllegalStateException(String.format("Unexpected %s response (%s was expected)",
-                        QueryResponseType.READY_FOR_QUERY, nextQueryResponseToIgnore));
+                throw new IllegalStateException(String.format("Unexpected %s response (%s or null was expected)",
+                        nextQueryResponseToIgnore, QueryResponseType.READY_FOR_QUERY));
             }
             session.responsesReceived();
         }
@@ -6973,6 +8561,22 @@ public class PgsqlEventProcessor implements EventProcessor {
         return pgsqlSession.getSqlSession();
     }
 
+    private SQLDatabaseSchema getDatabaseSchema(ChannelHandlerContext ctx) {
+        Map<String, Object> customData = ctx.channel().attr(PgsqlConstants.CUSTOM_DATA_KEY).get();
+        SQLDatabaseSchema sqlDatabaseSchema = (SQLDatabaseSchema) customData.get(SQL_DATABASE_SCHEMA);
+        if (sqlDatabaseSchema == null) {
+            sqlDatabaseSchema = new SQLDatabaseSchema();
+            customData.put(SQL_DATABASE_SCHEMA, sqlDatabaseSchema);
+        }
+        return sqlDatabaseSchema;
+    }
+
+    private Types getTypes(ChannelHandlerContext ctx, int backend) {
+        SQLDatabaseSchema sqlDatabaseSchema = getDatabaseSchema(ctx);
+        Types types = backend != -1 ? sqlDatabaseSchema.getBackendTypes(backend) : sqlDatabaseSchema.getTypes();
+        return types;
+    }
+
     private Mode getProcessingMode(ChannelHandlerContext ctx, boolean wholeDataset, Operation operation) {
         Configuration configuration = ctx.channel().attr(PgsqlConstants.CONFIGURATION_KEY).get();
         return configuration.getProcessingMode(wholeDataset, operation);
@@ -6983,10 +8587,21 @@ public class PgsqlEventProcessor implements EventProcessor {
         return configuration.getProtocolService();
     }
 
+    private String getDataTechnicalId(ChannelHandlerContext ctx) {
+        PgsqlConfiguration configuration = (PgsqlConfiguration) ctx.channel().attr(PgsqlConstants.CONFIGURATION_KEY)
+                .get();
+        return configuration.getDataTechnicalId();
+    }
+
     private Map<String, String> getGeometryObjectDefinition(ChannelHandlerContext ctx) {
         PgsqlConfiguration configuration = (PgsqlConfiguration) ctx.channel().attr(PgsqlConstants.CONFIGURATION_KEY)
                 .get();
         return configuration.getGeometryObjectDefinition();
+    }
+
+    private String getDatabaseName(ChannelHandlerContext ctx) {
+        SQLSession session = getSession(ctx);
+        return session.getDatabaseName();
     }
 
     private List<String> getBackendDatabaseNames(ChannelHandlerContext ctx) {

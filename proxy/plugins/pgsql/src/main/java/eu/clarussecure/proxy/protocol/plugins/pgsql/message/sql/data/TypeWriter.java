@@ -209,11 +209,25 @@ public class TypeWriter {
     }
 
     private static CString toCString(PGbox3d pgBox3d) {
-        return CString.valueOf(pgBox3d.toString());
+        String value;
+        int srid = pgBox3d.getLLB().getSrid();
+        if (srid != 0) {
+            value = String.format("SRID=%d;%s", srid, pgBox3d.toString());
+        } else {
+            value = pgBox3d.toString();
+        }
+        return CString.valueOf(value);
     }
 
     private static CString toCString(PGbox2d pgBox2d) {
-        return CString.valueOf(pgBox2d.toString());
+        String value;
+        int srid = pgBox2d.getLLB().getSrid();
+        if (srid != 0) {
+            value = String.format("SRID=%d;%s", srid, pgBox2d.toString());
+        } else {
+            value = pgBox2d.toString();
+        }
+        return CString.valueOf(value);
     }
 
     public static ByteBuf getBytes(Type type, Object value) {

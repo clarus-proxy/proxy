@@ -21,6 +21,7 @@ public class ProtectionModuleLoader {
     }
 
     public ProtectionModule getProtectionModule(String protectionModuleName) {
+        loader.reload();
         Iterator<ProtectionModule> protectionModuleProviders = loader.iterator();
         while (protectionModuleProviders.hasNext()) {
             ProtectionModule protectionModule = protectionModuleProviders.next();

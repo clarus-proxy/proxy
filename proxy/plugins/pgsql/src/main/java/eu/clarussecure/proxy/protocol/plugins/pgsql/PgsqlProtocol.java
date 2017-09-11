@@ -8,19 +8,17 @@ import eu.clarussecure.proxy.spi.protocol.ProtocolExecutor;
 
 public class PgsqlProtocol extends ProtocolExecutor {
 
-    private static class Helper {
-        private static final PgsqlCapabilities CAPABILITIES = new PgsqlCapabilities();
-        private static final PgsqlConfiguration CONFIGURATION = new PgsqlConfiguration(CAPABILITIES);
-    }
+    private final PgsqlCapabilities capabilities = new PgsqlCapabilities();
+    private final PgsqlConfiguration configuration = new PgsqlConfiguration(capabilities);
 
     @Override
     public ProtocolCapabilities getCapabilities() {
-        return Helper.CAPABILITIES;
+        return capabilities;
     }
 
     @Override
     public PgsqlConfiguration getConfiguration() {
-        return Helper.CONFIGURATION;
+        return configuration;
     }
 
     @Override
@@ -32,12 +30,7 @@ public class PgsqlProtocol extends ProtocolExecutor {
     @Override
     public String[] adaptDataIds(String[] dataIds) {
         // Add the public schema if any
-        dataIds = Arrays.stream(dataIds).map(id -> Helper.CONFIGURATION.adaptDataId(id)).toArray(String[]::new);
+        dataIds = Arrays.stream(dataIds).map(id -> getConfiguration().adaptDataId(id)).toArray(String[]::new);
         return dataIds;
-    }
-
-    @Override
-    public String[] getDatasetPrefixByServer() {
-        return getConfiguration().getBackendDatabaseNames().stream().toArray(String[]::new);
     }
 }

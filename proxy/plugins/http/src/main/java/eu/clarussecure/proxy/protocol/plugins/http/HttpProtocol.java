@@ -13,17 +13,9 @@ import eu.clarussecure.proxy.spi.protocol.ProtocolExecutor;
  */
 public class HttpProtocol extends ProtocolExecutor {
 
-    /**
-     * The Class Helper.
-     */
-    private static class Helper {
+    private final HttpCapabilities capabilities = new HttpCapabilities();
 
-        /** The Constant CAPABILITIES. */
-        private static final HttpCapabilities CAPABILITIES = new HttpCapabilities();
-
-        /** The Constant CONFIGURATION. */
-        private static final HttpConfiguration CONFIGURATION = new HttpConfiguration(CAPABILITIES);
-    }
+    private final HttpConfiguration configuration = new HttpConfiguration(capabilities);
 
     /**
      * Instantiates a new http protocol.
@@ -39,7 +31,7 @@ public class HttpProtocol extends ProtocolExecutor {
      *            the listen port
      */
     public HttpProtocol(int listenPort) {
-        Helper.CONFIGURATION.setListenPort(listenPort);
+        configuration.setListenPort(listenPort);
     }
 
     /*
@@ -49,7 +41,7 @@ public class HttpProtocol extends ProtocolExecutor {
      */
     @Override
     public ProtocolCapabilities getCapabilities() {
-        return Helper.CAPABILITIES;
+        return capabilities;
     }
 
     /*
@@ -59,7 +51,7 @@ public class HttpProtocol extends ProtocolExecutor {
      */
     @Override
     public HttpConfiguration getConfiguration() {
-        return Helper.CONFIGURATION;
+        return configuration;
     }
 
     /*

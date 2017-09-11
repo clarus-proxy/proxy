@@ -1,17 +1,7 @@
 description = 'Splitting module for the CLARUS proxy'
 
 dependencies {
-    repositories {
-        maven {
-            name 'Open Source Geospatial Foundation Repository'
-            url 'http://download.osgeo.org/webdav/geotools/'
-        }
-    }
-
     // CLARUS
     compile project(':proxy-common')
-
-    // Geotools
-    compile group: 'org.geotools', name: 'gt-main', version: '17.0'
-    compile group: 'org.geotools', name: 'gt-epsg-hsql', version: '17.0'
+    compile group: 'eu.clarussecure', name: 'dataoperations.splittingmodule', version: '2.2'
 }

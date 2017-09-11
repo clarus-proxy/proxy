@@ -8,10 +8,6 @@ public class PgsqlRawPartCodec extends CombinedChannelDuplexHandler<PgsqlRawPart
         super(new PgsqlRawPartDecoder(frontend, maxlen), new PgsqlRawPartEncoder(frontend));
     }
 
-    public PgsqlRawPartCodec(boolean frontend, int maxlen, PgsqlRawPartCodec clientSideCodec) {
-        this(frontend, maxlen);
-    }
-
     public void skipFirstMessages() {
         inboundHandler().skipFirstMessages();
     }

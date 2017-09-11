@@ -8,7 +8,7 @@ import java.util.Map;
 public abstract class ModuleOperation {
     protected boolean modified;
     protected Map<String, Object> attributes;
-    private List<Integer> involvedCSPs;
+    protected List<Integer> involvedCSPs;
 
     public boolean isModified() {
         return modified;

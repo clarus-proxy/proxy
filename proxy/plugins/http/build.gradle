@@ -1,4 +1,4 @@
-description = 'PostgreSQL protocol plugin for the CLARUS proxy'
+description = 'HTTP protocol plugin for the CLARUS proxy'
 
 dependencies {
     repositories {

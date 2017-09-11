@@ -6,6 +6,14 @@ public class StringUtilities {
         return cs == null ? null : cs.toString();
     }
 
+    public static boolean hasQuote(String str) {
+        return str != null && str.length() > 1 && str.charAt(0) == '\"' && str.charAt(str.length() - 1) == '\"';
+    }
+
+    public static boolean hasSingleQuote(String str) {
+        return str != null && str.length() > 1 && str.charAt(0) == '\'' && str.charAt(str.length() - 1) == '\'';
+    }
+
     public static String unquote(String str) {
         int length = str == null ? -1 : str.length();
         if (str == null || length == 0)

@@ -17,3 +17,8 @@ dependencies {
     // PostGIS
     compile group: 'net.postgis', name: 'postgis-jdbc', version: '2.2.1'
 }
+
+test {
+    // go fast 
+    exclude '/**'
+}

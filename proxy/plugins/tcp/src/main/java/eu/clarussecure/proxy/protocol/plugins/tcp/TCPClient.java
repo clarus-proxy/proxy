@@ -1,6 +1,7 @@
 package eu.clarussecure.proxy.protocol.plugins.tcp;
 
 import java.net.InetSocketAddress;
+import java.util.Map;
 import java.util.concurrent.Callable;
 
 import org.slf4j.Logger;
@@ -33,6 +34,7 @@ public class TCPClient<S extends TCPSession> implements Callable<Void> {
         Channel clientSideChannel = ctx.channel();
 
         Configuration configuration = clientSideChannel.attr(TCPConstants.CONFIGURATION_KEY).get();
+        Map<String, Object> customData = clientSideChannel.attr(TCPConstants.CUSTOM_DATA_KEY).get();
         ChannelInitializer<Channel> serverSidePipelineInitializer = clientSideChannel
                 .attr(TCPConstants.SERVER_INITIALIZER_KEY).get();
         Bootstrap bootstrap = new Bootstrap();
@@ -40,7 +42,8 @@ public class TCPClient<S extends TCPSession> implements Callable<Void> {
         session.setClientSideChannel(clientSideChannel);
         clientSideChannel.attr(TCPConstants.SESSION_KEY).set(session);
         bootstrap.group(clientSideChannel.eventLoop()).channel(NioSocketChannel.class)
-                .attr(TCPConstants.CONFIGURATION_KEY, configuration).attr(TCPConstants.SESSION_KEY, session)
+                .attr(TCPConstants.CONFIGURATION_KEY, configuration).attr(TCPConstants.CUSTOM_DATA_KEY, customData)
+                .attr(TCPConstants.SESSION_KEY, session)
                 .attr(TCPConstants.PREFERRED_SERVER_ENDPOINT_KEY,
                         clientSideChannel.attr(TCPConstants.PREFERRED_SERVER_ENDPOINT_KEY).get())
                 .handler(serverSidePipelineInitializer).option(ChannelOption.AUTO_READ, false);

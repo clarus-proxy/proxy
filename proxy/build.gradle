@@ -1,7 +1,7 @@
 allprojects {
     apply plugin: 'maven'
     group = 'eu.clarussecure'
-    version = '1.1-SNAPSHOT'
+    version = '1.2-SNAPSHOT'
     task generatePom {
         doLast {
             pom {
@@ -25,7 +25,10 @@ allprojects {
                     }
                     if (!subprojects.isEmpty()) {
                         modules {
-                            for (Project subproject : subprojects) {
+                            for (Project subproject : subprojects.findAll { project -> !project.name.equals("proxy-main") }) {
+                                module projectDir.toPath().relativize(subproject.projectDir.toPath()).toString().replace('\\', '/')
+                            }
+                            for (Project subproject : subprojects.findAll { project -> project.name.equals("proxy-main") }) {
                                 module projectDir.toPath().relativize(subproject.projectDir.toPath()).toString().replace('\\', '/')
                             }
                         }

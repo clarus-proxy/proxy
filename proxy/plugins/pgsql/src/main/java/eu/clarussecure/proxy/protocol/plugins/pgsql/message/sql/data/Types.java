@@ -1,51 +1,65 @@
 package eu.clarussecure.proxy.protocol.plugins.pgsql.message.sql.data;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class Types {
 
     // Map Oid to type
-    private static final Map<Long, Type> OID_2_TYPES;
+    private final Map<Long, Type> oid2Types;
+    private final List<Type> typesWithUnfixedOid;
 
-    static {
-        OID_2_TYPES = new HashMap<>(Type.values().length);
+    {
+        oid2Types = new HashMap<>(Type.values().length);
+        typesWithUnfixedOid = new ArrayList<>(Type.values().length);
         for (Type type : Type.values()) {
             if (type.getOid() != -1) {
-                OID_2_TYPES.put(type.getOid(), type);
+                oid2Types.put(type.getOid(), type);
+            } else {
+                typesWithUnfixedOid.add(type);
             }
         }
     }
 
     // Map name to type
-    private static final Map<String, Type> NAME_2_TYPES;
+    private final Map<String, Type> name2Types;
 
-    static {
-        NAME_2_TYPES = new HashMap<>(Type.values().length);
+    {
+        name2Types = new HashMap<>(Type.values().length);
         for (Type type : Type.values()) {
-            NAME_2_TYPES.put(type.getName(), type);
+            name2Types.put(type.getName(), type);
         }
     }
 
-    public static void setTypeOid(String name, long oid) {
+    public synchronized void setTypeOid(String name, long oid) {
         Type type = getType(name);
         if (type != null && type.getOid() != oid) {
             if (type.getOid() != -1) {
-                OID_2_TYPES.remove(type.getOid());
+                oid2Types.remove(type.getOid());
             }
             type.setOid(oid);
-            OID_2_TYPES.put(type.getOid(), type);
+            oid2Types.put(type.getOid(), type);
+            typesWithUnfixedOid.remove(type);
         }
     }
 
-    public static Type getType(long typeID) {
-        Type type = OID_2_TYPES.get(typeID);
+    public Type getType(long typeID) {
+        Type type = oid2Types.get(typeID);
         return type;
     }
 
-    public static Type getType(String name) {
-        Type type = NAME_2_TYPES.get(name);
+    public Type getType(String name) {
+        Type type = name2Types.get(name);
         return type;
     }
 
+    public Map<Long, Type> getOid2Types() {
+        return oid2Types;
+    }
+
+    public List<Type> getTypesWithUnfixedOid() {
+        return typesWithUnfixedOid;
+    }
 }
