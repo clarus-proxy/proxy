@@ -5,13 +5,27 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-import org.apache.commons.lang3.mutable.MutableInt;
-
 import eu.clarussecure.proxy.spi.CString;
 
 public class SimpleSQLParserUtil {
     private static final Pattern INTEGER_PATTERN = Pattern.compile("\\d+");
     private static final Pattern WORD_PATTERN = Pattern.compile("[\\w_]+");
+
+    private static class MutableInt {
+        private int value;
+
+        public MutableInt(int value) {
+            this.value = value;
+        }
+
+        public int getValue() {
+            return value;
+        }
+
+        public void increment() {
+            value++;
+        }
+    }
 
     public static SQLCommandType parse(CString sql) {
         SQLCommandType[] types = SQLCommandType.values();

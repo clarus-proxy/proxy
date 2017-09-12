@@ -3,6 +3,8 @@ package eu.clarussecure.proxy.pgsql;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.sql.SQLException;
+import java.util.Arrays;
+import java.util.List;
 
 import org.junit.Assert;
 import org.junit.FixMethodOrder;
@@ -110,6 +112,31 @@ public abstract class BoreholesProtection extends DataSetProtection {
                 // TODO compare x and y
             }
         });
+    }
+
+    @Test
+    public void query_boreholes_7_selectWhereDataEqual_clearResults() throws SQLException {
+        List<List<String>> rows = queryClearData(getBoreholes(), "*", "nom_com = 'CAROMB'", Integer.MAX_VALUE, true);
+        Assert.assertNotNull(rows);
+        Assert.assertEquals(1, rows.size());
+        Assert.assertEquals(getBoreholes().getColumnNames().length, rows.get(0).size());
+        Assert.assertEquals("CAROMB", rows.get(0).get(1));
+    }
+
+    @Test
+    public void query_boreholes_7_selectWhereDataEqual_protectedResults() throws SQLException {
+        List<List<String>> rows = queryProtectedData(getBoreholes(), "*", "nom_com = 'CAROMB'", Integer.MAX_VALUE,
+                true);
+        Assert.assertNotNull(rows);
+        Assert.assertEquals(1, rows.size());
+        int expectedNbColumns = (int) Arrays.stream(getBoreholes().getProtectedColumnNames())
+                .flatMap(cspPcns -> Arrays.stream(cspPcns)).filter(pcn -> pcn != null).count();
+        Assert.assertEquals(expectedNbColumns, rows.get(0).size());
+        if (getBoreholes().isColumnProtected(1)) {
+            Assert.assertNotEquals("CAROMB", rows.get(0).get(1));
+        } else {
+            Assert.assertEquals("CAROMB", rows.get(0).get(1));
+        }
     }
 
     @Test

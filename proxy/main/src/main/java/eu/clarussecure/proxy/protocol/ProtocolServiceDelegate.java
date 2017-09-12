@@ -1,5 +1,6 @@
 package eu.clarussecure.proxy.protocol;
 
+import java.io.InputStream;
 import java.lang.reflect.Array;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
@@ -66,8 +67,12 @@ public class ProtocolServiceDelegate implements ProtocolService {
             }
             return stream;
         }).toArray(String[]::new);
+        // add the additional attributes that the protection module has added
+        Stream<String> additionalAttributeNames = moduleFQAttributeNames.stream()
+                .filter(mfqan -> !Arrays.asList(fqAttributeNames).contains(mfqan));
         metadataOperation.getMetadata().clear();
-        Map<CString, List<CString>> metadata = Arrays.stream(fqAttributeNames).distinct()
+        Map<CString, List<CString>> metadata = Stream.concat(Arrays.stream(fqAttributeNames), additionalAttributeNames)
+                .distinct()
                 .collect(Collectors.toMap(CString::valueOf,
                         an -> mapping.stream().anyMatch(map -> map.containsKey(an)) ? mapping.stream()
                                 .map(map -> map.get(an)).map(CString::valueOf).collect(Collectors.toList())
@@ -147,6 +152,8 @@ public class ProtocolServiceDelegate implements ProtocolService {
             String[][] newAttributeNames;
             String[][][] newContents;
             List<Map<String, Integer>> mappingIndexes;
+            String[][] newExtraProtectedAttributeNames;
+            InputStream[][] newExtraBinaryContents;
             allContents = outboundDataOperation.getDataValues().stream()
                     .map(row -> row.stream().map(StringUtilities::toString).toArray(String[]::new))
                     .toArray(String[][]::new);
@@ -157,8 +164,16 @@ public class ProtocolServiceDelegate implements ProtocolService {
             if (outboundDataOperation.isUsingHeadOperation()) {
                 // using head operation is more efficient when there is no
                 // content to protect or content is not to protect
-                newAttributeNames = mappings.stream().map(map -> Arrays.stream(attributeNames)
-                        .filter(an -> map.containsKey(an)).map(an -> map.get(an)).toArray(String[]::new))
+                newAttributeNames = mappings
+                        .stream().map(
+                                map -> Stream
+                                        .concat(Arrays.stream(attributeNames).filter(an -> map.containsKey(an))
+                                                .map(an -> map.get(an)),
+                                                map.entrySet().stream()
+                                                        .filter(e -> !Arrays.asList(attributeNames)
+                                                                .contains(e.getKey()))
+                                                        .map(Map.Entry::getValue))
+                                        .toArray(String[]::new))
                         .toArray(String[][]::new);
                 newContents = mappings.stream()
                         .map(map -> Arrays.stream(contents)
@@ -179,6 +194,8 @@ public class ProtocolServiceDelegate implements ProtocolService {
                                                                         .equals(e.getValue()))
                                                                 .findFirst().getAsInt())))
                         .collect(Collectors.toList());
+                newExtraProtectedAttributeNames = new String[numberOfCSPs][0];
+                newExtraBinaryContents = new InputStream[numberOfCSPs][0];
             } else {
                 // using post operation allow to protect content
                 List<DataOperationCommand> results = post(attributeNames, contents);
@@ -188,6 +205,8 @@ public class ProtocolServiceDelegate implements ProtocolService {
                     newContents = new String[numberOfCSPs][0][];
                     mappingIndexes = Stream.<Map<String, Integer>>generate(() -> Collections.emptyMap())
                             .limit(numberOfCSPs).collect(Collectors.toList());
+                    newExtraProtectedAttributeNames = new String[numberOfCSPs][0];
+                    newExtraBinaryContents = new InputStream[numberOfCSPs][0];
                 } else {
                     newAttributeNames = results.stream().map(DataOperationCommand::getProtectedAttributeNames)
                             .map(pans -> pans == null ? new String[0] : pans).toArray(String[][]::new);
@@ -201,6 +220,11 @@ public class ProtocolServiceDelegate implements ProtocolService {
                                                             .equals(e.getValue()))
                                                     .findFirst().getAsInt())))
                             .collect(Collectors.toList());
+                    newExtraProtectedAttributeNames = results.stream()
+                            .map(DataOperationCommand::getExtraProtectedAttributeNames)
+                            .map(epans -> epans == null ? new String[0] : epans).toArray(String[][]::new);
+                    newExtraBinaryContents = results.stream().map(DataOperationCommand::getExtraBinaryContent)
+                            .map(ebcs -> ebcs == null ? new InputStream[0] : ebcs).toArray(InputStream[][]::new);
                 }
             }
             if (numberOfCSPs > 1 // more than one csp
@@ -228,15 +252,24 @@ public class ProtocolServiceDelegate implements ProtocolService {
                     newOutboundDataOperation
                             .setUnprotectingDataEnabled(outboundDataOperation.isUnprotectingDataEnabled());
                     List<CString> dataIds = new ArrayList<>(protectedAttributes.size());
+                    String[] cspNewAttributeNames = newAttributeNames[csp];
                     for (int c = 0; c < protectedAttributes.size(); c++) {
                         if (protectedAttributes.get(c)) {
                             String newAttributeName = cspMapping.get(allAttributeNames[c]);
-                            if (newAttributeName != null && Arrays.stream(newAttributeNames[csp])
+                            if (newAttributeName != null && Arrays.stream(cspNewAttributeNames)
                                     .anyMatch(nan -> nan.equals(newAttributeName))) {
                                 dataIds.add(CString.valueOf(newAttributeName));
                             }
                         } else {
                             dataIds.add(CString.valueOf(allAttributeNames[c]));
+                        }
+                    }
+                    // add additional attributes
+                    List<Integer> newAttributeNamesIndex = Arrays.stream(cspNewAttributeNames).map(CString::valueOf)
+                            .map(nan -> dataIds.indexOf(nan)).collect(Collectors.toList());
+                    for (int c = 0; c < newAttributeNamesIndex.size(); c++) {
+                        if (newAttributeNamesIndex.get(c) == -1) {
+                            dataIds.add(CString.valueOf(cspNewAttributeNames[c]));
                         }
                     }
                     newOutboundDataOperation.setDataIds(dataIds);
@@ -247,7 +280,7 @@ public class ProtocolServiceDelegate implements ProtocolService {
                         for (int c = 0; c < protectedAttributes.size(); c++) {
                             if (protectedAttributes.get(c)) {
                                 String newAttributeName = cspMapping.get(allAttributeNames[c]);
-                                if (newAttributeName != null && Arrays.stream(newAttributeNames[csp])
+                                if (newAttributeName != null && Arrays.stream(cspNewAttributeNames)
                                         .anyMatch(nan -> nan.equals(newAttributeName))) {
                                     rowDataValues.add(CString
                                             .valueOf(cspNewContents[r][cspMappingIndexes.get(allAttributeNames[c])]));
@@ -256,12 +289,27 @@ public class ProtocolServiceDelegate implements ProtocolService {
                                 rowDataValues.add(CString.valueOf(allContents[r][c]));
                             }
                         }
+                        // add additional data values
+                        for (int c = 0; c < newAttributeNamesIndex.size(); c++) {
+                            if (newAttributeNamesIndex.get(c) == -1) {
+                                rowDataValues.add(CString.valueOf(cspNewContents[r][c]));
+                            }
+                        }
                         newDataValues.add(rowDataValues);
                     }
                     newOutboundDataOperation.setDataValues(newDataValues);
                     Map<CString, CString> dataIdMapping = cspMapping.entrySet().stream().collect(
                             Collectors.toMap(e -> CString.valueOf(e.getKey()), e -> CString.valueOf(e.getValue())));
                     newOutboundDataOperation.setDataIdMapping(dataIdMapping);
+                    // Add extra protected attribute names
+                    String[] cspNewExtraProtectedAttributeNames = newExtraProtectedAttributeNames[csp];
+                    List<CString> newExtraDataIds = Arrays.stream(cspNewExtraProtectedAttributeNames)
+                            .map(CString::valueOf).collect(Collectors.toList());
+                    newOutboundDataOperation.setExtraDataIds(newExtraDataIds);
+                    InputStream[] cspNewExtraBinaryContents = newExtraBinaryContents[csp];
+                    List<InputStream> newExtraDataContents = Arrays.stream(cspNewExtraBinaryContents)
+                            .collect(Collectors.toList());
+                    newOutboundDataOperation.setExtraDataContents(newExtraDataContents);
                     newOutboundDataOperation.setModified(true);
                     newOutboundDataOperation.setInvolvedCSP(csp);
                     newOutboundDataOperations.add(newOutboundDataOperation);
@@ -306,7 +354,10 @@ public class ProtocolServiceDelegate implements ProtocolService {
                 .toArray(String[]::new));
         int numberOfCSPs = mappings.size();
         List<String> fqAttributeNames = mappings.stream().map(Map::keySet).flatMap(Set::stream).distinct()
-                .collect(Collectors.toList());
+                .filter(fqan -> {
+                    String an = fqan.substring(fqan.lastIndexOf('/') + 1);
+                    return an.charAt(0) != '?' || an.charAt(an.length() - 1) != '?';
+                }).collect(Collectors.toList());
         String[] allFQAttributeNames = Arrays.stream(allAttributeNames).flatMap(attributeName -> {
             Stream<String> stream = Stream.of(attributeName);
             if (attributeName.indexOf('*') != -1) {
@@ -348,8 +399,6 @@ public class ProtocolServiceDelegate implements ProtocolService {
                 .collect(Collectors.toList());
         Criteria[] criteria = IntStream.range(0, allCriteria.length).filter(i -> protectedCriteria.get(i))
                 .mapToObj(i -> allCriteria[i]).toArray(Criteria[]::new);
-        int[] criteriaMapping = IntStream.range(0, allCriteria.length)
-                .map(i -> protectedCriteria.get(i) ? Arrays.asList(criteria).indexOf(allCriteria[i]) : -1).toArray();
         if (attributeNames.length > 0 || criteria.length > 0) {
             // at least one attribute or criteria has to be protected
             List<DataOperationCommand> promise = get(attributeNames, criteria);
@@ -385,15 +434,24 @@ public class ProtocolServiceDelegate implements ProtocolService {
                     newOutboundDataOperation
                             .setUnprotectingDataEnabled(outboundDataOperation.isUnprotectingDataEnabled());
                     List<CString> dataIds = new ArrayList<>(protectedAttributes.size());
+                    String[] cspNewAttributeNames = newAttributeNames[csp];
                     for (int c = 0; c < protectedAttributes.size(); c++) {
                         if (protectedAttributes.get(c)) {
                             String newAttributeName = cspMapping.get(allFQAttributeNames[c]);
-                            if (newAttributeName != null && Arrays.stream(newAttributeNames[csp])
+                            if (newAttributeName != null && Arrays.stream(cspNewAttributeNames)
                                     .anyMatch(nan -> nan.equals(newAttributeName))) {
                                 dataIds.add(CString.valueOf(newAttributeName));
                             }
                         } else {
                             dataIds.add(CString.valueOf(allFQAttributeNames[c]));
+                        }
+                    }
+                    // add additional attributes
+                    List<Integer> newAttributeNamesIndex = Arrays.stream(cspNewAttributeNames).map(CString::valueOf)
+                            .map(nan -> dataIds.indexOf(nan)).collect(Collectors.toList());
+                    for (int c = 0; c < newAttributeNamesIndex.size(); c++) {
+                        if (newAttributeNamesIndex.get(c) == -1) {
+                            dataIds.add(CString.valueOf(cspNewAttributeNames[c]));
                         }
                     }
                     newOutboundDataOperation.setDataIds(dataIds);
@@ -411,21 +469,36 @@ public class ProtocolServiceDelegate implements ProtocolService {
                                 newRow.add(allFQDataValues[r][c]);
                             }
                         }
+                        // add additional data values
+                        for (int c = 0; c < newAttributeNamesIndex.size(); c++) {
+                            if (newAttributeNamesIndex.get(c) == -1) {
+                                newRow.add(null);
+                            }
+                        }
                         newDataValues.add(newRow);
                     }
                     newOutboundDataOperation.setDataValues(newDataValues);
                     Map<CString, CString> dataIdMapping = cspMapping.entrySet().stream().collect(
                             Collectors.toMap(e -> CString.valueOf(e.getKey()), e -> CString.valueOf(e.getValue())));
                     newOutboundDataOperation.setDataIdMapping(dataIdMapping);
+                    List<SimpleEntry<Criteria, Boolean>> newCriteriaTrack = Arrays.stream(newCriteria[csp])
+                            .map(nc -> new SimpleEntry<>(nc, false)).collect(Collectors.toList());
                     List<OutboundDataOperation.Criterion> criterions = new ArrayList<>(protectedCriteria.size());
                     for (int i = 0; i < protectedCriteria.size(); i++) {
                         if (protectedCriteria.get(i)) {
-                            int idx = criteriaMapping[i];
-                            if (idx != -1) {
+                            String clearCriteriaAttributeName = allCriteriaAttributeNames[i];
+                            String cspProtectedCriteriaAttributeName = cspMapping.get(clearCriteriaAttributeName);
+                            Map.Entry<Criteria, Boolean> entry = null;
+                            if (cspProtectedCriteriaAttributeName != null) {
+                                entry = newCriteriaTrack.stream().filter(e -> !e.getValue()).findFirst().orElse(null);
+                            }
+                            if (entry != null) {
+                                entry.setValue(true);
+                                Criteria cspProtectedCriteria = entry.getKey();
                                 criterions.add(new OutboundDataOperation.Criterion(
-                                        CString.valueOf(newCriteria[csp][idx].getAttributeName()),
-                                        CString.valueOf(newCriteria[csp][idx].getOperator()),
-                                        CString.valueOf(newCriteria[csp][idx].getValue())));
+                                        CString.valueOf(cspProtectedCriteria.getAttributeName()),
+                                        CString.valueOf(cspProtectedCriteria.getOperator()),
+                                        CString.valueOf(cspProtectedCriteria.getValue())));
                             }
                         } else {
                             criterions.add(allCriterions.get(i));
@@ -543,11 +616,6 @@ public class ProtocolServiceDelegate implements ProtocolService {
         // unprotected)
         String[] allAttributeNames = inboundDataOperations.stream().map(InboundDataOperation::getClearDataIds).findAny()
                 .get().stream().map(StringUtilities::toString).toArray(String[]::new);
-        List<Boolean> allAttributeProtectionFlags = Arrays.stream(allAttributeNames)
-                .map(an -> mappings.stream().anyMatch(map -> map.get(an) != null)).collect(Collectors.toList());
-        String[] attributeNames = IntStream.range(0, allAttributeProtectionFlags.size())
-                .filter(i -> allAttributeProtectionFlags.get(i)).mapToObj(i -> allAttributeNames[i]).distinct()
-                .toArray(String[]::new);
         List<String[]> allProtectedAttributeNames = IntStream.range(0, numberOfCSPs)
                 .mapToObj(csp -> inboundDataOperations.stream().filter(ido -> ido.getInvolvedCSP() == csp).findFirst()
                         .orElse(null))
@@ -613,8 +681,11 @@ public class ProtocolServiceDelegate implements ProtocolService {
                                     .toArray(String[][]::new))
                     .collect(Collectors.toList());
             List<DataOperationResult> results = get(promise, moduleProtectedContents);
+            String[] moduleNewAttributeNames;
             String[][] moduleNewContents;
             if (results == null || (results.size() == 1 && results.get(0) instanceof DataOperationResponse)) {
+                moduleNewAttributeNames = results == null ? new String[0]
+                        : ((DataOperationResponse) results.get(0)).getAttributeNames();
                 moduleNewContents = results == null ? new String[0][]
                         : ((DataOperationResponse) results.get(0)).getContents();
             } else {
@@ -648,36 +719,13 @@ public class ProtocolServiceDelegate implements ProtocolService {
                 }
             }
             if (!same) {
-                // indexes in the request attribute names for each attribute
-                // name expected by the protection module (-1 if an attribute
-                // name expected by the protection module is part of the request
-                // attribute names, i.e. when clarus_protected is invoked by the
-                // client)
-                List<Map.Entry<String, Integer>> allModuleAttributeNameIndexes = Arrays
-                        .stream(promise.get(0).getAttributeNames()).<Map.Entry<String, Integer>>map(an -> {
-                            int index = IntStream.range(0, allAttributeNames.length)
-                                    .filter(i -> an.equals(allAttributeNames[i])).findFirst().orElse(-1);
-                            return new SimpleEntry<>(an, index);
-                        }).collect(Collectors.toList());
-                // unprotected content returned by the protection module
-                // (excluding content that didn't need to be unprotected and
-                // excluding content for duplicated attribute names and sorted
-                // according to the order of the attributes defined in the
-                // request)
-                String[][] newContents = Arrays.stream(moduleNewContents)
-                        .map(allRow -> IntStream.range(0, allModuleAttributeNameIndexes.size())
-                                .filter(i -> allModuleAttributeNameIndexes.get(i).getValue() != -1)
-                                .mapToObj(Integer::valueOf)
-                                .sorted((i1, i2) -> allModuleAttributeNameIndexes.get(i1).getValue()
-                                        - allModuleAttributeNameIndexes.get(i2).getValue())
-                                .map(i -> allRow[i]).toArray(String[]::new))
-                        .toArray(String[][]::new);
+                String[][] newContents = moduleNewContents;
                 // indexes in the attribute names for each request attribute
                 // name (-1 if an attribute name didn't need to be unprotected)
                 List<Map.Entry<String, Integer>> allAttributeNameIndexes = Arrays
                         .stream(allAttributeNames).<Map.Entry<String, Integer>>map(an -> {
-                            int index = IntStream.range(0, attributeNames.length)
-                                    .filter(i -> an.equals(attributeNames[i])).findFirst().orElse(-1);
+                            int index = IntStream.range(0, moduleNewAttributeNames.length)
+                                    .filter(i -> an.equals(moduleNewAttributeNames[i])).findFirst().orElse(-1);
                             return new SimpleEntry<>(an, index);
                         }).collect(Collectors.toList());
                 // prepare flags to know if content must be duplicated

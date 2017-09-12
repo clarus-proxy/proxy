@@ -386,7 +386,7 @@ public class TypeParser {
 
     private static PGbox3d parsePGbox3d(CString value) {
         try {
-            String expected = new PGbox3d().getPrefix().toLowerCase();
+            String expected = new PGbox3d().getPrefix();
             String actual = value.toString();
             if (actual.startsWith("SRID=")) {
                 String[] temp = PGgeometry.splitSRID(actual);
@@ -407,7 +407,7 @@ public class TypeParser {
 
     private static PGbox2d parsePGbox2d(CString value) {
         try {
-            String expected = new PGbox2d().getPrefix().toLowerCase();
+            String expected = new PGbox2d().getPrefix();
             String actual = value.toString();
             if (actual.startsWith("SRID=")) {
                 String[] temp = PGgeometry.splitSRID(actual);

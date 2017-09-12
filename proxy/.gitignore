@@ -7,4 +7,5 @@ target/
 /install/
 .classpath
 .project
-sb.page
+*/sb.page
+main/clarus_keystore

@@ -8,8 +8,8 @@
     <relativePath>../..</relativePath>
   </parent>
   <groupId>eu.clarussecure</groupId>
-  <artifactId>proxy-plugin-pgsql</artifactId>
-  <name>PostgreSQL protocol plugin for the CLARUS proxy</name>
+  <artifactId>proxy-module-searchable-encryption</artifactId>
+  <name>Searchable encryption (SE) module for the CLARUS proxy</name>
   <dependencies>
     <dependency>
       <groupId>org.slf4j</groupId>
@@ -43,38 +43,14 @@
     </dependency>
     <dependency>
       <groupId>eu.clarussecure</groupId>
-      <artifactId>proxy-plugin-tcp</artifactId>
-      <version>1.2-SNAPSHOT</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
-      <groupId>io.netty</groupId>
-      <artifactId>netty-all</artifactId>
-      <version>4.1.4.Final</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.github.jsqlparser</groupId>
-      <artifactId>jsqlparser</artifactId>
-      <version>0.9.6-CLARUS-SNAPSHOT</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
-      <groupId>net.postgis</groupId>
-      <artifactId>postgis-jdbc</artifactId>
-      <version>2.2.1</version>
+      <artifactId>dataoperations.SE_module</artifactId>
+      <version>1</version>
       <scope>compile</scope>
     </dependency>
     <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
       <version>4.12</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.commons</groupId>
-      <artifactId>commons-lang3</artifactId>
-      <version>3.0</version>
       <scope>test</scope>
     </dependency>
   </dependencies>

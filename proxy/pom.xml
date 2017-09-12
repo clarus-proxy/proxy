@@ -10,6 +10,7 @@
     <module>common</module>
     <module>modules/anonymization</module>
     <module>modules/encryption</module>
+    <module>modules/searchable_encryption</module>
     <module>modules/splitting</module>
     <module>plugins/http</module>
     <module>plugins/pgsql</module>
