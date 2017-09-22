@@ -6,7 +6,6 @@ import org.junit.rules.RuleChain;
 public class CoarseningBoreholesByMicroaggregationIT extends BoreholesProtection {
 
     private static final String SECURITY_POLICY = "./src/test/resources/boreholes_3857_coarsening_microaggregation.xml";
-    private static final String TARGET = "10.15.0.89";
 
     private static final String BOREHOLES_TABLE_NAME = "tu_coarsen_boreholes_3857_microaggregation";
     private static final String GEOMETRY_TYPE = "POLYGON";

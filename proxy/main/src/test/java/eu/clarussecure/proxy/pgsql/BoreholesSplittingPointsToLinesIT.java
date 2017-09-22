@@ -6,7 +6,6 @@ import org.junit.rules.RuleChain;
 public class BoreholesSplittingPointsToLinesIT extends BoreholesProtection {
 
     private static final String SECURITY_POLICY = "./src/test/resources/boreholes_3857_splitting_points_to_lines.xml";
-    private static final String TARGET = "10.15.0.89";
 
     private static final String BOREHOLES_TABLE_NAME = "tu_split_boreholes_3857_lines";
     private static final String[] PROTECTED_DATABASE_NAMES = new String[] { "geodata1", "geodata2" };
@@ -53,7 +52,7 @@ public class BoreholesSplittingPointsToLinesIT extends BoreholesProtection {
 
     @ClassRule
     public static RuleChain getRuleChain() {
-        ProxyResource proxyResource = new ProxyResource(SECURITY_POLICY, TARGET, TARGET);
+        ProxyResource proxyResource = new ProxyResource(SECURITY_POLICY, TARGETS);
         return getRuleChain(proxyResource, BOREHOLES_SCRIPT, BOREHOLES_TABLE_NAME_IN_SCRIPT, SCHEMA_NAME,
                 BOREHOLES_TABLE_NAME);
     }

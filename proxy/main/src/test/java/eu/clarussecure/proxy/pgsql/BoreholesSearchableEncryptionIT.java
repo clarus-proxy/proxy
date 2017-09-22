@@ -6,7 +6,6 @@ import org.junit.rules.RuleChain;
 public class BoreholesSearchableEncryptionIT extends BoreholesProtection {
 
     private static final String SECURITY_POLICY = "./src/test/resources/boreholes_3857_searchable_encryption.xml";
-    private static final String TARGET = "10.15.0.89";
 
     private static final String BOREHOLES_TABLE_NAME = "tu_encrypted_boreholes_3857_se";
     private static final String[] BOREHOLES_COLUMN_NAMES = new String[] { "gid", "nom_com", "adresse", "code_bss",

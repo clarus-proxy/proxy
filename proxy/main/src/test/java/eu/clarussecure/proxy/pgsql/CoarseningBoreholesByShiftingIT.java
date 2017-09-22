@@ -6,7 +6,6 @@ import org.junit.rules.RuleChain;
 public class CoarseningBoreholesByShiftingIT extends BoreholesProtection {
 
     private static final String SECURITY_POLICY = "./src/test/resources/boreholes_3857_coarsening_shift.xml";
-    private static final String TARGET = "10.15.0.89";
 
     private static final String BOREHOLES_TABLE_NAME = "tu_coarsen_boreholes_3857_shift";
     private static final String GEOMETRY_TYPE = "POLYGON";

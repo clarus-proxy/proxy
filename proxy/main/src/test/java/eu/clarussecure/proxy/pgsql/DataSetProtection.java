@@ -311,6 +311,15 @@ public abstract class DataSetProtection {
 
     protected static final String DATABASE_NAME = "postgres";
     protected static final String SCHEMA_NAME = "public";
+    protected static final String TARGET;
+    protected static final String[] TARGETS;
+
+    static {
+        String target = System.getProperty("TARGET");
+        String targets = System.getProperty("TARGETS");
+        TARGET = target != null ? target : targets.split(";")[0];
+        TARGETS = targets != null ? targets.split(";") : new String[] { target };
+    }
 
     protected DatasetContext buildTableContext(int nbCSPs, String script, String tableNameInScript, String databaseName,
             String schemaName, String tableName, String[] columnNames, String whereClause) {
