@@ -1,126 +1,118 @@
 package eu.clarussecure.proxy.protocol.plugins.wfs.handler;
 
-import eu.clarussecure.proxy.spi.DataOperation;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufInputStream;
-import io.netty.buffer.ByteBufOutputStream;
-import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.codec.MessageToMessageDecoder;
-import io.netty.handler.codec.http.*;
-import io.netty.util.ReferenceCountUtil;
-import org.codehaus.stax2.XMLInputFactory2;
-import org.codehaus.stax2.XMLOutputFactory2;
+import java.io.IOException;
+import java.util.List;
+
+import javax.xml.stream.XMLEventReader;
+import javax.xml.stream.XMLEventWriter;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.events.StartElement;
+import javax.xml.stream.events.XMLEvent;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.xml.stream.*;
-import javax.xml.stream.events.StartElement;
-import javax.xml.stream.events.XMLEvent;
-import java.io.FileOutputStream;
-import java.util.List;
+import eu.clarussecure.proxy.protocol.plugins.http.buffer.ChannelOutputStream;
+import eu.clarussecure.proxy.spi.DataOperation;
+import eu.clarussecure.proxy.spi.buffer.QueueByteBufInputStream;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.handler.codec.http.HttpContent;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpObject;
+import io.netty.handler.codec.http.HttpResponse;
+import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.EventExecutorGroup;
 
 /**
  * Created on 09/06/2017.
  */
-public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
-
-    private XMLInputFactory xmlInputFactory;
-    private XMLOutputFactory xmlOutputFactory;
+public class WfsResponseDecoder extends WfsDecoder {
 
     private static final String NS_WFS = "http://www.opengis.net/wfs";
     private static final String PREFIX_WFS = "wfs";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(WfsResponseDecoder.class);
 
-    public WfsResponseDecoder() {
-
-        this.xmlInputFactory = XMLInputFactory2.newInstance();
-        this.xmlOutputFactory = XMLOutputFactory2.newInstance();
-
+    public WfsResponseDecoder(EventExecutorGroup parserGroup) {
+        super(parserGroup);
     }
 
     @Override
     protected void decode(ChannelHandlerContext ctx, HttpObject httpObject, List<Object> out) throws Exception {
 
-        ByteBuf buffer = Unpooled.buffer();
-
-        FullHttpResponse response = null;
-
         if (httpObject instanceof HttpResponse) {
             HttpResponse httpResponse = (HttpResponse) httpObject;
             this.replaceContentLengthByTransferEncodingHeader(httpResponse.headers());
-
+            this.currentContentStream = null;
+            ReferenceCountUtil.retain(httpObject);
+            out.add(httpObject);
         }
         if (httpObject instanceof HttpContent) {
-
-            HttpContent httpContent = (HttpContent) httpObject;
-            ByteBuf httpContentByteBuffer = httpContent.content();
-            ByteBufInputStream byteBufInputStream = new ByteBufInputStream(httpContentByteBuffer);
-            XMLEventReader xmlEventReader = xmlInputFactory.createXMLEventReader(byteBufInputStream);
-
-            ByteBufOutputStream outputStream = new ByteBufOutputStream(buffer);
-
-            XMLEventWriter writer = xmlOutputFactory.createXMLEventWriter(outputStream);
-            XMLEventFactory eventFactory = XMLEventFactory.newInstance();
-
-            try {
-                XMLEvent event = null;
-                int eventType = 0;
-
-                while (xmlEventReader.hasNext()) {
-
-                    event = xmlEventReader.peek();
-                    eventType = event.getEventType();
-                    StartElement startElement = null;
-                    if (XMLEvent.START_ELEMENT == eventType) {
-
-                        startElement = event.asStartElement();
-                        LOGGER.info(startElement.getName().getLocalPart());
-                        if (startElement.getName().getLocalPart().equals("featureMember")) {
-
-                            // marshalling/unmarshalling via JAX
-                            // JAXBContext context = JAXBContext.newInstance(WfsResponseDecoder.class);
-                            // Unmarshaller unmarshaller = context.createUnmarshaller();
-                            // unmarshaller.unmarshal(xmlEventReader, FeatureCollectionType.class);
-
+            final HttpContent httpContent = (HttpContent) httpObject;
+            if (currentContentStream == null) {
+                // First content part
+                if (!httpContent.content().isReadable()) {
+                    LOGGER.trace("Response contains no data");
+                    ReferenceCountUtil.retain(httpContent);
+                    out.add(httpContent);
+                } else {
+                    currentContentStream = new QueueByteBufInputStream(httpContent.content());
+                    parserGroup.submit(() -> {
+                        final ChannelOutputStream processedContentOutputStream = new ChannelOutputStream(ctx);
+                        try {
+                            this.processContent(currentContentStream, processedContentOutputStream);
+                        } catch (Exception e) {
+                            LOGGER.error("Failed to process request content", e);
+                        } finally {
+                            try {
+                                processedContentOutputStream.close();
+                            } catch (IOException e) {
+                                LOGGER.error("Can't close xml output stream", e);
+                            }
+                            try {
+                                currentContentStream.close();
+                            } catch (IOException e) {
+                                LOGGER.error("Can't close xml output stream", e);
+                            }
                         }
-                    }
-                    writer.add(event);
-                    xmlEventReader.next();
+                    });
                 }
-
-                writer.add(eventFactory.createEndDocument());
-
-                response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.ACCEPTED,
-                        outputStream.buffer());
-
-            } catch (XMLStreamException e) {
-                LOGGER.error("Error during WFS message processing", e);
-
-            } finally {
-                try {
-
-                    outputStream.close();
-                    // writer.flush();
-                    // writer.close();
-
-                } catch (Exception e) {
-                    LOGGER.error("Can't close xml writer", e);
-                }
+            } else {
+                currentContentStream.addBuffer(httpContent.content());
             }
-            if (httpContent instanceof LastHttpContent) {
-                System.out.println("LAST HTTP CONTENT");
+            if (currentContentStream != null && httpContent instanceof LastHttpContent) {
+                currentContentStream.addBuffer(QueueByteBufInputStream.END_OF_STREAMS);
             }
         }
 
-        ReferenceCountUtil.retain(response);
-        out.add(response);
+    }
 
+    private void processContent(QueueByteBufInputStream requestInputStream, ChannelOutputStream requestOutputStream)
+            throws XMLStreamException {
+        XMLEventReader xmlEventReader = xmlInputFactory.createXMLEventReader(requestInputStream);
+        XMLEventWriter xmlEventWriter = xmlOutputFactory.createXMLEventWriter(requestOutputStream);
+
+        XMLEvent event = null;
+        int eventType = 0;
+        while (xmlEventReader.hasNext()) {
+            event = (XMLEvent) xmlEventReader.peek();
+            eventType = event.getEventType();
+            if (eventType == XMLEvent.START_ELEMENT) {
+                StartElement rootElement = event.asStartElement();
+                LOGGER.trace("OWS message root START ELEMENT --> " + rootElement.getName().toString());
+            }
+            xmlEventWriter.add(xmlEventReader.nextEvent());
+            xmlEventWriter.flush();
+        }
+
+        xmlEventWriter.flush();
     }
 
     /**
      * replaceContentLengthByTransferEncodingHeader
+     * 
      * @param headers
      */
     protected void replaceContentLengthByTransferEncodingHeader(HttpHeaders headers) {
@@ -132,6 +124,7 @@ public class WfsResponseDecoder extends MessageToMessageDecoder<HttpObject> {
 
     /**
      * newDataOperation
+     * 
      * @param ctx
      * @param dataOperation
      * @return

@@ -31,15 +31,15 @@ public class WfsClientPipelineInitializer extends ChannelInitializer<Channel> {
         ChannelPipeline pipeline = ch.pipeline();
 
         EventExecutorGroup parserGroup = new DefaultEventExecutorGroup(configuration.getNbParserThreads());
-        pipeline.addLast(parserGroup, "SessionInitializationRequestHandler", new SessionInitializationRequestHandler());
-        pipeline.addLast(parserGroup, "HttpServerCodec", new HttpServerCodec());
-        pipeline.addLast(parserGroup, "HttpHeaderCodec", new HttpHeaderCodec());
+        pipeline.addLast("SessionInitializationRequestHandler", new SessionInitializationRequestHandler());
+        pipeline.addLast("HttpServerCodec", new HttpServerCodec());
+        pipeline.addLast("HttpHeaderCodec", new HttpHeaderCodec());
 
         //pipeline.addLast(parserGroup, "HttpObjectAggregator", new HttpObjectAggregator(512 * 1024));
         //pipeline.addLast(parserGroup, "HttpObjectAccumulator", new HttpObjectAccumulator(Integer.MAX_VALUE));
-        pipeline.addLast(parserGroup, "WfsRequestDecoder", new WfsRequestDecoder());
+        pipeline.addLast("WfsRequestDecoder", new WfsRequestDecoder(parserGroup));
 
-        pipeline.addLast(parserGroup, "HttpRequestForwarder", new HttpRequestForwarder());
+        pipeline.addLast("HttpRequestForwarder", new HttpRequestForwarder());
     }
 
 }

@@ -1,63 +1,56 @@
 package eu.clarussecure.proxy.protocol.plugins.wfs.handler;
 
-import com.ctc.wstx.exc.WstxEOFException;
-import com.ctc.wstx.exc.WstxParsingException;
-import eu.clarussecure.proxy.protocol.plugins.wfs.exception.WfsParsingException;
-import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsGetRequest;
-import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsOperation;
-import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsPostRequest;
-import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsRequest;
-import eu.clarussecure.proxy.protocol.plugins.wfs.processor.WfsGetRequestProcessor;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufInputStream;
-import io.netty.buffer.ByteBufOutputStream;
-import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.codec.MessageToMessageDecoder;
-import io.netty.handler.codec.http.*;
-import io.netty.util.ReferenceCountUtil;
-import org.codehaus.stax2.XMLInputFactory2;
-import org.codehaus.stax2.XMLOutputFactory2;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.io.IOException;
+import java.util.List;
 
 import javax.xml.namespace.QName;
-import javax.xml.stream.*;
+import javax.xml.stream.XMLEventReader;
+import javax.xml.stream.XMLEventWriter;
+import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.events.Attribute;
 import javax.xml.stream.events.StartElement;
 import javax.xml.stream.events.XMLEvent;
-import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import eu.clarussecure.proxy.protocol.plugins.http.buffer.ChannelOutputStream;
+import eu.clarussecure.proxy.protocol.plugins.wfs.exception.WfsParsingException;
+import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsGetRequest;
+import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsOperation;
+import eu.clarussecure.proxy.protocol.plugins.wfs.processor.WfsGetRequestProcessor;
+import eu.clarussecure.proxy.spi.buffer.QueueByteBufInputStream;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.handler.codec.http.HttpContent;
+import io.netty.handler.codec.http.HttpObject;
+import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.handler.codec.http.QueryStringDecoder;
+import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.EventExecutorGroup;
 
 /**
  * Created on 23/06/2017.
  */
-public class WfsRequestDecoder extends MessageToMessageDecoder<HttpObject> {
+public class WfsRequestDecoder extends WfsDecoder {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(WfsResponseDecoder.class);
 
-    private XMLInputFactory xmlInputFactory;
-    private XMLOutputFactory xmlOutputFactory;
-
-    public WfsRequestDecoder() {
-
-        this.xmlInputFactory = XMLInputFactory2.newInstance();
-        this.xmlOutputFactory = XMLOutputFactory2.newInstance();
+    public WfsRequestDecoder(EventExecutorGroup parserGroup) {
+        super(parserGroup);
     }
 
     @Override
     protected void decode(ChannelHandlerContext ctx, HttpObject httpObject, List<Object> out) throws Exception {
 
-        ByteBuf buffer = Unpooled.buffer();
-
-        FullHttpRequest request = null;
-        HttpContent content = null;
-
         if (httpObject instanceof HttpRequest) {
 
             HttpRequest httpRequest = (HttpRequest) httpObject;
-            WfsGetRequestProcessor eventProcessor = new WfsGetRequestProcessor();
+            this.replaceContentLengthByTransferEncodingHeader(httpRequest.headers());
+            this.currentContentStream = null;
 
-            switch (httpRequest.getMethod().name()) {
+            WfsGetRequestProcessor eventProcessor = new WfsGetRequestProcessor();
+            switch (httpRequest.method().name()) {
 
             case "GET":
                 LOGGER.info("this is a GET ");
@@ -74,65 +67,67 @@ public class WfsRequestDecoder extends MessageToMessageDecoder<HttpObject> {
         }
 
         if (httpObject instanceof HttpContent) {
-
-            HttpContent httpContent = (HttpContent) httpObject;
-
-            String serviceAttribute = null;
-
-            ByteBuf httpContentByteBuffer = httpContent.content();
-            ByteBufInputStream requestInputStream = new ByteBufInputStream(httpContentByteBuffer);
-
-            XMLEventReader xmlEventReader = xmlInputFactory.createXMLEventReader(requestInputStream);
-
-            ByteBufOutputStream outputStream = new ByteBufOutputStream(buffer);
-            XMLEventWriter writer = xmlOutputFactory.createXMLEventWriter(outputStream);
-            XMLEventFactory eventFactory = XMLEventFactory.newInstance();
-
-            try {
-                XMLEvent event = null;
-                int eventType = 0;
-
-                while (xmlEventReader.hasNext()) {
-
-                    event = xmlEventReader.peek();
-
-                    eventType = event.getEventType();
-                    StartElement startElement;
-
-                    /*
-                    if (XMLEvent.START_ELEMENT == eventType) {
-                        startElement = event.asStartElement();
-                        if (serviceAttribute == null) {
-                            serviceAttribute = checkProtocol(startElement);
-                    
-                        } else if (serviceAttribute.equals("WFS")) {
-                            LOGGER.info(startElement.getName().getLocalPart());
-                        } else {
-                            throw new WfsParsingException("Not a WFS stream");
+            final HttpContent httpContent = (HttpContent) httpObject;
+            if (currentContentStream == null) {
+                // First content part
+                if (!httpContent.content().isReadable()) {
+                    LOGGER.trace("Request contains no data");
+                    ReferenceCountUtil.retain(httpContent);
+                    out.add(httpContent);
+                } else {
+                    currentContentStream = new QueueByteBufInputStream(httpContent.content());
+                    parserGroup.submit(() -> {
+                        final ChannelOutputStream requestOutputStream = new ChannelOutputStream(ctx);
+                        try {
+                            // TODO replace with a real Request content
+                            // processor
+                            // (exemples are available in the old ows poc)
+                            this.processContent(currentContentStream, requestOutputStream);
+                        } catch (Exception e) {
+                            LOGGER.error("Failed to process request content", e);
+                        } finally {
+                            try {
+                                requestOutputStream.close();
+                            } catch (IOException e) {
+                                LOGGER.error("Can't close xml output stream", e);
+                            }
+                            try {
+                                currentContentStream.close();
+                            } catch (IOException e) {
+                                LOGGER.error("Can't close xml input stream", e);
+                            }
                         }
-                    }
-                    */
-                    writer.add(event);
-                    xmlEventReader.next();
-
+                    });
                 }
-
-                writer.add(eventFactory.createEndDocument());
-
-                content = new DefaultHttpContent(outputStream.buffer());
-
-                ReferenceCountUtil.retain(content);
-                out.add(content);
-
-            } catch (WstxEOFException exception) {
-                LOGGER.warn(
-                        "unable to parse content with the StAX API. The payload of this request may not be an XML.");
-
-            } catch (WstxParsingException exception) {
-                LOGGER.warn("unable to parse content with the StAX API." + exception.getMessage());
-
+            } else {
+                currentContentStream.addBuffer(httpContent.content());
+            }
+            if (currentContentStream != null && httpContent instanceof LastHttpContent) {
+                currentContentStream.addBuffer(QueueByteBufInputStream.END_OF_STREAMS);
             }
         }
+
+    }
+
+    private void processContent(QueueByteBufInputStream requestInputStream, ChannelOutputStream requestOutputStream)
+            throws XMLStreamException {
+        XMLEventReader xmlEventReader = xmlInputFactory.createXMLEventReader(requestInputStream);
+        XMLEventWriter xmlEventWriter = xmlOutputFactory.createXMLEventWriter(requestOutputStream);
+
+        XMLEvent event = null;
+        int eventType = 0;
+        while (xmlEventReader.hasNext()) {
+            event = (XMLEvent) xmlEventReader.peek();
+            eventType = event.getEventType();
+            if (eventType == XMLEvent.START_ELEMENT) {
+                StartElement rootElement = event.asStartElement();
+                LOGGER.trace("OWS message root START ELEMENT --> " + rootElement.getName().toString());
+            }
+            xmlEventWriter.add(xmlEventReader.nextEvent());
+            xmlEventWriter.flush();
+        }
+
+        xmlEventWriter.flush();
     }
 
     private void processGetRequest(ChannelHandlerContext ctx, HttpRequest httpRequest,
