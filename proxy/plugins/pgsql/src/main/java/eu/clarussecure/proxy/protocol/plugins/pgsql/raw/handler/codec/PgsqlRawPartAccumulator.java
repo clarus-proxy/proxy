@@ -10,6 +10,7 @@ import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.LastPgsqlRawCont
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.PgsqlRawContent;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.PgsqlRawHeader;
 import eu.clarussecure.proxy.protocol.plugins.pgsql.raw.handler.PgsqlRawPart;
+import eu.clarussecure.proxy.spi.handler.codec.MessageAccumulator;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.MessageAggregationException;

@@ -14,6 +14,7 @@
     <module>plugins/http</module>
     <module>plugins/pgsql</module>
     <module>plugins/tcp</module>
+    <module>plugins/wfs</module>
     <module>main</module>
   </modules>
   <organization>

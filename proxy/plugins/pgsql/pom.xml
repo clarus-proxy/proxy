@@ -48,12 +48,6 @@
       <scope>compile</scope>
     </dependency>
     <dependency>
-      <groupId>io.netty</groupId>
-      <artifactId>netty-all</artifactId>
-      <version>4.1.4.Final</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
       <groupId>com.github.jsqlparser</groupId>
       <artifactId>jsqlparser</artifactId>
       <version>0.9.6-CLARUS-SNAPSHOT</version>

@@ -4,6 +4,7 @@
 package eu.clarussecure.proxy.protocol.plugins.wfs;
 
 import eu.clarussecure.proxy.protocol.plugins.http.handler.codec.HttpHeaderCodec;
+import eu.clarussecure.proxy.protocol.plugins.http.handler.decoder.HttpObjectAccumulator;
 import eu.clarussecure.proxy.protocol.plugins.http.handler.forwarder.HttpResponseForwarder;
 import eu.clarussecure.proxy.protocol.plugins.http.message.SessionInitializationResponseHandler;
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
@@ -39,7 +40,8 @@ public class WfsServerPipelineInitializer extends ChannelInitializer<Channel> {
         pipeline.addLast(parserGroup, "HttpContentDecompressor", new HttpContentDecompressor());
         pipeline.addLast(parserGroup, "HttpHeaderCodec", new HttpHeaderCodec());
 
-        pipeline.addLast(parserGroup, "HttpObjectAggregator", new HttpObjectAggregator(512 * 1024));
+        //pipeline.addLast(parserGroup, "HttpObjectAggregator", new HttpObjectAggregator(512 * 1024));
+        //pipeline.addLast(parserGroup, "HttpObjectAccumulator", new HttpObjectAccumulator(Integer.MAX_VALUE));
         pipeline.addLast(parserGroup, "WfsResponseDecoder", new WfsResponseDecoder());
 
         pipeline.addLast(parserGroup, "HttpResponseForwarder", new HttpResponseForwarder());
