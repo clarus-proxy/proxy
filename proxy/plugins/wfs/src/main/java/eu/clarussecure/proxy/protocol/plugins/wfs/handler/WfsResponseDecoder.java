@@ -13,6 +13,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import eu.clarussecure.proxy.protocol.plugins.http.buffer.ChannelOutputStream;
+import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
+import eu.clarussecure.proxy.protocol.plugins.tcp.TCPSession;
 import eu.clarussecure.proxy.spi.DataOperation;
 import eu.clarussecure.proxy.spi.buffer.QueueByteBufInputStream;
 import io.netty.channel.ChannelHandlerContext;
@@ -59,8 +61,10 @@ public class WfsResponseDecoder extends WfsDecoder {
                     out.add(httpContent);
                 } else {
                     currentContentStream = new QueueByteBufInputStream(httpContent.content());
+                    TCPSession session = ctx.channel().attr(TCPConstants.SESSION_KEY).get();
                     parserGroup.submit(() -> {
-                        final ChannelOutputStream processedContentOutputStream = new ChannelOutputStream(ctx);
+                        final ChannelOutputStream processedContentOutputStream = new ChannelOutputStream(ctx.alloc(),
+                                session.getClientSideChannel());
                         try {
                             this.processContent(currentContentStream, processedContentOutputStream);
                         } catch (Exception e) {
@@ -97,14 +101,15 @@ public class WfsResponseDecoder extends WfsDecoder {
         XMLEvent event = null;
         int eventType = 0;
         while (xmlEventReader.hasNext()) {
-            event = (XMLEvent) xmlEventReader.peek();
+            event = xmlEventReader.nextEvent();
+            xmlEventWriter.add(event);
+
             eventType = event.getEventType();
             if (eventType == XMLEvent.START_ELEMENT) {
                 StartElement rootElement = event.asStartElement();
                 LOGGER.trace("OWS message root START ELEMENT --> " + rootElement.getName().toString());
+                xmlEventWriter.flush();
             }
-            xmlEventWriter.add(xmlEventReader.nextEvent());
-            xmlEventWriter.flush();
         }
 
         xmlEventWriter.flush();

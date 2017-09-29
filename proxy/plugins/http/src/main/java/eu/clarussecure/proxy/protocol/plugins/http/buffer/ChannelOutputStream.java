@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.Channel;
 import io.netty.handler.codec.http.DefaultHttpContent;
 import io.netty.handler.codec.http.DefaultLastHttpContent;
 import io.netty.handler.codec.http.HttpContent;
@@ -28,12 +28,12 @@ public class ChannelOutputStream extends OutputStream {
     private ByteBuf currentBuf;
     private boolean closed = false;
     private ByteBufAllocator byteBufAllocator;
-    private ChannelHandlerContext out;
+    private Channel forwardChannel;
 
-    public ChannelOutputStream(ChannelHandlerContext out) {
+    public ChannelOutputStream(ByteBufAllocator byteBufAllocator, Channel forwardChannel) {
         super();
-        this.out = out;
-        this.byteBufAllocator = out.alloc();
+        this.forwardChannel = forwardChannel;
+        this.byteBufAllocator = byteBufAllocator;
         this.currentBuf = byteBufAllocator.buffer(DEFAULT_BUFFER_SIZE);
     }
 
@@ -62,7 +62,7 @@ public class ChannelOutputStream extends OutputStream {
             httpContent = new DefaultHttpContent(contentBuf);
         }
         LOGGER.trace("Send a new http content part to next handler : {}", httpContent);
-        this.out.writeAndFlush(httpContent);
+        this.forwardChannel.writeAndFlush(httpContent);
     }
 
     @Override
