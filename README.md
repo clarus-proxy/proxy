@@ -76,10 +76,17 @@ mvn install
 ````
 
 ### Compile & Build the Proxy
+
 ```bash
 git clone https://github.com/clarus-proxy/proxy.git
 cd proxy
 git checkout develop
-cd proxy
 mvn install
 ````
+
+### Get a test policy and launch the proxy !
+
+```bash
+cp ../main/src/test/resources/patient_anonymisation.xml test.xml
+java -Djava.ext.dirs=./ext-libs/ -jar ./libs/proxy-main-1.2-SNAPSHOT.jar -sp test.xml 127.0.0.1
+```
