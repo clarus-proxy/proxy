@@ -1,5 +1,6 @@
 # Clarus Proxy
 [![Build Status](https://travis-ci.org/clarus-proxy/proxy.svg?branch=master)](https://travis-ci.org/clarus-proxy/proxy)
+
 The proxy component
 
 ## Pre Requisites
