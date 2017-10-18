@@ -78,7 +78,8 @@ mvn install
 ### Compile & Build the Proxy
 ```bash
 git clone https://github.com/clarus-proxy/proxy.git
+cd proxy
 git checkout develop
-cd proxy/proxy
+cd proxy
 mvn install
 ````
