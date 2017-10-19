@@ -1,0 +1,225 @@
+allprojects {
+    apply plugin: 'maven'
+    group = 'eu.clarussecure'
+    version = '1.2-SNAPSHOT'
+    task generatePom {
+        doLast {
+            pom {
+                project {
+                    if (parent != null) {
+                        parent {
+                            groupId parent.group
+                            artifactId parent.name
+                            version parent.version
+                            relativePath projectDir.toPath().relativize(parent.projectDir.toPath()).toString().replace('\\', '/')
+                        }
+                    }
+                    packaging project.ext.packaging
+                    name project.description
+                    withXml {
+                        Node root = new XmlParser().parse(new File("$mainProject/src/main/maven/pom-common.xml"))
+                        Node node = asNode()
+                        for (child in root.children()) {
+                            node.append(child)
+                        }
+                    }
+                    if (!subprojects.isEmpty()) {
+                        modules {
+                            for (Project subproject : subprojects.findAll { project -> !project.name.equals("proxy-main") }) {
+                                module projectDir.toPath().relativize(subproject.projectDir.toPath()).toString().replace('\\', '/')
+                            }
+                            for (Project subproject : subprojects.findAll { project -> project.name.equals("proxy-main") }) {
+                                module projectDir.toPath().relativize(subproject.projectDir.toPath()).toString().replace('\\', '/')
+                            }
+                        }
+                    }
+                }
+                withXml {
+                    String templateFilename = !subprojects.isEmpty() ? "pom-parent.xml" : "pom-module.xml"
+                    String cnt = new File("$mainProject/src/main/maven/$templateFilename").text
+                    if (project.hasProperty('mainClassName')) {
+                        cnt = cnt.replace("@MAIN_CLASS@", project.ext.mainClassName)
+                    } else {
+                        cnt = cnt.replace("@MAIN_CLASS@", "")
+                    }
+                    Node root = new XmlParser().parseText(cnt)
+                    Node node = asNode()
+                    for (child in root.children()) {
+                        node.append(child)
+                    }
+                    if (parent != null) {
+                        String installDir = null;
+                        if (projectDir.toPath().getParent().equals(parent.projectDir.toPath().resolve("modules"))
+                            || projectDir.toPath().getParent().equals(parent.projectDir.toPath().resolve("plugins"))) {
+                            installDir = "install/ext-libs"
+                        } else if (project.name.equals("proxy-main")) {
+                            installDir = "install/libs"
+                        }
+                        if (installDir != null) {
+                            String content = new File("$mainProject/src/main/maven/pom-profile-install-libs.xml").text
+                            content = content.replace("@INSTALL_DIR@", "\${project.parent.relativePath}/$installDir")
+                            root = new XmlParser().parseText(content)
+                            for (child in root.children()) {
+                                node.append(child)
+                            }
+                        }
+                        asNode().remove(asNode().get('version'))
+                    }
+                    Node nodeRepos = null;
+                    int repoId = 1;
+                    repositories.each {
+                        String name = it.name;
+                        String url = it.url;
+                        if (!"MavenLocal".equals(name) && !"MavenRepo".equals(name)) {
+                            if (nodeRepos == null) {
+                                nodeRepos = asNode().appendNode("repositories");
+                            }
+                            Node nodeRepo = nodeRepos.appendNode("repository");
+                            nodeRepo.appendNode("id", "repo-" + repoId);
+                            nodeRepo.appendNode("name", name);
+                            nodeRepo.appendNode("url", url);
+                            ++ repoId;
+                        }
+                    }
+                }
+            }.writeTo("$projectDir/pom.xml")
+        }
+    }
+    configure(generatePom) {   
+        group = 'Maven'
+        description = 'Generates the Maven pom.xml'
+    }
+    task deletePom {
+        doLast {
+            delete "$projectDir/pom.xml"
+        }
+    }
+    configure(deletePom) {   
+        group = 'Maven'
+        description = 'Deletes the Maven pom.xml'
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'eclipse'
+    compileJava.options.encoding = 'UTF-8'
+    sourceCompatibility = "1.8";
+    targetCompatibility = "1.8";
+    repositories {
+        mavenLocal()
+        mavenCentral()
+    }
+    dependencies {
+        // Log
+        compile 'org.slf4j:slf4j-api:1.7.21'
+        compile 'ch.qos.logback:logback-core:1.1.3'
+        compile ('ch.qos.logback:logback-classic:1.1.3') {
+            exclude group: 'org.slf4j'
+        }
+
+        // Test
+        testCompile 'junit:junit:4.12'
+    }
+    eclipse {
+       classpath {
+           downloadSources=true
+        }
+    }
+    ext {
+        packaging = 'jar'
+    }
+    jar.doFirst {
+        manifest = project.manifest {
+            attributes("Implementation-Title": project.description,
+                       "Implementation-Version": version, 
+                       "Implementation-Vendor": "The CLARUS consortium",
+                       "Class-Path": configurations.runtime.files.collect { it.getName() }.join(' '))
+             if (project.hasProperty('mainClassName')) {
+                attributes "Main-Class": project.ext.mainClassName
+             }
+        }
+    }
+
+}
+
+description = 'CLARUS proxy'
+ext {
+    mainProject = project.projectDir
+    packaging = 'pom'
+}
+
+ext.moduleProjects = subprojects.findAll { project -> project.projectDir.toPath().getParent().equals(projectDir.toPath().resolve("modules")) }
+ext.pluginProjects = subprojects.findAll { project -> project.projectDir.toPath().getParent().equals(projectDir.toPath().resolve("plugins")) }
+ext.proxyProjects = subprojects.findAll { project -> project.name.equals("proxy-main") }
+
+task installAll(type: Copy, dependsOn: ['installScripts', 'installLibs', 'installExtensionLibs']) {
+}
+configure(installAll) {
+    group = 'Install'
+    description = 'Copy all files to the install directory'
+}
+task uninstallAll {
+    doLast {
+        delete "$projectDir/install"
+    }
+}
+configure(uninstallAll) {   
+    group = 'Install'
+    description = 'Delete the install directory'
+}
+task installScripts(type: Copy) {
+    from('src/main/scripts/')
+    into project.file("$projectDir/install")
+}
+configure(installScripts) {
+    group = 'Install'
+    description = 'Copy scripts to the install directory'
+}
+task uninstallScripts {
+    doLast {
+        delete fileTree(dir: "$projectDir/install", exclude: ["libs", 'ext-libs'])
+    }
+}
+configure(uninstallScripts) {   
+    group = 'Install'
+    description = 'Delete the scripts in the install directory'
+}
+task installLibs(type: Copy, dependsOn: [proxyProjects.jar]) {
+    from([proxyProjects.jar])
+    into project.file("$projectDir/install/libs")
+    from([proxyProjects.configurations.runtime])
+    into project.file("$projectDir/install/libs")
+}
+configure(installLibs) {   
+    group = 'Install'
+    description = 'Copy the proxy jars to the install/libs directory'
+}
+task uninstallLibs {
+    doLast {
+        delete "$projectDir/install/libs"
+    }
+}
+configure(uninstallLibs) {   
+    group = 'Install'
+    description = 'Delete the install/libs directory'
+}
+task installExtensionLibs(type: Copy, dependsOn: [pluginProjects.jar, moduleProjects.jar]) {
+    from([pluginProjects.jar, moduleProjects.jar])
+    into project.file("$projectDir/install/ext-libs")
+    from([pluginProjects.configurations.runtime, moduleProjects.configurations.runtime])
+    into project.file("$projectDir/install/ext-libs")
+}
+configure(installExtensionLibs) {   
+    group = 'Install'
+    description = 'Copy the plugins and modules jars to the install/ext-libs directory'
+}
+task uninstallExtensionLibs {
+    doLast {
+        delete "$projectDir/install/ext-libs"
+    }
+}
+configure(uninstallExtensionLibs) {   
+    group = 'Install'
+    description = 'Delete the install/ext-libs directory'
+}

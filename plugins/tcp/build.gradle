@@ -1,0 +1,9 @@
+description = 'TCP/IP protocol plugin for the CLARUS proxy'
+
+dependencies {
+    // CLARUS
+    compile project(':proxy-common')
+
+    // Transport
+    compile group: 'io.netty', name: 'netty-all', version: '4.1.4.Final'
+}
