@@ -83,11 +83,22 @@ git clone https://github.com/clarus-proxy/proxy.git
 cd proxy
 git checkout develop
 mvn install
-````
+```
 
 ### Get a test policy and launch the proxy !
 
+__Linux systems__
+
 ```bash
+cd install
 cp ../main/src/test/resources/patient_anonymisation.xml test.xml
 java -Djava.ext.dirs=./ext-libs/ -jar ./libs/proxy-main-1.2-SNAPSHOT.jar -sp test.xml 127.0.0.1
+```
+
+__Windows systems__
+
+```bash`
+cd install
+copy ..\main\src\test\resources\patient_anonymisation.xml test.xml
+java -Djava.ext.dirs=.\ext-libs\ -jar .\libs\proxy-main-1.2-SNAPSHOT.jar -sp test.xml 127.0.0.1
 ```
