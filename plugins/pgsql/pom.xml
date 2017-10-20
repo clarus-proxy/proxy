@@ -56,7 +56,7 @@
     <dependency>
       <groupId>com.github.jsqlparser</groupId>
       <artifactId>jsqlparser</artifactId>
-      <version>0.9.6-CLARUS-SNAPSHOT</version>
+      <version>0.9.6-CLARUS</version>
       <scope>compile</scope>
     </dependency>
     <dependency>

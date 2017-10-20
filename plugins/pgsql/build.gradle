@@ -9,7 +9,7 @@ dependencies {
     compile group: 'io.netty', name: 'netty-all', version: '4.1.4.Final'
 
     // JSqlParser
-    compile group: 'com.github.jsqlparser', name: 'jsqlparser', version: '0.9.6-CLARUS-SNAPSHOT'
+    compile group: 'com.github.jsqlparser', name: 'jsqlparser', version: '0.9.6-CLARUS'
 
     // PostGIS
     compile group: 'net.postgis', name: 'postgis-jdbc', version: '2.2.1'

@@ -10,6 +10,3 @@ install:
     - git clone https://github.com/clarus-proxy/encryption-module.git && cd encryption-module && mvn install && cd ..
     - git clone https://github.com/clarus-proxy/splitting-module.git && cd splitting-module && mvn install && cd ..
     - git clone https://github.com/clarus-proxy/searchableencryption-module.git && cd searchableencryption-module/SE_module && mvn install && cd ../..
-    - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V
-    - mvn test -B
-    - true
