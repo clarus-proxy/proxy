@@ -31,7 +31,6 @@ cd -
 ```bash
 git clone https://github.com/clarus-proxy/JSqlParser.git
 cd JSqlParser
-git checkout develop # In order to get the CLARUS version which was Patched
 mvn install
 cd -
 ````
