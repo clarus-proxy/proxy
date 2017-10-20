@@ -17,7 +17,6 @@ The proxy component
 ```bash
 git clone https://github.com/clarus-proxy/dataoperations-api.git
 cd dataoperations-api
-git checkout develop
 mvn install
 cd -
 ````
@@ -42,7 +41,6 @@ cd -
 ```bash
 git clone https://github.com/clarus-proxy/anonymization-module.git
 cd anonymization-module/
-git checkout develop
 mvn install
 cd -
 ````
@@ -64,7 +62,6 @@ cd -
 ```bash
 git clone https://github.com/clarus-proxy/encryption-module.git
 cd encryption-module
-git checkout develop
 mvn install
 cd -
 ````
@@ -72,7 +69,6 @@ cd -
 ```bash
 git clone https://github.com/clarus-proxy/splitting-module.git
 cd splitting-module
-git checkout develop
 mvn install
 cd -
 ````
@@ -80,7 +76,6 @@ cd -
 ```bash
 git clone https://github.com/clarus-proxy/searchableencryption-module.git
 cd searchableencryption-module/SE_module
-git checkout develop
 mvn install
 cd -
 ````
@@ -90,7 +85,6 @@ cd -
 ```bash
 git clone https://github.com/clarus-proxy/proxy.git
 cd proxy
-git checkout develop
 mvn install
 ```
 
@@ -101,7 +95,7 @@ __Linux systems__
 ```bash
 cd install
 cp ../main/src/test/resources/patient_anonymisation.xml test.xml
-java -Djava.ext.dirs=./ext-libs/ -jar ./libs/proxy-main-1.2-SNAPSHOT.jar -sp test.xml 127.0.0.1
+java -Djava.ext.dirs=./ext-libs/ -jar ./libs/proxy-main-1.0.1.jar -sp test.xml 127.0.0.1
 ```
 
 __Windows systems__
@@ -109,5 +103,5 @@ __Windows systems__
 ```batch
 cd install
 copy ..\main\src\test\resources\patient_anonymisation.xml test.xml
-java -Djava.ext.dirs=.\ext-libs\ -jar .\libs\proxy-main-1.2-SNAPSHOT.jar -sp test.xml 127.0.0.1
+java -Djava.ext.dirs=.\ext-libs\ -jar .\libs\proxy-main-1.0.1.jar -sp test.xml 127.0.0.1
 ```
