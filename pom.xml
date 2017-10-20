@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>eu.clarussecure</groupId>
   <artifactId>proxy</artifactId>
-  <version>1.0.1</version>
+  <version>1.0.2-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>CLARUS proxy</name>
   <modules>
@@ -29,6 +29,7 @@
     </license>
   </licenses>
   <properties>
+    <clarus.version>1.0.2-SNAPSHOT</clarus.version>
     <jdk.version>1.8</jdk.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -47,6 +48,16 @@
     <plugin.license.version>1.12</plugin.license.version>
     <plugin.formatter.version>[2.0.0,)</plugin.formatter.version>
   </properties>
+  <distributionManagement>
+    <snapshotRepository>
+      <id>ossrh</id>
+      <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+    </snapshotRepository>
+    <repository>
+      <id>ossrh</id>
+      <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+    </repository>
+  </distributionManagement>
   <build>
     <plugins>
       <plugin>

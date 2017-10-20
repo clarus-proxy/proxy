@@ -3,5 +3,5 @@ description = 'Searchable encryption (SE) module for the CLARUS proxy'
 dependencies {
     // CLARUS
     compile project(':proxy-common')
-    compile group: 'eu.clarussecure', name: 'dataoperations.SE_module', version: '1.0.1'
+    compile group: 'eu.clarussecure', name: 'dataoperations.SE_module', version: '1.0.2-SNAPSHOT'
 }

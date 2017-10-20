@@ -54,7 +54,7 @@ if [%server_address_set%]==[false] goto usage
  
 REM Run CLARUS proxy
 :run
-java -Djava.ext.dirs=%extension_dirs% -jar %clarus_dir%\libs\proxy-main-1.0.1.jar %options%
+java -Djava.ext.dirs=%extension_dirs% -jar %clarus_dir%\libs\proxy-main-1.0.2-SNAPSHOT.jar %options%
 goto end
 
 :usage

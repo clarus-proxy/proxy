@@ -310,7 +310,7 @@ public class Proxy {
 
     private static void usage() {
         System.out.println(
-                "usage: java -Djava.ext.dirs=<CLARUS_EXT_DIRS> [PROTOCOL OPTIONS] -jar proxy-1.0.1.jar [OPTION]... [SERVER_ADDRESS]...");
+                "usage: java -Djava.ext.dirs=<CLARUS_EXT_DIRS> [PROTOCOL OPTIONS] -jar proxy-1.0.2-SNAPSHOT.jar [OPTION]... [SERVER_ADDRESS]...");
         System.out.println("CLARUS extensions:");
         System.out.println(
                 "  <CLARUS_EXT_DIRS>        list the extensions directories that contain protection modules and protocol plugins");

@@ -1,5 +1,5 @@
 # Clarus Proxy
-[![Build Status](https://travis-ci.org/clarus-proxy/proxy.svg?branch=master)](https://travis-ci.org/clarus-proxy/proxy)
+[![Build Status](https://travis-ci.org/clarus-proxy/proxy.svg?branch=develop)](https://travis-ci.org/clarus-proxy/proxy)
 
 The proxy component
 
@@ -94,7 +94,7 @@ __Linux systems__
 ```bash
 cd install
 cp ../main/src/test/resources/patient_anonymisation.xml test.xml
-java -Djava.ext.dirs=./ext-libs/ -jar ./libs/proxy-main-1.0.1.jar -sp test.xml 127.0.0.1
+java -Djava.ext.dirs=./ext-libs/ -jar ./libs/proxy-main-1.0.2-SNAPSHOT.jar -sp test.xml 127.0.0.1
 ```
 
 __Windows systems__
@@ -102,6 +102,6 @@ __Windows systems__
 ```batch
 cd install
 copy ..\main\src\test\resources\patient_anonymisation.xml test.xml
-java -Djava.ext.dirs=.\ext-libs\ -jar .\libs\proxy-main-1.0.1.jar -sp test.xml 127.0.0.1
+java -Djava.ext.dirs=.\ext-libs\ -jar .\libs\proxy-main-1.0.2-SNAPSHOT.jar -sp test.xml 127.0.0.1
 ```
 

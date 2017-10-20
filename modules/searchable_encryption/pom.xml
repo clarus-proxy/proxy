@@ -4,10 +4,9 @@
   <parent>
     <groupId>eu.clarussecure</groupId>
     <artifactId>proxy</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2-SNAPSHOT</version>
     <relativePath>../..</relativePath>
   </parent>
-  <groupId>eu.clarussecure</groupId>
   <artifactId>proxy-module-searchable-encryption</artifactId>
   <name>Searchable encryption (SE) module for the CLARUS proxy</name>
   <dependencies>
@@ -38,7 +37,7 @@
     <dependency>
       <groupId>eu.clarussecure</groupId>
       <artifactId>proxy-common</artifactId>
-      <version>1.0.1</version>
+      <version>${project.parent.version}</version>
       <scope>compile</scope>
     </dependency>
     <dependency>
