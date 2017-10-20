@@ -3,5 +3,5 @@ description = 'Splitting module for the CLARUS proxy'
 dependencies {
     // CLARUS
     compile project(':proxy-common')
-    compile group: 'eu.clarussecure', name: 'dataoperations.splittingmodule', version: '2.2'
+    compile group: 'eu.clarussecure', name: 'dataoperations.splittingmodule', version: '1.0.1'
 }
