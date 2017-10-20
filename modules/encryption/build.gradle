@@ -3,5 +3,5 @@ description = 'Encryption module for the CLARUS proxy'
 dependencies {
     // CLARUS
     compile project(':proxy-common')
-    compile group: 'eu.clarussecure', name: 'dataoperations.encryption', version: '0.2-SNAPSHOT'
+    compile group: 'eu.clarussecure', name: 'dataoperations.encryption', version: '1.0.1'
 }
