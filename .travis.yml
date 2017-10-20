@@ -7,8 +7,6 @@ install:
     - git clone https://github.com/clarus-proxy/security-policy-model.git && cd security-policy-model && mvn install && cd ..
     - git clone https://github.com/clarus-proxy/JSqlParser.git && cd JSqlParser && mvn install && cd ..
     - git clone https://github.com/clarus-proxy/anonymization-module.git && cd anonymization-module && mvn install && cd ..
-    - git clone https://github.com/clarus-proxy/paillier.git && cd paillier && mvn install && cd ..
-    - git clone https://github.com/clarus-proxy/homomorphicencryption-module.git && cd homomorphicencryption-module && mvn install && cd ..
     - git clone https://github.com/clarus-proxy/encryption-module.git && cd encryption-module && mvn install && cd ..
     - git clone https://github.com/clarus-proxy/splitting-module.git && cd splitting-module && mvn install && cd ..
     - git clone https://github.com/clarus-proxy/searchableencryption-module.git && cd searchableencryption-module/SE_module && mvn install && cd ../..
