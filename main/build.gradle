@@ -1,0 +1,30 @@
+description = 'Main module of the CLARUS proxy'
+ext.mainClassName = 'eu.clarussecure.proxy.Proxy'
+
+dependencies {
+    // Embedded MongoDB
+    compile group: 'de.flapdoodle.embed', name: 'de.flapdoodle.embed.mongo', version: '2.0.0'
+
+    // CLARUS
+    compile project(':proxy-common')
+
+    // https://mvnrepository.com/artifact/org.apache.ibatis/ibatis-core
+    testCompile group: 'org.apache.ibatis', name: 'ibatis-core', version: '3.0'
+
+    // PostGIS
+    testCompile group: 'net.postgis', name: 'postgis-jdbc', version: '2.2.1'
+}
+
+test {
+    pluginProjects.each {
+        dependsOn("${it.path}:test" )
+    }
+    moduleProjects.each {
+        dependsOn("${it.path}:test" )
+    }
+
+    jvmArgs '-Djava.ext.dirs=' + System.getProperty('java.ext.dirs') + File.pathSeparator + project.projectDir.toPath().resolve("../install/ext-libs")
+
+    // integration tests are not supported (issue with java.ext.dirs, gradle and slf4j)
+    exclude '/**'
+}

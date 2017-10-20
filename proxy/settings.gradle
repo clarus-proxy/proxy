@@ -1,6 +1,0 @@
-include 'proxy-common', 'proxy-main', 'proxy-plugin-pgsql', 'proxy-module-anonymization'
-
-project(':proxy-common').projectDir = new File(settingsDir, 'common')
-project(':proxy-main').projectDir = new File(settingsDir, 'main')
-project(':proxy-plugin-pgsql').projectDir = new File(settingsDir, 'plugins/pgsql')
-project(':proxy-module-anonymization').projectDir = new File(settingsDir, 'modules/anonymization')

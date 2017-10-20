@@ -1,0 +1,24 @@
+description = 'PostgreSQL protocol plugin for the CLARUS proxy'
+
+dependencies {
+    // CLARUS
+    compile project(':proxy-common')
+    compile project(':proxy-plugin-tcp')
+
+    // Transport
+    compile group: 'io.netty', name: 'netty-all', version: '4.1.4.Final'
+
+    // JSqlParser
+    compile group: 'com.github.jsqlparser', name: 'jsqlparser', version: '0.9.6-CLARUS'
+
+    // PostGIS
+    compile group: 'net.postgis', name: 'postgis-jdbc', version: '2.2.1'
+
+    // Commons Apache
+    testCompile group: 'org.apache.commons', name: 'commons-lang3', version: '3.0'
+}
+
+test {
+    // go fast 
+    exclude '/**'
+}
