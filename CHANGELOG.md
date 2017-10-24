@@ -14,5 +14,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Changed
 * Starting mongodb at the clarus-script level
+* Updating README: Adding section Installation from binaries, Docker and Usage.
+* Updating README: Adding badges
 
 ## [1.0.1] - 2017-10-20
