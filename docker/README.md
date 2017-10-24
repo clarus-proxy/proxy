@@ -16,9 +16,9 @@ Create a container using `clarus/proxy` image by doing
 ```bash
 docker run -d -p 5432:5432 --name <container-name> clarus/proxy:1.0.1
 ````
-Replace the 5432 port (which is the default port for postgres) if it's already used in your environment. Replace 1.0.1 with the current Docker image tag that your are using.
+Replace the `5432` port (which is the default port for postgres) if it's already used in your environment. Replace `1.0.1` with the current Docker image tag that your are using.
 
-By default the endpoint cloud ip (eg: the postgres server running in the cloud) is defined in the container to be accessible at the IP 127.0.0.1 and the port 5432. You need to change it so it can applied to your environment. To do so you need to override the docker environment variable `CLOUD_IP` and `CLOUD_PORT`
+By default the endpoint cloud ip (eg: the postgres server running in the cloud) is defined in the container to be accessible at the IP `127.0.0.1` and the port `5432`. You need to change it so it can applied to your environment. To do so you need to override the docker environment variable `CLOUD_IP` and `CLOUD_PORT`
 
 
 ```bash
