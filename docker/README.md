@@ -25,7 +25,7 @@ By default the endpoint cloud ip (eg: the postgres server running in the cloud) 
 docker run -d -p 5432:5432 -e CLOUD_IP="<your_postgres_instance_cloud_ip_adress>" -e CLOUD_PORT="<your_postgres_instance_cloud_port>" --name <container-name> clarus/proxy:1.0.1
 ````
 
-By default the security policy used for this container is a minimal security policy hosted publicly on [Github](https://github.com/clarus/proxy/tree/master/docker/configuration/security-policy-sample.xml). You need to change it by your own. To do so you need to override the environment variable `SECURITY_POLICY` and use your own security policy store in a Docker volume attached to the container.
+By default the security policy used for this container is a minimal security policy hosted publicly on [Github](https://github.com/clarus-proxy/proxy/tree/master/docker/configuration/security-policy-sample.xml). You need to change it by your own. To do so you need to override the environment variable `SECURITY_POLICY` and use your own security policy store in a Docker volume attached to the container.
 
 ```bash
 docker run -d -p 5432:5432 -e SECURITY_POLICY="/etc/clarus/security-policy/<security-policy-file-name>" -v <path-to-your-directory>:/etc/clarus/security-policy/ --name <container-name> clarus/proxy:1.0.1
