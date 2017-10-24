@@ -12,4 +12,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 * Script to wrap clarus launch
 * Initialization of Docker README
 
+### Changed
+* Starting mongodb at the clarus-script level
+
 ## [1.0.1] - 2017-10-20
