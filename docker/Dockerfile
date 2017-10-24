@@ -47,6 +47,7 @@ RUN apt-get update -qq && \
 	curl --silent --output clarus-proxy_1.0.1.deb --location $CLARUS_DEB_DOWNLOAD_URL && \
 	dpkg --extract clarus-proxy_1.0.1.deb / && \
 	rm -f clarus-proxy_1.0.1.deb
+	
 ADD configuration/clarus-proxy.sh /usr/bin/clarus-proxy
 ADD configuration/clarus-sample.conf /etc/clarus/clarus-proxy.conf
 ADD configuration/security-policy-sample.xml /etc/clarus/security-policy-sample.xml
