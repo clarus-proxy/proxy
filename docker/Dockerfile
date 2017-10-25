@@ -17,7 +17,7 @@ MAINTAINER CLARUS Team (romain.ferrari[AT]gmail.com)
 #ENV HTTPS_PROXY 'http://user:password@proxy-host:proxy-port'
 
 ENV CLARUS_DEB_DOWNLOAD_URL="https://github.com/clarus-proxy/proxy/releases/download/v1.0.1/clarus-proxy_1.0.1.deb"
-ENV JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64/jre/bin/"
+ENV JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64/jre"
 ENV CLOUD_IP="127.0.0.1"
 ENV CLOUD_PORT="5432"
 ENV SECURITY_POLICY="/etc/clarus/security-policy-sample.xml"
