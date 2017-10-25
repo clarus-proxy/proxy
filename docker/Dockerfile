@@ -21,7 +21,8 @@ ENV JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64/jre"
 ENV CLOUD_IP="127.0.0.1"
 ENV CLOUD_PORT="5432"
 ENV SECURITY_POLICY="/etc/clarus/security-policy-sample.xml"
-ENV EMBEDDED_MONGO_DB="127.0.0.1:27017"
+ENV EMBEDDED_MONGO_DB_IP="127.0.0.1"
+ENV EMBEDDED_MONGO_DB_PORT="27017"
 
 RUN apt-get update -qq && \
 	apt install -y curl && \
@@ -32,6 +33,7 @@ RUN apt-get update -qq && \
 	
 ADD configuration/clarus-proxy.sh /usr/bin/clarus-proxy
 ADD configuration/clarus-sample.conf /etc/clarus/clarus-proxy.conf
+ADD configuration/clarus-keystore.conf /etc/clarus/clarus-keystore.conf
 ADD configuration/security-policy-sample.xml /etc/clarus/security-policy-sample.xml
 
 CMD ["/usr/bin/clarus-proxy"]
