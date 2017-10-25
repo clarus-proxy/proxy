@@ -7,8 +7,6 @@ FROM ubuntu
 
 MAINTAINER CLARUS Team (romain.ferrari[AT]gmail.com)
 
-#ENV DEBIAN_FRONTEND noninteractive
-
 # Proxy configuration (if you are building from behind a proxy)
 # Next release of docker 1.9.0 should allow you to configure these by passing build-time arguments
 # More info: https://github.com/docker/docker/issues/14634
@@ -23,26 +21,10 @@ ENV JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64/jre/bin/"
 ENV CLOUD_IP="127.0.0.1"
 ENV CLOUD_PORT="5432"
 ENV SECURITY_POLICY="/etc/clarus/security-policy-sample.xml"
-# Where there is a command with a pipe, we need to put in between quotes and make it an argument to bash -c command
-#RUN apt-get update --assume-yes -qq && \
-# apt-get install --assume-yes -qq \
-#        locales-all \ 
-#        locales \
-#        less \
-#        apt-utils \ 
-#        debconf-utils \
-#        gdebi \
-#        curl && \
-#rm -rf /var/lib/apt/lists/*
-#
-#RUN locale-gen en_US en_US.UTF-8
-#RUN dpkg-reconfigure locales
-#ENV LANG en_US.UTF-8 
-#ENV LANGUAGE en_US:en 
-#ENV LC_ALL en_US.UTF-8 
+ENV EMBEDDED_MONGO_DB="127.0.0.1:27017"
+
 RUN apt-get update -qq && \
 	apt install -y curl && \
-	apt install -y mongodb && \
 	apt install -y openjdk-8-jre && \ 
 	curl --silent --output clarus-proxy_1.0.1.deb --location $CLARUS_DEB_DOWNLOAD_URL && \
 	dpkg --extract clarus-proxy_1.0.1.deb / && \
