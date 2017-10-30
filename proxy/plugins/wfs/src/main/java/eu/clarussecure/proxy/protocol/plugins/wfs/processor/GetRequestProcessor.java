@@ -1,8 +1,8 @@
 package eu.clarussecure.proxy.protocol.plugins.wfs.processor;
 
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
-import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsGetRequest;
-import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsParameter;
+import eu.clarussecure.proxy.protocol.plugins.wfs.parser.message.WfsGetRequest;
+import eu.clarussecure.proxy.protocol.plugins.wfs.parser.message.WfsParameter;
 import eu.clarussecure.proxy.spi.DataOperation;
 import eu.clarussecure.proxy.spi.ModuleOperation;
 import eu.clarussecure.proxy.spi.Operation;
@@ -21,7 +21,7 @@ import java.util.Map;
 /**
  * Created on 23/06/2017.
  */
-public class WfsGetRequestProcessor implements EventProcessor {
+public class GetRequestProcessor implements EventProcessor {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(EventProcessor.class);
 

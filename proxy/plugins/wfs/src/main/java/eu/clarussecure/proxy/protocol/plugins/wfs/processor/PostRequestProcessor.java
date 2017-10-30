@@ -10,7 +10,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Created on 26/06/2017.
  */
-public class WfsPostRequestProcessor implements EventProcessor {
+public class PostRequestProcessor implements EventProcessor {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(EventProcessor.class);
 

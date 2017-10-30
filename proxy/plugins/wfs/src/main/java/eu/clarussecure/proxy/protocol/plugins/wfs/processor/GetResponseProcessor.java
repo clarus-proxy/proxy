@@ -6,7 +6,7 @@ import io.netty.channel.ChannelHandlerContext;
 /**
  * Created on 23/06/2017.
  */
-public class WfsResponseProcessor implements EventProcessor {
+public class GetResponseProcessor implements EventProcessor {
 
     @Override
     public ProtocolService getProtocolService(ChannelHandlerContext ctx) {

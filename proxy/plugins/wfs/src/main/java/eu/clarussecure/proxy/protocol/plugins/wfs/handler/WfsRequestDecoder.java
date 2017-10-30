@@ -18,9 +18,9 @@ import eu.clarussecure.proxy.protocol.plugins.http.buffer.ChannelOutputStream;
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPSession;
 import eu.clarussecure.proxy.protocol.plugins.wfs.exception.WfsParsingException;
-import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsGetRequest;
-import eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec.WfsOperation;
-import eu.clarussecure.proxy.protocol.plugins.wfs.processor.WfsGetRequestProcessor;
+import eu.clarussecure.proxy.protocol.plugins.wfs.parser.message.WfsGetRequest;
+import eu.clarussecure.proxy.protocol.plugins.wfs.parser.message.WfsOperation;
+import eu.clarussecure.proxy.protocol.plugins.wfs.processor.GetRequestProcessor;
 import eu.clarussecure.proxy.spi.buffer.QueueByteBufInputStream;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.HttpContent;
@@ -51,7 +51,7 @@ public class WfsRequestDecoder extends WfsDecoder {
             this.replaceContentLengthByTransferEncodingHeader(httpRequest.headers());
             this.currentContentStream = null;
 
-            WfsGetRequestProcessor eventProcessor = new WfsGetRequestProcessor();
+            GetRequestProcessor eventProcessor = new GetRequestProcessor();
             switch (httpRequest.method().name()) {
 
             case "GET":
@@ -136,7 +136,7 @@ public class WfsRequestDecoder extends WfsDecoder {
     }
 
     private void processGetRequest(ChannelHandlerContext ctx, HttpRequest httpRequest,
-            WfsGetRequestProcessor eventProcessor) throws WfsParsingException {
+            GetRequestProcessor eventProcessor) throws WfsParsingException {
 
         try {
             QueryStringDecoder decoder = new QueryStringDecoder(httpRequest.uri());

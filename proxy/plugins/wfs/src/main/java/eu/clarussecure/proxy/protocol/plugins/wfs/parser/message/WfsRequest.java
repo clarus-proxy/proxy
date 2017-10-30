@@ -1,4 +1,4 @@
-package eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec;
+package eu.clarussecure.proxy.protocol.plugins.wfs.parser.message;
 
 import eu.clarussecure.proxy.protocol.plugins.wfs.exception.WfsParsingException;
 import io.netty.handler.codec.http.DefaultHttpRequest;

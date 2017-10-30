@@ -1,4 +1,4 @@
-package eu.clarussecure.proxy.protocol.plugins.wfs.handler.codec;
+package eu.clarussecure.proxy.protocol.plugins.wfs.parser.message;
 
 /**
  * Created on 23/06/2017.
