@@ -11,15 +11,18 @@ import javax.xml.stream.events.Attribute;
 import javax.xml.stream.events.StartElement;
 import javax.xml.stream.events.XMLEvent;
 
+import eu.clarussecure.proxy.protocol.plugins.wfs.model.ProtocolVersion;
+import eu.clarussecure.proxy.protocol.plugins.wfs.model.exception.ProtocolVersionNotSupportedException;
+import eu.clarussecure.proxy.protocol.plugins.wfs.processor.PostRequestProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import eu.clarussecure.proxy.protocol.plugins.http.buffer.ChannelOutputStream;
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPSession;
-import eu.clarussecure.proxy.protocol.plugins.wfs.exception.WfsParsingException;
+import eu.clarussecure.proxy.protocol.plugins.wfs.parser.exception.WfsParsingException;
 import eu.clarussecure.proxy.protocol.plugins.wfs.parser.message.WfsGetRequest;
-import eu.clarussecure.proxy.protocol.plugins.wfs.parser.message.WfsOperation;
+import eu.clarussecure.proxy.protocol.plugins.wfs.model.Operation;
 import eu.clarussecure.proxy.protocol.plugins.wfs.processor.GetRequestProcessor;
 import eu.clarussecure.proxy.spi.buffer.QueueByteBufInputStream;
 import io.netty.channel.ChannelHandlerContext;
@@ -51,15 +54,13 @@ public class WfsRequestDecoder extends WfsDecoder {
             this.replaceContentLengthByTransferEncodingHeader(httpRequest.headers());
             this.currentContentStream = null;
 
-            GetRequestProcessor eventProcessor = new GetRequestProcessor();
             switch (httpRequest.method().name()) {
 
             case "GET":
-                LOGGER.info("this is a GET ");
-                processGetRequest(ctx, httpRequest, eventProcessor);
+                processGetRequest(ctx, httpRequest, new GetRequestProcessor());
                 break;
             case "POST":
-                LOGGER.info("this is a POST -- parsing the HTTP content");
+                processPostRequest(ctx, httpRequest, new PostRequestProcessor());
                 break;
             }
 
@@ -110,11 +111,17 @@ public class WfsRequestDecoder extends WfsDecoder {
                 currentContentStream.addBuffer(QueueByteBufInputStream.END_OF_STREAMS);
             }
         }
-
     }
 
+    /**
+     * processContent
+     * @param requestInputStream
+     * @param requestOutputStream
+     * @throws XMLStreamException
+     */
     private void processContent(QueueByteBufInputStream requestInputStream, ChannelOutputStream requestOutputStream)
-            throws XMLStreamException {
+            throws XMLStreamException, ProtocolVersionNotSupportedException {
+
         XMLEventReader xmlEventReader = xmlInputFactory.createXMLEventReader(requestInputStream);
         XMLEventWriter xmlEventWriter = xmlOutputFactory.createXMLEventWriter(requestOutputStream);
 
@@ -125,9 +132,32 @@ public class WfsRequestDecoder extends WfsDecoder {
             xmlEventWriter.add(event);
 
             eventType = event.getEventType();
+
             if (eventType == XMLEvent.START_ELEMENT) {
                 StartElement rootElement = event.asStartElement();
-                LOGGER.trace("OWS message root START ELEMENT --> " + rootElement.getName().toString());
+
+                LOGGER.info("WFS message root START ELEMENT --> " + rootElement.getName().toString());
+
+                /*
+                
+                ProtocolVersion protocolVersion = extractProtocolVersion(rootElement);
+                String operationElName = rootElement.getName().getLocalPart();
+                Operation wfsOperation = Operation.fromValue(operationElName);
+                switch (protocolVersion) {
+                    case V1_1_0:
+                        LOGGER.debug("Process a WFS 1.1.0 request of type '{}'", wfsOperation);
+                        OperationRequestProcessor currentOperationProcessor = WfsOperationRequestProcessorFactory.getInstance(this.dataOperation)
+                                .createOperationProcessor(wfsOperation, xmlEventReader, xmlEventWriter);
+                        currentOperationProcessor.processOperationRequest();
+                        break;
+                    // TODO Add other version processors
+                    default:
+                        throw new ProtocolVersionNotSupportedException(
+                                "WFS Protocol version not supported: " + protocolVersion.getValue());
+                }
+                
+                */
+
                 xmlEventWriter.flush();
             }
         }
@@ -135,6 +165,13 @@ public class WfsRequestDecoder extends WfsDecoder {
         xmlEventWriter.flush();
     }
 
+    /**
+     * processGetRequest
+     * @param ctx
+     * @param httpRequest
+     * @param eventProcessor
+     * @throws WfsParsingException
+     */
     private void processGetRequest(ChannelHandlerContext ctx, HttpRequest httpRequest,
             GetRequestProcessor eventProcessor) throws WfsParsingException {
 
@@ -147,7 +184,7 @@ public class WfsRequestDecoder extends WfsDecoder {
 
                 WfsGetRequest request = new WfsGetRequest(httpRequest.protocolVersion(), httpRequest.method(),
                         httpRequest.uri());
-                WfsOperation operation = request.getWfsOperation();
+                Operation operation = request.getWfsOperation();
                 LOGGER.info(String.format("Get Request Processor for %s operation", operation.getName()));
 
                 switch (operation) {
@@ -167,9 +204,27 @@ public class WfsRequestDecoder extends WfsDecoder {
         } catch (WfsParsingException ex) {
             LOGGER.error(ex.toString());
         }
+    }
+
+    /**
+     * processPostRequest
+     * @param ctx
+     * @param httpRequest
+     * @param postRequestProcessor
+     */
+    private void processPostRequest(ChannelHandlerContext ctx, HttpRequest httpRequest,
+            PostRequestProcessor postRequestProcessor) {
+
+        // check if service is WFS
 
     }
 
+    /**
+     * checkProtocol
+     * @param element
+     * @return
+     * @throws WfsParsingException
+     */
     private String checkProtocol(StartElement element) throws WfsParsingException {
 
         String protocol = null;

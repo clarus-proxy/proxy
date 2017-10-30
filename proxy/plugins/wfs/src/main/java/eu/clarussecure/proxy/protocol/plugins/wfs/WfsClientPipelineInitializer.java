@@ -10,6 +10,7 @@ import eu.clarussecure.proxy.spi.protocol.Configuration;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
+import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.util.concurrent.DefaultEventExecutorGroup;
 import io.netty.util.concurrent.EventExecutorGroup;
@@ -35,7 +36,7 @@ public class WfsClientPipelineInitializer extends ChannelInitializer<Channel> {
         pipeline.addLast("HttpServerCodec", new HttpServerCodec());
         pipeline.addLast("HttpHeaderCodec", new HttpHeaderCodec());
 
-        //pipeline.addLast(parserGroup, "HttpObjectAggregator", new HttpObjectAggregator(512 * 1024));
+        pipeline.addLast(parserGroup, "WfsRequestAggregator", new HttpObjectAggregator(512 * 1024));
         //pipeline.addLast(parserGroup, "HttpObjectAccumulator", new HttpObjectAccumulator(Integer.MAX_VALUE));
         pipeline.addLast("WfsRequestDecoder", new WfsRequestDecoder(parserGroup));
 

@@ -1,6 +1,8 @@
 package eu.clarussecure.proxy.protocol.plugins.wfs.parser.message;
 
-import eu.clarussecure.proxy.protocol.plugins.wfs.exception.WfsParsingException;
+import eu.clarussecure.proxy.protocol.plugins.wfs.parser.exception.WfsParsingException;
+import eu.clarussecure.proxy.protocol.plugins.wfs.model.Operation;
+import eu.clarussecure.proxy.protocol.plugins.wfs.model.WfsParameter;
 import eu.clarussecure.proxy.protocol.plugins.wfs.parser.WfsParserUtil;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpVersion;
@@ -15,7 +17,7 @@ import java.util.Map;
 public class WfsGetRequest extends WfsRequest {
 
     protected Map<String, String> wfsParams;
-    protected WfsOperation wfsOperation;
+    protected Operation wfsOperation;
 
     public WfsGetRequest(HttpVersion httpVersion, HttpMethod method, String uri) throws WfsParsingException {
         super(httpVersion, method, uri);
@@ -50,11 +52,11 @@ public class WfsGetRequest extends WfsRequest {
         }
     }
 
-    public WfsOperation getWfsOperation() throws WfsParsingException {
+    public Operation getWfsOperation() throws WfsParsingException {
 
         for (Map.Entry<String, String> entry : wfsParams.entrySet()) {
             if (entry.getKey().equals(WfsParameter.REQUEST.getParameter())) {
-                return WfsOperation.valueOfByName(entry.getValue());
+                return Operation.valueOfByName(entry.getValue());
             }
         }
         throw new WfsParsingException("No WFS operation found");

@@ -1,8 +1,5 @@
-package eu.clarussecure.proxy.protocol.plugins.wfs.parser.message;
+package eu.clarussecure.proxy.protocol.plugins.wfs.model;
 
-/**
- * Created on 26/06/2017.
- */
 public enum WfsParameter {
 
     /** General parameters */

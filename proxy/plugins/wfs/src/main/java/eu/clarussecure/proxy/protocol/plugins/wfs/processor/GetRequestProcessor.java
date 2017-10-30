@@ -2,7 +2,7 @@ package eu.clarussecure.proxy.protocol.plugins.wfs.processor;
 
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
 import eu.clarussecure.proxy.protocol.plugins.wfs.parser.message.WfsGetRequest;
-import eu.clarussecure.proxy.protocol.plugins.wfs.parser.message.WfsParameter;
+import eu.clarussecure.proxy.protocol.plugins.wfs.model.WfsParameter;
 import eu.clarussecure.proxy.spi.DataOperation;
 import eu.clarussecure.proxy.spi.ModuleOperation;
 import eu.clarussecure.proxy.spi.Operation;

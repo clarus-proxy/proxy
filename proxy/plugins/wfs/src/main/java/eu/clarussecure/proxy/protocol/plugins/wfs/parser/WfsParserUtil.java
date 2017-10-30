@@ -1,6 +1,6 @@
 package eu.clarussecure.proxy.protocol.plugins.wfs.parser;
 
-import eu.clarussecure.proxy.protocol.plugins.wfs.exception.WfsParsingException;
+import eu.clarussecure.proxy.protocol.plugins.wfs.parser.exception.WfsParsingException;
 import io.netty.handler.codec.http.HttpRequest;
 
 import java.net.MalformedURLException;
