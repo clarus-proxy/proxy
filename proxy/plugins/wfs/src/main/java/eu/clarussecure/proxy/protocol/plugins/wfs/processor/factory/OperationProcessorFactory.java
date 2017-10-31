@@ -5,6 +5,9 @@ import eu.clarussecure.proxy.protocol.plugins.wfs.model.exception.OperationNotSu
 import eu.clarussecure.proxy.protocol.plugins.wfs.processor.OperationProcessor;
 import eu.clarussecure.proxy.protocol.plugins.wfs.processor.TransactionProcessor;
 
+import javax.xml.stream.XMLEventReader;
+import javax.xml.stream.XMLEventWriter;
+
 public class OperationProcessorFactory {
 
     private static OperationProcessorFactory instance;
@@ -16,7 +19,8 @@ public class OperationProcessorFactory {
         return instance;
     }
 
-    public OperationProcessor createOperationProcessor(Operation operation) throws OperationNotSupportedException {
+    public OperationProcessor createOperationProcessor(Operation operation, XMLEventReader reader,
+            XMLEventWriter writer) throws OperationNotSupportedException {
 
         if (operation == null) {
             throw new OperationNotSupportedException("Unknown WFS Operation");
@@ -24,7 +28,7 @@ public class OperationProcessorFactory {
         OperationProcessor operationProcessor = null;
         switch (operation) {
         case TRANSACTION:
-            operationProcessor = new TransactionProcessor();
+            operationProcessor = new TransactionProcessor(reader, writer);
             break;
         // TODO Add other operation processors
         default:

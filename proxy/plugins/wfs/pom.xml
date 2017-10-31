@@ -71,6 +71,11 @@
             <version>5.0.2</version>
         </dependency>
         <dependency>
+            <groupId>com.fasterxml.staxmate</groupId>
+            <artifactId>staxmate</artifactId>
+            <version>2.3.0</version>
+        </dependency>
+        <dependency>
             <groupId>org.jvnet.ogc</groupId>
             <artifactId>wfs-v_1_1_0</artifactId>
             <version>2.6.1</version>

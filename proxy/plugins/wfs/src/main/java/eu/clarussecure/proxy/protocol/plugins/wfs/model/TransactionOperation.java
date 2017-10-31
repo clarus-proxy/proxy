@@ -4,7 +4,7 @@ import java.util.Arrays;
 
 public enum TransactionOperation {
 
-    INSERT("insert"), UPDATE("update"), DELETE("delete");
+    INSERT("Insert"), UPDATE("Update"), DELETE("Delete");
 
     private String value;
 

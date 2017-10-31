@@ -152,7 +152,7 @@ public class WfsRequestDecoder extends WfsDecoder {
                 case V1_1_0:
                     LOGGER.info("Process a WFS 1.1.0 request of type '{}'", wfsOperation);
                     OperationProcessor currentOperationProcessor = OperationProcessorFactory.getInstance()
-                            .createOperationProcessor(wfsOperation);
+                            .createOperationProcessor(wfsOperation, xmlEventReader, xmlEventWriter);
                     currentOperationProcessor.processOperation();
 
                     break;
