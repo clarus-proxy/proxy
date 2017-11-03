@@ -76,14 +76,35 @@ public class SimpleSQLParserUtil {
     }
 
     private static int nextUncommentedLinePosition(CString statement, int offset) {
-        while (statement.startsWith("--", offset)) {
-            offset++;
-            boolean eol = false;
-            while (!eol && (++offset) < statement.length()) {
-                char c = statement.charAt(offset);
-                while (c == '\r' || c == '\n' || c == '\f' || Character.getType(c) == Character.LINE_SEPARATOR) {
-                    eol = true;
-                    c = (++offset) < statement.length() ? statement.charAt(offset) : 0;
+        while (statement.startsWith("--", offset) || statement.startsWith("/*", offset)) {
+            if (statement.startsWith("--", offset)) {
+                offset++;
+                boolean eol = false;
+                while (!eol && (++offset) < statement.length()) {
+                    char c = statement.charAt(offset);
+                    while (c == '\r' || c == '\n' || c == '\f' || Character.getType(c) == Character.LINE_SEPARATOR) {
+                        eol = true;
+                        c = (++offset) < statement.length() ? statement.charAt(offset) : 0;
+                    }
+                }
+            } else if (statement.startsWith("/*", offset)) {
+                // PostgreSQL also supports C-style block comments, see:
+                // https://www.postgresql.org/docs/8.0/static/sql-syntax.html#SQL-SYNTAX-COMMENTS
+                int closeCommentOffset = statement.indexOf("*/", offset);
+                if (closeCommentOffset == -1) {
+                    offset = statement.length();
+                } else {
+                    // +2 to skip the comment close
+                    offset = closeCommentOffset + 2;
+                }
+                // Skip the new line, if any
+                boolean eol = false;
+                while (!eol && offset < statement.length()) {
+                    char c = statement.charAt(offset);
+                    while (c == '\r' || c == '\n' || c == '\f' || Character.getType(c) == Character.LINE_SEPARATOR) {
+                        eol = true;
+                        c = (++offset) < statement.length() ? statement.charAt(offset) : 0;
+                    }
                 }
             }
         }

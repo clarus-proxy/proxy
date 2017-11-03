@@ -9,3 +9,5 @@ target/
 .project
 */sb.page
 main/clarus_keystore
+main/se_index.config
+nbactions.xml

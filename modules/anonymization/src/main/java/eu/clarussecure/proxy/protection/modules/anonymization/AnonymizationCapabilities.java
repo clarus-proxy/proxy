@@ -18,8 +18,9 @@ public class AnonymizationCapabilities implements ProtectionModuleCapabilities {
             .toMap(new Enum<?>[][] { { Operation.CREATE, Mode.AS_IT_IS, Mode.BUFFERING, Mode.STREAMING },
                     { Operation.READ, Mode.AS_IT_IS }, { Operation.UPDATE }, { Operation.DELETE, Mode.AS_IT_IS } });
 
-    private final Map<Operation, Set<Mode>> recordCRUDOperations = Capabilities.toMap(new Enum<?>[][] {
-            { Operation.CREATE }, { Operation.READ, Mode.AS_IT_IS }, { Operation.UPDATE }, { Operation.DELETE } });
+    private final Map<Operation, Set<Mode>> recordCRUDOperations = Capabilities
+            .toMap(new Enum<?>[][] { { Operation.CREATE, Mode.STREAMING }, { Operation.READ, Mode.AS_IT_IS },
+                    { Operation.UPDATE }, { Operation.DELETE } });
 
     @Override
     public Set<Operation> getSupportedCRUDOperations(boolean wholeDataset) {
@@ -65,6 +66,8 @@ public class AnonymizationCapabilities implements ProtectionModuleCapabilities {
                                 } else if ("k-anonymity".equals(protection) || "t-closeness".equals(protection)) {
                                     preferredMode = Mode.BUFFERING;
                                     break;
+                                } else if ("suppression".equals(protection)) {
+                                    preferredMode = Mode.STREAMING;
                                 }
                             }
                         }
