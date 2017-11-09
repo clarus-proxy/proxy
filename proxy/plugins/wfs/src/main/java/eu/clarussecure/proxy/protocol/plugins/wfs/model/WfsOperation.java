@@ -1,6 +1,6 @@
 package eu.clarussecure.proxy.protocol.plugins.wfs.model;
 
-public enum Operation {
+public enum WfsOperation {
 
     GET_CAPABILITIES("GetCapabilities"),
     DESCRIBE_FEATURE_TYPE("DescribeFeatureType"),
@@ -10,7 +10,7 @@ public enum Operation {
 
     private String name = "";
 
-    Operation(String name) {
+    WfsOperation(String name) {
         this.name = name;
     }
 
@@ -18,9 +18,9 @@ public enum Operation {
         return this.name;
     }
 
-    public static Operation valueOfByName(String name) throws IllegalArgumentException {
+    public static WfsOperation valueOfByName(String name) throws IllegalArgumentException {
 
-        for (Operation value : values()) {
+        for (WfsOperation value : values()) {
             String op = value.getName();
             if (op.equalsIgnoreCase(name)) {
                 return value;

@@ -11,6 +11,6 @@ public interface OperationProcessor {
 
     ProtocolService getProtocolService(ChannelHandlerContext ctx);
 
-    void processOperation() throws XMLStreamException, JAXBException, TransformerException;
+    void processOperation(ChannelHandlerContext ctx) throws XMLStreamException, JAXBException, TransformerException;
 
 }

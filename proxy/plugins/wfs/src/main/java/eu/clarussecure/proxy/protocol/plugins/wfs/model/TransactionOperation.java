@@ -17,7 +17,14 @@ public enum TransactionOperation {
     }
 
     public static TransactionOperation fromValue(final String value) {
-        return Arrays.asList(values()).stream().filter(entry -> entry.getValue().equals(value)).findFirst().get();
+        //return Arrays.asList(values()).stream().filter(entry -> entry.getValue().equals(value)).findFirst().get();
+        for (TransactionOperation operation : values()) {
+            String op = operation.getValue();
+            if (op.equalsIgnoreCase(value)) {
+                return operation;
+            }
+        }
+        throw new IllegalArgumentException(String.format("operation %s is not defined", value));
     }
 
     @Override

@@ -15,10 +15,10 @@ import javax.xml.stream.events.XMLEvent;
 import javax.xml.transform.TransformerException;
 
 import eu.clarussecure.proxy.protocol.plugins.wfs.model.ProtocolVersion;
+import eu.clarussecure.proxy.protocol.plugins.wfs.model.WfsOperation;
 import eu.clarussecure.proxy.protocol.plugins.wfs.model.exception.OperationNotSupportedException;
 import eu.clarussecure.proxy.protocol.plugins.wfs.model.exception.ProtocolVersionNotSupportedException;
 import eu.clarussecure.proxy.protocol.plugins.wfs.processor.OperationProcessor;
-import eu.clarussecure.proxy.protocol.plugins.wfs.processor.PostRequestProcessor;
 import eu.clarussecure.proxy.protocol.plugins.wfs.processor.factory.OperationProcessorFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,7 +28,6 @@ import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPSession;
 import eu.clarussecure.proxy.protocol.plugins.wfs.parser.exception.WfsParsingException;
 import eu.clarussecure.proxy.protocol.plugins.wfs.parser.message.WfsGetRequest;
-import eu.clarussecure.proxy.protocol.plugins.wfs.model.Operation;
 import eu.clarussecure.proxy.protocol.plugins.wfs.processor.GetRequestProcessor;
 import eu.clarussecure.proxy.spi.buffer.QueueByteBufInputStream;
 import io.netty.channel.ChannelHandlerContext;
@@ -87,7 +86,7 @@ public class WfsRequestDecoder extends WfsDecoder {
                         final ChannelOutputStream requestOutputStream = new ChannelOutputStream(ctx.alloc(),
                                 session.getServerSideChannel(0));
                         try {
-                            this.processContent(currentContentStream, requestOutputStream);
+                            this.processContent(ctx, currentContentStream, requestOutputStream);
 
                         } catch (Exception e) {
                             LOGGER.error("Failed to process request content", e);
@@ -120,9 +119,9 @@ public class WfsRequestDecoder extends WfsDecoder {
      * @param requestOutputStream
      * @throws XMLStreamException
      */
-    private void processContent(QueueByteBufInputStream requestInputStream, ChannelOutputStream requestOutputStream)
-            throws XMLStreamException, ProtocolVersionNotSupportedException, OperationNotSupportedException,
-            JAXBException, TransformerException {
+    private void processContent(ChannelHandlerContext ctx, QueueByteBufInputStream requestInputStream,
+            ChannelOutputStream requestOutputStream) throws XMLStreamException, ProtocolVersionNotSupportedException,
+            OperationNotSupportedException, JAXBException, TransformerException {
 
         XMLEventReader xmlEventReader = xmlInputFactory.createXMLEventReader(requestInputStream);
         XMLEventWriter xmlEventWriter = xmlOutputFactory.createXMLEventWriter(requestOutputStream);
@@ -142,7 +141,7 @@ public class WfsRequestDecoder extends WfsDecoder {
 
                 ProtocolVersion protocolVersion = extractProtocolVersion(rootElement);
                 String operationElName = rootElement.getName().getLocalPart();
-                Operation wfsOperation = Operation.valueOfByName(operationElName);
+                WfsOperation wfsOperation = WfsOperation.valueOfByName(operationElName);
 
                 switch (protocolVersion) {
 
@@ -153,7 +152,7 @@ public class WfsRequestDecoder extends WfsDecoder {
                     LOGGER.info("Process a WFS 1.1.0 request of type '{}'", wfsOperation);
                     OperationProcessor currentOperationProcessor = OperationProcessorFactory.getInstance()
                             .createOperationProcessor(wfsOperation, xmlEventReader, xmlEventWriter);
-                    currentOperationProcessor.processOperation();
+                    currentOperationProcessor.processOperation(ctx);
 
                     break;
                 case V2_0_0:
@@ -190,7 +189,7 @@ public class WfsRequestDecoder extends WfsDecoder {
 
                 WfsGetRequest request = new WfsGetRequest(httpRequest.protocolVersion(), httpRequest.method(),
                         httpRequest.uri());
-                Operation operation = request.getWfsOperation();
+                WfsOperation operation = request.getWfsOperation();
                 LOGGER.info(String.format("Get Request Processor for %s operation", operation.getName()));
 
                 switch (operation) {
@@ -267,9 +266,9 @@ public class WfsRequestDecoder extends WfsDecoder {
      * @param rootElement
      * @return
      */
-    private Operation extractOperation(StartElement rootElement) {
+    private WfsOperation extractOperation(StartElement rootElement) {
         // TODO extract operation from root element
-        return Operation.TRANSACTION;
+        return WfsOperation.TRANSACTION;
     }
 
 }
