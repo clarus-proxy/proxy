@@ -53,6 +53,11 @@
       <version>4.12</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>io.netty</groupId>
+      <artifactId>netty-handler</artifactId>
+      <version>4.1.4.Final</version>
+    </dependency>
   </dependencies>
   <organization>
     <name>The CLARUS Consortium</name>

@@ -53,6 +53,11 @@
       <version>4.12</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>dataoperations.anonymizationmodule</artifactId>
+      <version>1.0.1</version>
+    </dependency>
   </dependencies>
   <organization>
     <name>The CLARUS Consortium</name>

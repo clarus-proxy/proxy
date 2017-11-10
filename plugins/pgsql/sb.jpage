@@ -1,0 +1,74 @@
+java.util.regex.Pattern.compile("^[^/*]*\\*/[^/*]*/([^/*]*)").matcher("*/public./foo").matches();
+java.util.regex.Matcher m = java.util.regex.Pattern.compile("^[^/*]*\\*/([^/*]*/[^/*]*)").matcher("*/./foo");
+if (m.matches()) {
+    System.out.println(m.replaceAll("$1"));
+}
+
+"public.foo".split(".")
+
+
+net.sf.jsqlparser.parser.CCJSqlParserUtil.parse("--﻿populate ANON_PATIENT table\n"
++ "--BEGIN;\n"
++ "CREATE TABLE anon_patient(\n"
++ "	pat_id		varchar(8) PRIMARY KEY,\n"
++ "	pat_name	text,\n"
++ "	pat_last1	text,\n"
++ "	pat_last2	text,\n"
++ "	pat_gen		varchar(1),\n"
++ "	pat_zip		varchar(5)\n"
++ ")\n")(net.sf.jsqlparser.statement.create.table.CreateTable) CREATE TABLE anon_patient (pat_id varchar (8) PRIMARY KEY, pat_name text, pat_last1 text, pat_last2 text, pat_gen varchar (1), pat_zip varchar (5));
+
+"CREATE\n\f\t \rTABLE".split("\\s+")(java.lang.String[]) [CREATE, TABLE]
+        
+java.util.regex.Pattern.compile("POINT|LINESTRING|POLYGON|CIRCULARSTRING|MULTIPOINT|MULTILINESTRING|MULTIPOLYGON|COMPOUNDCURVE|CURVEPOLYGON|MULTICURVE|MULTISURFACE|GEOMETRYCOLLECTION|TRIANGLE|TIN|POLYHEDRALSURFACE", java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE).matcher("LiNeStRiNg").matches();
+
+
+java.util.regex.Pattern.compile("FOO?").matcher("FOOOO").matches();
+
+(int)((long) 0xffff & 0xffffl)(int) 65535
+
+"st_asbinary(\"geom\",'NDR'),\"gid\"".split(",(?![^(]*\\))")[0](java.lang.String) st_asbinary("geom",'NDR')
+
+
+java.util.regex.Pattern p = java.util.regex.Pattern.compile("(a\\.?)?(b\\.?)?(c\\.?)?(d)?");
+for (String s: new String[] { "a", "a.b", "a.b.c", "a.b.c.d", "b.c.d", "c.d", "d", "b.c", "b", "c",
+                              "A", "A.b", "A.b.c", "A.b.c.d", "B.c.d", "C.d", "D", "B.c", "B", "C"}) {
+    System.out.print(String.format("'%s' -> ", s));
+    java.util.regex.Matcher m = p.matcher(s);
+    if (m.matches()) {
+        System.out.print(m.groupCount());
+        System.out.println(m.replaceFirst(" 1:$1 2:$2 3:$3 4:$4"));
+    } else {
+        System.out.println("don't match");
+    }
+}
+
+
+Long.toHexString(Double.doubleToRawLongBits(-20026376.39))(java.lang.String) c1731940863d70a4
+Long.toHexString(0xc1731940863d70a4L & 0x8000000000000000L)(java.lang.String) 8000000000000000
+Long.toHexString(0xc1731940863d70a4L & 0x7ff0000000000000L)(java.lang.String) 4170000000000000
+Long.toHexString(0xc1731940863d70a4L & 0x000fffffffffffffL)(java.lang.String) 00031940863d70a4
+Long.toHexString(0x4170000000000000L >>> 52)(java.lang.String) 417 -> 1047
+
+Long.toHexString(Double.doubleToRawLongBits(568488.497969738))(java.lang.String) 41215950fef5e3b6
+Long.toHexString(0x41215950fef5e3b6L & 0x8000000000000000L)(java.lang.String) 0
+Long.toHexString(0x41215950fef5e3b6L & 0x7ff0000000000000L)(java.lang.String) 4120000000000000
+Long.toHexString(0x41215950fef5e3b6L & 0x000fffffffffffffL)(java.lang.String) 15950fef5e3b6
+Long.toHexString(0x4120000000000000L >>> 52)(java.lang.String) 412 -> 1042
+
+32 - Integer.numberOfLeadingZeros(0x417) - 1(int) 10
+(1<<10) - 1(int) 1023
+Long.toHexString(1023)(java.lang.String) 3ff
+~0x3ff(int) -1024
+Integer.toHexString(~0x3ff)(java.lang.String) fffffc00
+0xff^0x17(int) 232
+
+Long.toHexString(Double.doubleToRawLongBits(2.93097871935343e+48))(java.lang.String) 4a000b2d0ceb9b23
+Long.toHexString(0x4a000b2d0ceb9b23L & 0x7ff0000000000000L)(java.lang.String) 4a00000000000000
+
+Long.toHexString(Double.doubleToRawLongBits(4.9e-324))(java.lang.String) 1
+
+Long.toHexString(1)(java.lang.String) 1
+Long.toHexString(Integer.reverse(1))(java.lang.String) ffffffff80000000
+Long.toHexString(2)(java.lang.String) 2
+Long.toHexString(Integer.reverse(2))(java.lang.String) 40000000

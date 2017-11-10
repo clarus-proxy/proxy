@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<schema>
+    <data>
+        <attribute name="LAND" attribute_type="non_confidential" data_type="categoric"/>
+        <attribute name="THUMBNAIL" attribute_type="non_confidential" data_type="categoric"/>
+        <attribute name="MAINPAGE" attribute_type="non_confidential" data_type="categoric"/>
+        <attribute name="the_geom" attribute_type="identifier" data_type="geometric_object"/>
+    </data>
+    <protection module="anonymization">
+        <attribute_types>
+            <attribute_type type="identifier" protection="coarsening" coarsening_type="shift" radius="1000"/>
+            <attribute_type type="non_confidential" protection="null"/>
+        </attribute_types>
+    </protection>
+    <protocol plugin="WFS"/>
+</schema>	
+

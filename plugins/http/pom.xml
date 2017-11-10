@@ -70,12 +70,6 @@
       <version>4.12</version>
       <scope>test</scope>
     </dependency>
-    <dependency>
-      <groupId>postgresql</groupId>
-      <artifactId>postgresql</artifactId>
-      <version>9.1-901-1.jdbc4</version>
-      <scope>test</scope>
-    </dependency>
   </dependencies>
   <organization>
     <name>The CLARUS Consortium</name>
