@@ -1,0 +1,13 @@
+eu/clarussecure/proxy/protocol/plugins/pgsql/AuthenticationSSLToOneBackendTest.class
+eu/clarussecure/proxy/protocol/plugins/pgsql/AuthenticationSSLToTwoBackendsTest$SSLMode.class
+eu/clarussecure/proxy/protocol/plugins/pgsql/Session2.class
+eu/clarussecure/proxy/protocol/plugins/pgsql/AuthenticationToOneBackendTest.class
+eu/clarussecure/proxy/protocol/plugins/pgsql/AuthenticationToTwoBackendsTest.class
+eu/clarussecure/proxy/protocol/plugins/pgsql/SessionHealth.class
+eu/clarussecure/proxy/protocol/plugins/pgsql/AuthenticationSSLToOneBackendTest$SSLMode.class
+eu/clarussecure/proxy/protocol/plugins/pgsql/TestUtils.class
+eu/clarussecure/proxy/protocol/plugins/pgsql/StartPgsqlServerProxy.class
+eu/clarussecure/proxy/protocol/plugins/pgsql/AuthenticationSSLToTwoBackendsTest.class
+eu/clarussecure/proxy/protocol/plugins/pgsql/Session.class
+eu/clarussecure/proxy/protocol/plugins/pgsql/Scenarii.class
+eu/clarussecure/proxy/protocol/plugins/pgsql/parser/ParserTest.class

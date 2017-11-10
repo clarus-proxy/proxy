@@ -1,0 +1,7 @@
+eu/clarussecure/proxy/protocol/ProtocolServiceDelegate$2.class
+eu/clarussecure/proxy/Proxy.class
+eu/clarussecure/proxy/protection/mongodb/EmbeddedMongoDB.class
+eu/clarussecure/proxy/protocol/ProtocolServiceDelegate.class
+eu/clarussecure/proxy/protocol/ProtocolServiceDelegate$1.class
+eu/clarussecure/proxy/protocol/ProtocolLoader.class
+eu/clarussecure/proxy/protection/ProtectionModuleLoader.class

@@ -1,0 +1,12 @@
+/Users/diegorivera/Dropbox/Montimage/CLARUS/code/proxy/main/src/test/java/eu/clarussecure/proxy/pgsql/DataSetProtection.java
+/Users/diegorivera/Dropbox/Montimage/CLARUS/code/proxy/main/src/test/java/eu/clarussecure/proxy/pgsql/BoreholesAnonymizationTestSuite.java
+/Users/diegorivera/Dropbox/Montimage/CLARUS/code/proxy/main/src/test/java/eu/clarussecure/proxy/pgsql/ReplacingInputStream.java
+/Users/diegorivera/Dropbox/Montimage/CLARUS/code/proxy/main/src/test/java/eu/clarussecure/proxy/pgsql/BoreholesSimpleEncryptionIT.java
+/Users/diegorivera/Dropbox/Montimage/CLARUS/code/proxy/main/src/test/java/eu/clarussecure/proxy/pgsql/BoreholesSplittingPointsToLinesIT.java
+/Users/diegorivera/Dropbox/Montimage/CLARUS/code/proxy/main/src/test/java/eu/clarussecure/proxy/pgsql/CoarseningBoreholesByMicroaggregationIT.java
+/Users/diegorivera/Dropbox/Montimage/CLARUS/code/proxy/main/src/test/java/eu/clarussecure/proxy/pgsql/BoreholesSplittingPointsToPointsIT.java
+/Users/diegorivera/Dropbox/Montimage/CLARUS/code/proxy/main/src/test/java/eu/clarussecure/proxy/pgsql/BoreholesEncryptionTestSuite.java
+/Users/diegorivera/Dropbox/Montimage/CLARUS/code/proxy/main/src/test/java/eu/clarussecure/proxy/pgsql/BoreholesProtection.java
+/Users/diegorivera/Dropbox/Montimage/CLARUS/code/proxy/main/src/test/java/eu/clarussecure/proxy/pgsql/BoreholesSplittingTestSuite.java
+/Users/diegorivera/Dropbox/Montimage/CLARUS/code/proxy/main/src/test/java/eu/clarussecure/proxy/pgsql/BoreholesProtectionTestSuite.java
+/Users/diegorivera/Dropbox/Montimage/CLARUS/code/proxy/main/src/test/java/eu/clarussecure/proxy/pgsql/CoarseningBoreholesByShiftingIT.java

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<schema>
+    <data>
+        <attribute name="c1" attribute_type="non_confidential"
+            data_type="categoric" />
+        <attribute name="a/c2" attribute_type="non_confidential"
+            data_type="categoric" />
+        <attribute name="b/c3" attribute_type="non_confidential"
+            data_type="categoric" />
+        <attribute name="public.a/c4" attribute_type="non_confidential"
+            data_type="categoric" />
+        <attribute name="public.b/c5" attribute_type="non_confidential"
+            data_type="categoric" />
+        <attribute name="s1.a/c6" attribute_type="non_confidential"
+            data_type="categoric" />
+        <attribute name="s1.b/c7" attribute_type="non_confidential"
+            data_type="categoric" />
+        <attribute name="postgres/a/c8" attribute_type="non_confidential"
+            data_type="categoric" />
+        <attribute name="postgres/b/c9" attribute_type="non_confidential"
+            data_type="categoric" />
+        <attribute name="postgres/public.a/c10"
+            attribute_type="non_confidential" data_type="categoric" />
+        <attribute name="postgres/public.b/c11"
+            attribute_type="non_confidential" data_type="categoric" />
+        <attribute name="postgres/s1.a/c12" attribute_type="non_confidential"
+            data_type="categoric" />
+        <attribute name="postgres/s1.b/c13" attribute_type="non_confidential"
+            data_type="categoric" />
+    </data>
+    <protection module="anonymization">
+        <attribute_types>
+            <attribute_type type="non_confidential"
+                protection="null" />
+        </attribute_types>
+    </protection>
+    <protocol plugin="PostgreSQL" />
+</schema>
