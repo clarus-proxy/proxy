@@ -44,7 +44,7 @@
     <dependency>
       <groupId>eu.clarussecure</groupId>
       <artifactId>dataoperations.encryption</artifactId>
-      <version>0.2-SNAPSHOT</version>
+      <version>1.0.2-SNAPSHOT</version>
       <scope>compile</scope>
     </dependency>
     <dependency>
