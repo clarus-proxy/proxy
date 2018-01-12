@@ -3,22 +3,22 @@ package eu.clarussecure.proxy.protocol.plugins.wfs.processor;
 import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
 import eu.clarussecure.proxy.protocol.plugins.wfs.model.TransactionOperation;
 import eu.clarussecure.proxy.protocol.plugins.wfs.util.xml.XMLEventStreamReader;
-import eu.clarussecure.proxy.protocol.plugins.wfs.util.xml.XMLEventStreamWriter;
 import eu.clarussecure.proxy.spi.*;
 import eu.clarussecure.proxy.spi.protocol.Configuration;
 import eu.clarussecure.proxy.spi.protocol.ProtocolService;
-import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.opengis.wfs.v_1_1_0.TransactionType;
+import org.codehaus.staxmate.dom.DOMConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.JAXBException;
 import javax.xml.namespace.QName;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.stream.XMLEventFactory;
 import javax.xml.stream.XMLEventReader;
 import javax.xml.stream.XMLEventWriter;
@@ -31,18 +31,12 @@ import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
-
-import org.codehaus.staxmate.dom.DOMConverter;
-import org.w3c.dom.Document;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-import org.xml.sax.SAXException;
-
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.io.StringWriter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class TransactionProcessor implements OperationProcessor {
 
@@ -68,158 +62,228 @@ public class TransactionProcessor implements OperationProcessor {
         return configuration.getProtocolService();
     }
 
+    /**
+     * processOperation
+     * @param ctx
+     * @throws XMLStreamException
+     */
     @Override
-    public void processOperation(ChannelHandlerContext ctx)
-            throws XMLStreamException, JAXBException, TransformerException {
+    public void processOperation(ChannelHandlerContext ctx) throws XMLStreamException, TransformerException {
 
+        TransactionOperation transactionOperation = null;
+        String transactionOperationName = "";
+
+        // Extract module operation
+        ModuleOperation moduleOperation = new OutboundDataOperation();
+
+        // Qualify the transaction (Insert, Update, Delete)
         XMLEvent firstEvent = xmlEventReader.nextEvent();
+        XMLEvent event = (XMLEvent) xmlEventReader.peek();
 
-        ModuleOperation moduleOperation = null;
-
-        /*
-        if (!(firstEvent.getEventType() == XMLEvent.START_ELEMENT &&
-                firstEvent.asStartElement().getName()
-                .getLocalPart().equals(WfsOperation.TRANSACTION.getRequestRootElement()))) {
-            throw new IllegalStateException("Bad XML stream parser state; must be START_ELEMENT 'Transaction'");
-        }*/
-
-        xmlEventWriter.add(firstEvent);
-        xmlEventWriter.flush();
-        XMLEvent event = null;
-        int eventType = 0;
-        StartElement startElement = null;
-
-        while (xmlEventReader.hasNext()) {
-            event = (XMLEvent) xmlEventReader.peek();
-            //event = (XMLEvent) xmlEventReader.next();
-            eventType = event.getEventType();
-
-            if (XMLEvent.START_ELEMENT == eventType) {
-                startElement = event.asStartElement();
-                String transactionOperationName = startElement.getName().getLocalPart();
-                LOGGER.info("WFS Transation operation start --> " + transactionOperationName);
-                TransactionOperation transactionOperation = null;
-                try {
-                    transactionOperation = TransactionOperation.fromValue(transactionOperationName);
-                    switch (transactionOperation) {
-                    case INSERT:
-                        processInsertElement(ctx);
-                        break;
-                    case UPDATE:
-                        processUpdateElement();
-                        break;
-                    case DELETE:
-                        processDeleteElement();
-                        break;
-                    default:
-                        break;
-                    }
-                } catch (IllegalArgumentException e) {
-                    LOGGER.info(e.getMessage());
-                }
-                xmlEventWriter.flush();
-
-            } else {
-                // TODO uncomment ?
-                // xmlEventWriter.add(xmlEventReader.nextEvent());
-            }
+        if (XMLEvent.START_ELEMENT == event.getEventType()) {
+            StartElement element = event.asStartElement();
+            transactionOperationName = element.getName().getLocalPart();
+            LOGGER.info("WFS Transaction operation start --> " + transactionOperationName);
         }
 
-    }
+        Element element = parseTransactionXML(ctx);
 
-    // TODO integrate outbound data operation to specific WFS processing
+        try {
 
-    /**
-     * processInsertElement
-     * @throws XMLStreamException
-     * @throws TransformerException
-     */
-    private void processInsertElement(ChannelHandlerContext ctx) throws XMLStreamException, TransformerException {
+            transactionOperation = TransactionOperation.fromValue(transactionOperationName);
+            switch (transactionOperation) {
+            case INSERT:
+                moduleOperation = extractInsertOperation(ctx, element, (OutboundDataOperation) moduleOperation);
+                break;
+            case UPDATE:
+                // moduleOperation = extractUpdateOperation(ctx, element, outboundDataOperation);
+                break;
+            case DELETE:
+                // moduleOperation = extractDeleteOperation(ctx, element, outboundDataOperation);
+                break;
+            default:
+                break;
+            }
 
-        LOGGER.info("process insert Element");
+            if (moduleOperation instanceof OutboundDataOperation) {
 
-        ModuleOperation moduleOperation = extractInsertOperation(ctx, null);
+                List<OutboundDataOperation> newOutboundDataOperations = newOutboundDataOperation(ctx,
+                        (OutboundDataOperation) moduleOperation);
 
-        // XMLEvent currentEvent = null;
-        DOMConverter domConverter = new DOMConverter();
-        Document doc = domConverter.buildDocument(new XMLEventStreamReader(xmlEventReader));
-        Node insertNode = doc.getFirstChild();
-
-        // TODO update Insert element with protected data here
-        // TODO remove cast for managing MetadataOperation
-        moduleOperation = (OutboundDataOperation) moduleOperation;
-
-        if (moduleOperation instanceof OutboundDataOperation) {
-
-            OutboundDataOperation outboundDataOperation = (OutboundDataOperation) moduleOperation;
-            List<OutboundDataOperation> newOutboundDataOperations = newOutboundDataOperation(ctx,
-                    outboundDataOperation);
-
-            if (newOutboundDataOperations.isEmpty()) {
-
-            } else {
-
-                List<Integer> involvedBackends;
-                involvedBackends = new ArrayList<>(newOutboundDataOperations.size());
+                boolean requestModified = newOutboundDataOperations.size() > 1;
+                LOGGER.info(String.valueOf(requestModified));
 
                 for (OutboundDataOperation newOutboundDataOperation : newOutboundDataOperations) {
 
-                    Node newInsertNode = modifyInsertNode(insertNode, newOutboundDataOperation);
+                    if (transactionOperation.name().equals("INSERT")) {
 
-                    domConverter.writeFragment(newInsertNode, new XMLEventStreamWriter(xmlEventWriter, EVENT_FACTORY));
+                        Node newElement = modifyInsertNode(element, newOutboundDataOperation);
 
+                    }
                 }
-            }
-        }
 
-        // domConverter.writeFragment(insertNode, new XMLEventStreamWriter(xmlEventWriter, EVENT_FACTORY));
+            }
+
+        } catch (IllegalArgumentException e) {
+            LOGGER.info(e.getMessage());
+        }
 
     }
 
     /**
-     *
-     * @param insertNode
-     * @param newOutboundDataOperation
+     * extractInsertOperation
+     * @param ctx
+     * @param insertElement
+     * @param outboundDataOperation
      * @return
      */
-    private Node modifyInsertNode(Node insertNode, OutboundDataOperation newOutboundDataOperation)
-            throws TransformerException {
+    private OutboundDataOperation extractInsertOperation(ChannelHandlerContext ctx, Element insertElement,
+            OutboundDataOperation outboundDataOperation) {
 
-        Node newInsertNode = insertNode;
+        outboundDataOperation = new OutboundDataOperation();
+        outboundDataOperation.setOperation(Operation.CREATE);
+
+        String schemaId = "clarus";
+        String datasetId = getDatasetId(ctx, insertElement, schemaId);
+
+        // save the mapping between layer name and datasetid
+
+        // extract data ids
+        NodeList featureNodes = insertElement.getFirstChild().getChildNodes();
+
+        List<CString> dataIds = nodeStream(featureNodes).map(Node::getNodeName) // get node name
+                .map(StringUtilities::unquote) // unquote string
+                .map(node -> datasetId + node) // build data id
+                .map(CString::valueOf) // transform to CString
+                .collect(Collectors.toList()); // build a list
+
+        outboundDataOperation.setDataIds(dataIds);
+
+        // save the mapping between attribute names and data ids
+
+        // extract data values
+        List<CString> dataValue = nodeStream(featureNodes).map(Node::getTextContent).map(CString::valueOf) // transform to CString
+                .collect(Collectors.toList()); // build a list
+
+        outboundDataOperation.addDataValue(dataValue);
+
+        return outboundDataOperation;
+
+    }
+
+    /**
+     * getDatasetId
+     *      dataset is the layer
+     * @param ctx
+     * @param insertElement
+     * @param schemaId
+     * @return
+     */
+    private String getDatasetId(ChannelHandlerContext ctx, Element insertElement, String schemaId) {
+
+        StringBuilder sb = new StringBuilder();
+        Node layerNode = insertElement.getFirstChild();
+        if (layerNode != null) {
+            //sb.append(schemaId).append('/').append(layerNode.getLocalName().toString());
+            sb.append(layerNode.getLocalName().toString());
+        }
+        sb.append('/');
+        return sb.toString();
+    }
+
+    /**
+     * nodeStream
+     * @param list
+     * @return
+     */
+    private static Stream<Node> nodeStream(NodeList list) {
+        List<Node> nodes = new ArrayList<>();
+        for (int n = 0; n < list.getLength(); ++n) {
+            nodes.add(list.item(n));
+        }
+        return nodes.stream();
+    }
+
+    /**
+     * parseTransactionXML
+     * @param ctx
+     * @return
+     */
+    private Element parseTransactionXML(ChannelHandlerContext ctx) throws XMLStreamException {
+
+        Element element = null;
+
+        DOMConverter domConverter = new DOMConverter();
+        Document doc = domConverter.buildDocument(new XMLEventStreamReader(xmlEventReader));
+
+        Node insertNode = doc.getFirstChild();
+
+        // domConverter.writeFragment(newInsertNode, new XMLEventStreamWriter(xmlEventWriter, EVENT_FACTORY));
+
+        return (Element) insertNode;
+    }
+
+    /**
+     * modifyInsertNode
+     * @param insertNode
+     * @param outboundDataOperation
+     * @return
+     */
+    private Node modifyInsertNode(Node insertNode, OutboundDataOperation outboundDataOperation)
+            throws TransformerException {
 
         NodeList featureTypes = insertNode.getChildNodes();
 
+        // 1. Update columns in clause into (if any)
+
+        // 1.2 Retrieve protected data ids
+        List<String> newDataIds1 = outboundDataOperation.getDataIds().stream().map(CString::toString)
+                .collect(Collectors.toList());
+
+        // 1.3 Retrieve the mapping between clear and protected data ids
+        Map<CString, CString> mapping = outboundDataOperation.getDataIdMapping();
+
+        // 1.4 Replace child nodes
         for (int i = 0; i < featureTypes.getLength(); i++) {
-
             Node feature = featureTypes.item(i);
-            Node newfeature = feature;
+            int index = 0;
+            for (Map.Entry entry : mapping.entrySet()) {
+                //LOGGER.info(entry.getKey().toString() + " : " + entry.getValue().toString());
+                if (feature.getNodeType() == Node.ELEMENT_NODE) {
+                    String featureName = new QName(feature.getLocalName()).toString();
+                    NodeList featureProperties = feature.getChildNodes();
 
-            if (feature.getNodeType() == Node.ELEMENT_NODE) {
-
-                String featureName = new QName(feature.getLocalName()).toString();
-                NodeList featureProperties = feature.getChildNodes();
-
-                for (int j = 0; j < featureProperties.getLength(); j++) {
-
-                    Node property = featureProperties.item(j);
-                    Node newproperty = property;
-
-                    if (property.getNodeType() == Node.ELEMENT_NODE) {
-
+                    for (int j = 0; j < featureProperties.getLength(); j++) {
+                        Node property = featureProperties.item(j);
                         // Use only the local name because namespace is not used by geoserver
                         String propertyName = property.getLocalName();
+                        if (entry.getKey().toString().equals(featureName + NAME_PATH_DELIMITER + propertyName)) {
+                            LOGGER.info("entry key is " + entry.getKey().toString());
+                            Document doc = insertNode.getOwnerDocument();
+                            /*
+                            LOGGER.info("replace node " + propertyName + " with " + entry.getValue());
+                            String value = entry.getValue().toString();
+                            String rawval = value.substring(value.indexOf(NAME_PATH_DELIMITER) + 1);
+                            if (doc != null) {
+                                Element newproperty = (Element) doc.createElement(rawval);
+                                insertNode.appendChild(newproperty);
+                            
+                            } else {
+                                LOGGER.info("parent node exists");
+                            }
+                            */
+                            property.setTextContent(outboundDataOperation.getDataValues().get(0).get(index).toString());
+                            LOGGER.info("node value = " + property.getTextContent().toString());
 
-                        LOGGER.info(featureName + NAME_PATH_DELIMITER + propertyName,
-                                extractNodeContentAsString(property));
-
+                        }
                     }
-
+                    index++;
                 }
             }
 
         }
 
-        return newInsertNode;
+        return insertNode;
 
     }
 
@@ -240,51 +304,15 @@ public class TransactionProcessor implements OperationProcessor {
     }
 
     /**
-     * extractInsertOperation
-     * @param ctx
-     * @param outboundDataOperation
-     * @return
+     *
      */
-    private OutboundDataOperation extractInsertOperation(ChannelHandlerContext ctx,
-            OutboundDataOperation outboundDataOperation) {
-
-        if (outboundDataOperation == null) {
-            outboundDataOperation = new OutboundDataOperation();
-            outboundDataOperation.setOperation(Operation.CREATE);
-        }
-
-        // Extract dataset id
-
-        // Extract data ids
-        List<CString> dataIds = null;
-
-        List<String> dataids = Arrays.asList("table_3857/address", "table_3857/geom");
-
-        dataIds = dataids.stream().map(CString::valueOf)
-                // build a list
-                .collect(Collectors.toList());
-        outboundDataOperation.setDataIds(dataIds);
-
-        // Extract data values
-        List<CString> dataValue = null;
-
-        List<String> dataval = Arrays.asList("10 rue Gallieni", "POINT(794967.088894511 5452372.66919852)");
-        dataValue = dataval.stream().map(CString::valueOf).map(value -> {
-            return value;
-        })
-                // build a list
-                .collect(Collectors.toList());
-
-        outboundDataOperation.addDataValue(dataValue);
-
-        return outboundDataOperation;
-
-    }
-
     private void processUpdateElement() {
 
     }
 
+    /**
+     *
+     */
     private void processDeleteElement() {
 
     }

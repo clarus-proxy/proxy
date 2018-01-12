@@ -1,8 +1,24 @@
 package eu.clarussecure.proxy.protocol.plugins.wfs.handler;
 
-import java.io.IOException;
-import java.util.List;
-import java.util.NoSuchElementException;
+import eu.clarussecure.proxy.protocol.plugins.http.buffer.ChannelOutputStream;
+import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
+import eu.clarussecure.proxy.protocol.plugins.tcp.TCPSession;
+import eu.clarussecure.proxy.protocol.plugins.wfs.model.ProtocolVersion;
+import eu.clarussecure.proxy.protocol.plugins.wfs.model.WfsOperation;
+import eu.clarussecure.proxy.protocol.plugins.wfs.model.exception.OperationNotSupportedException;
+import eu.clarussecure.proxy.protocol.plugins.wfs.model.exception.ProtocolVersionNotSupportedException;
+import eu.clarussecure.proxy.protocol.plugins.wfs.parser.exception.WfsParsingException;
+import eu.clarussecure.proxy.protocol.plugins.wfs.parser.message.WfsGetRequest;
+import eu.clarussecure.proxy.protocol.plugins.wfs.processor.GetRequestProcessor;
+import eu.clarussecure.proxy.protocol.plugins.wfs.processor.OperationProcessor;
+import eu.clarussecure.proxy.protocol.plugins.wfs.processor.factory.OperationProcessorFactory;
+import eu.clarussecure.proxy.spi.buffer.QueueByteBufInputStream;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.handler.codec.http.*;
+import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.EventExecutorGroup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.xml.bind.JAXBException;
 import javax.xml.namespace.QName;
@@ -13,31 +29,10 @@ import javax.xml.stream.events.Attribute;
 import javax.xml.stream.events.StartElement;
 import javax.xml.stream.events.XMLEvent;
 import javax.xml.transform.TransformerException;
-
-import eu.clarussecure.proxy.protocol.plugins.wfs.model.ProtocolVersion;
-import eu.clarussecure.proxy.protocol.plugins.wfs.model.WfsOperation;
-import eu.clarussecure.proxy.protocol.plugins.wfs.model.exception.OperationNotSupportedException;
-import eu.clarussecure.proxy.protocol.plugins.wfs.model.exception.ProtocolVersionNotSupportedException;
-import eu.clarussecure.proxy.protocol.plugins.wfs.processor.OperationProcessor;
-import eu.clarussecure.proxy.protocol.plugins.wfs.processor.factory.OperationProcessorFactory;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import eu.clarussecure.proxy.protocol.plugins.http.buffer.ChannelOutputStream;
-import eu.clarussecure.proxy.protocol.plugins.tcp.TCPConstants;
-import eu.clarussecure.proxy.protocol.plugins.tcp.TCPSession;
-import eu.clarussecure.proxy.protocol.plugins.wfs.parser.exception.WfsParsingException;
-import eu.clarussecure.proxy.protocol.plugins.wfs.parser.message.WfsGetRequest;
-import eu.clarussecure.proxy.protocol.plugins.wfs.processor.GetRequestProcessor;
-import eu.clarussecure.proxy.spi.buffer.QueueByteBufInputStream;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.codec.http.HttpContent;
-import io.netty.handler.codec.http.HttpObject;
-import io.netty.handler.codec.http.HttpRequest;
-import io.netty.handler.codec.http.LastHttpContent;
-import io.netty.handler.codec.http.QueryStringDecoder;
-import io.netty.util.ReferenceCountUtil;
-import io.netty.util.concurrent.EventExecutorGroup;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.List;
+import java.util.NoSuchElementException;
 
 public class WfsRequestDecoder extends WfsDecoder {
 
@@ -87,6 +82,7 @@ public class WfsRequestDecoder extends WfsDecoder {
                                 session.getServerSideChannel(0));
                         try {
                             this.processContent(ctx, currentContentStream, requestOutputStream);
+                            LOGGER.info("content processed");
 
                         } catch (Exception e) {
                             LOGGER.error("Failed to process request content", e);
@@ -121,23 +117,26 @@ public class WfsRequestDecoder extends WfsDecoder {
      */
     private void processContent(ChannelHandlerContext ctx, QueueByteBufInputStream requestInputStream,
             ChannelOutputStream requestOutputStream) throws XMLStreamException, ProtocolVersionNotSupportedException,
-            OperationNotSupportedException, JAXBException, TransformerException {
+            OperationNotSupportedException, JAXBException, TransformerException, IOException {
 
         XMLEventReader xmlEventReader = xmlInputFactory.createXMLEventReader(requestInputStream);
-        XMLEventWriter xmlEventWriter = xmlOutputFactory.createXMLEventWriter(requestOutputStream);
+
+        // XMLEventWriter xmlEventWriter = xmlOutputFactory.createXMLEventWriter(requestOutputStream);
+        XMLEventWriter xmlEventWriter = xmlOutputFactory.createXMLEventWriter(new FileWriter("C:\\CLARUS\\out.xml"));
 
         XMLEvent event = null;
         int eventType = 0;
-        while (xmlEventReader.hasNext()) {
-            event = xmlEventReader.nextEvent();
-            xmlEventWriter.add(event);
 
+        while (xmlEventReader.hasNext()) {
+
+            event = xmlEventReader.nextEvent();
+            //xmlEventWriter.add(event);
             eventType = event.getEventType();
 
             if (eventType == XMLEvent.START_ELEMENT) {
-                StartElement rootElement = event.asStartElement();
 
-                LOGGER.info("WFS message root START ELEMENT --> " + rootElement.getName().toString());
+                StartElement rootElement = event.asStartElement();
+                LOGGER.info("WFS message root START ELEMENT :: " + rootElement.getName().toString());
 
                 ProtocolVersion protocolVersion = extractProtocolVersion(rootElement);
                 String operationElName = rootElement.getName().getLocalPart();
@@ -146,18 +145,17 @@ public class WfsRequestDecoder extends WfsDecoder {
                 switch (protocolVersion) {
 
                 case V1_0_0:
-                    LOGGER.info("Process a WFS 1.0.0 request of type '{}'", wfsOperation);
-                    break;
+                    throw new ProtocolVersionNotSupportedException(
+                            "WFS Protocol version not supported: " + protocolVersion.getValue());
                 case V1_1_0:
                     LOGGER.info("Process a WFS 1.1.0 request of type '{}'", wfsOperation);
                     OperationProcessor currentOperationProcessor = OperationProcessorFactory.getInstance()
                             .createOperationProcessor(wfsOperation, xmlEventReader, xmlEventWriter);
                     currentOperationProcessor.processOperation(ctx);
-
                     break;
                 case V2_0_0:
-                    LOGGER.info("Process a WFS 2.0.0 request of type '{}'", wfsOperation);
-                    break;
+                    throw new ProtocolVersionNotSupportedException(
+                            "WFS Protocol version not supported: " + protocolVersion.getValue());
                 default:
                     throw new ProtocolVersionNotSupportedException(
                             "WFS Protocol version not supported: " + protocolVersion.getValue());
