@@ -8,10 +8,12 @@
   <name>CLARUS proxy</name>
   <modules>
     <module>common</module>
+    <!--
     <module>modules/anonymization</module>
     <module>modules/encryption</module>
-    <module>modules/searchable_encryption</module>
     <module>modules/splitting</module>
+    -->
+    <module>modules/searchable_encryption</module>
     <module>plugins/http</module>
     <module>plugins/pgsql</module>
     <module>plugins/tcp</module>
