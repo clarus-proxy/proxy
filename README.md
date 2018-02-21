@@ -131,3 +131,7 @@ cd install
 copy ..\main\src\test\resources\patient_anonymisation.xml test.xml
 java -Djava.ext.dirs=.\ext-libs\ -jar .\libs\proxy-main-1.0.2-SNAPSHOT.jar -sp test.xml 127.0.0.1
 ```
+
+## License
+
+All the data protection modules are being licensed under the Apache 2.0 License. The protocol module is available under the EUPL v1.2 license.
